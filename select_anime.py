@@ -108,6 +108,9 @@ def main(stdscr):
 
     # Print selected anime and its ID after exiting curses mode
     print(f"Selected Anime: {selected_anime}, ID: {selected_id}")
+    with open("scripts/tmp/anime", "w") as anime_name:
+        anime_name.write(selected_anime)
+        
     with open("scripts/tmp/id", "w") as id:
         id.write(selected_id)
 

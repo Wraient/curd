@@ -39,44 +39,70 @@ def get_user_data():
   # Print the response
   return response.json()
 
+def load_json_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return json.load(file)
 
 def search_anime_by_title(json_data, search_title):
-    """
-    Search for an anime by its title in the giv en JSON data and return its ID.
-
-    :param json_data: The JSON data as a dictionary.
-    :param search_title: The title of the anime to search for.
-    :return: The ID of the anime if found, otherwise None.
-    """
-    # Navigate to the list of entries
-    anime_list = json_data['data']['MediaListCollection']['lists'][0]['entries']
+    results = []
+    if search_title=="1P":
+      search_title = "ONE PIECE"
+    for list_item in json_data['data']['MediaListCollection']['lists']:
+        for entry in list_item['entries']:
+            media = entry['media']
+            romaji_title = media['title']['romaji']
+            english_title = media['title']['english']
+            try:
+              if search_title.lower() in romaji_title.lower() or search_title.lower() in english_title.lower():
+                  results.append({
+                      'id': media['id'],
+                      'progress': entry['progress'],
+                      'romaji_title': romaji_title,
+                      'english_title': english_title
+                  })
+            except:
+              pass
     
-    # Search for the anime with the given title
-    for entry in anime_list:
-        media = entry['media']
-        title_romaji = media['title']['romaji']
-        title_english = media['title']['english']
-        
-        # Check if either title matches the search title
-        if search_title.lower() in title_romaji.lower() or search_title.lower() in title_english.lower():
-            return media['id']
+    return results
+
+def main():
+    # Load the JSON file
+    json_file_path = 'response.json'  # Replace with the path to your JSON file
+    json_data = load_json_file(json_file_path)
     
-    # If not found, return None
-    return None
+    # Ask for the title to search
+    # search_title = input("Enter the anime title to search (Romaji or English): ")
 
-if __name__ == '__main__':
-  # Load JSON data from a file (replace 'your_file.json' with the actual file name)
-  with open('response.json', 'r') as file:
-      data = json.load(file)
+    search_title = "1P"
+    
+    # Search for the anime
+    results = search_anime_by_title(json_data, search_title)
+    
+    # Print the results
+    if results:
+        for result in results:
+            print(f"Anime ID: {result['id']}, Progress: {result['progress']}, "
+                  f"Romaji Title: {result['romaji_title']}, English Title: {result['english_title']}")
+    else:
+        print("Anime not found.")
 
-  # Define the title to search for
-  search_title = 'The Quintessential Quintuplets 2'  # Replace with the actual title you're searching for
+if __name__ == "__main__":
+    main()
 
-  # Search for the anime and get its ID
-  anime_id = search_anime_by_title(data, search_title)
 
-  # Print the result
-  if anime_id:
-      print(f"Anime ID: {anime_id}")
-  else:
-      print("Anime not found.")
+# if __name__ == '__main__':
+#   # Load JSON data from a file (replace 'your_file.json' with the actual file name)
+#   with open('response.json', 'r') as file:
+#       data = json.load(file)
+
+#   # Define the title to search for
+#   search_title = 'Fullmetal Alchemist: Brotherhood'  # Replace with the actual title you're searching for
+
+#   # Search for the anime and get its ID
+#   anime_id = search_anime_by_title(data, search_title)
+
+#   # Print the result
+#   if anime_id:
+#       print(f"Anime ID: {anime_id}")
+#   else:
+#       print("Anime not found.")
