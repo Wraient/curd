@@ -22,5 +22,5 @@ case "$(uname -a)" in
     *) player_function="${ANI_CLI_PLAYER:-mpv}" ;;                    # Linux OS
 esac
 
-id=$(cat ./tmp/id)
-echo $(episodes_list "$id") > ./tmp/episode_list
+id=$(cat ./scripts/tmp/id)
+echo $(episodes_list "$id") > ./scripts/tmp/episode_list

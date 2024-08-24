@@ -75,7 +75,7 @@ get_episode_url() {
     links=$(cat "$cache_dir"/* | sed 's|^Mp4-||g;/http/!d' | sort -g -r -s)
     rm -r "$cache_dir"
     episode=$(select_quality "$quality")
-    echo $links > ./tmp/links
+    echo $links > ./scripts/tmp/links
     [ -z "$episode" ] && die "Episode not released!"
 }
 
@@ -96,6 +96,6 @@ case "$(uname -a)" in
     *) player_function="${ANI_CLI_PLAYER:-mpv}" ;;                    # Linux OS
 esac
 
-id=$(cat ./tmp/id)
-ep_no=$(cat ./tmp/ep_no)
+id=$(cat ./scripts/tmp/id)
+ep_no=$(cat ./scripts/tmp/ep_no)
 get_episode_url 
