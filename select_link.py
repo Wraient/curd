@@ -61,8 +61,8 @@ def main(stdscr):
     print("done")
 
 # print(display_links(stdscr,links))
-# if __name__ == "__main__":
-try:
-    curses.wrapper(main)
-except:
-    pass
+if __name__ == "__main__":
+    try:
+        curses.wrapper(main)
+    except:
+        pass
