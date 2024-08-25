@@ -2,10 +2,10 @@ import requests
 import json
 
 
-def get_user_data():
+def get_user_data(access_token, user_id):
 # Replace with your actual access token and user ID
-  access_token = ''
-  user_id = '6719526'
+  # access_token = 
+  # user_id = 
 
   # GraphQL query
   query = """
