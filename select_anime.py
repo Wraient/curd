@@ -24,13 +24,18 @@ def extract_anime_info(json_data):
     for list_entry in json_data['data']['MediaListCollection']['lists']:
         for entry in list_entry['entries']:
             anime = entry['media']
-
             anime_info = {
                 'id': anime['id'],
                 'romaji_name': anime['title']['romaji'],
                 'english_name': anime['title']['english'],
-                'status': entry['status']
+                'status': entry['status'],
+                'episodes': anime['episodes'],
             }
+
+            if anime['title']['english'] == None:
+                anime['title']['english'] = anime['title']['romaji']
+            # if anime['title'][''] == None:
+            #     anime['title']['english'] = anime['title']['romanji']
 
             anime_info_dict[anime['title']['english']] = str(anime['id']) # {anime_name: anime_id, ...}
             anime_info_list.append(anime_info) # [{"id": anime_id, "romaji_name": anime_name_romnaji, "english_name": anime_name_english, status: anime_status}, ...]
@@ -131,7 +136,7 @@ def select_anime(anime_list):
         print(f"Selected Anime: {selected_anime}, ID: {selected_id}")
         with open("scripts/tmp/anime", "w") as anime_name:
             anime_name.write(selected_anime)
-            
+
         with open("scripts/tmp/id", "w") as id:
             id.write(selected_id)
 
