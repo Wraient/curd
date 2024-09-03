@@ -19,7 +19,7 @@ from select_anime import load_anime_data
 from select_anime import extract_anime_info
 from select_anime import select_anime
 
-from track_anime import add_anime, update_anime, get_all_anime, delete_anime
+from track_anime import add_anime, update_anime, get_all_anime, delete_anime, find_anime
 
 access_token = os.environ.get('ANILIST_ACCESS_TOKEN')
 user_id = os.environ.get('ANILIST_USER_ID')
@@ -166,11 +166,20 @@ except:
     progress = 0
 
 try:
-    print("Trying to automate")
-    with open("scripts/tmp/id", "w") as id_file:
-        id_file.write(anime_dict[anime_name+f" ({total_episodes} episodes)"])
-    with open("scripts/tmp/anime", "w") as anime_name_file:
-        anime_name_file.write(anime_name)
+    finding_anime = find_anime(get_all_anime(user_config["history_file"]), anilist_id=str(anime_id))
+    print(finding_anime)
+    if finding_anime:
+        print("AUTOMATICALLY BABY")
+        with open("scripts/tmp/id", "w") as id_file:
+            id_file.write(finding_anime['allanime_id'])
+        with open("scripts/tmp/anime", "w") as anime_name_file:
+            anime_name_file.write(finding_anime['name'])
+    else:
+        print("Trying to automate")
+        with open("scripts/tmp/id", "w") as id_file:
+            id_file.write(anime_dict[anime_name+f" ({total_episodes} episodes)"])
+        with open("scripts/tmp/anime", "w") as anime_name_file:
+            anime_name_file.write(anime_name)
 except:
     print("Cannot automate")
     select_anime(anime_dict)
@@ -186,41 +195,62 @@ run_script("episode_list")
 binge_watching = False
 
 while True:
+
+    mpv_args = []
+
     with open("scripts/tmp/episode_list") as ep_list:
         temp = ep_list.read()
         temp = temp.split()
         last_episode = int(temp[-1])
 
-    if binge_watching:
-        print("binge watching")
-        with open("scripts/tmp/ep_no", "r") as ep_no_file_1:
-            current_ep = int(ep_no_file_1.read())
-        if current_ep == last_episode:
-            print("completed anime.")
-            # TODO: Add way to rate the anime
-            delete_anime(user_config['history_file'], anime_id, get_contents_of("id"))
-            exit(0)
+    anime_watch_history = get_all_anime(user_config['history_file'])
 
-        else:
-            print(f"Next episode is here, goshujin sama progress: {current_ep} {type(current_ep)}")
-            with open("scripts/tmp/ep_no", "w") as ep_no_file:
-                ep_no_file.write(str(int(current_ep)+1))
+    # anime_watch_history[]
+    anime_history = find_anime(anime_watch_history, anilist_id=anime_id, allanime_id=get_contents_of("id"))
+
+    if anime_history and not (int(anime_history['episode']) < progress): # if it exists and if the progress is not ahead
+        print(f"came in history {str(progress)}")
+        if int(anime_history['episode']) == int(progress)+1:
+            mpv_args.append(f"--start={anime_history['time']}")
+            with open("scripts/tmp/ep_no", "w") as ep_no_file_2:
+                ep_no_file_2.write(anime_history['episode'])
+            print(f"STARTING ANIME FROM EPISODE {anime_history['episode']} {anime_history['time']}")
         
-        watching_ep = current_ep+1
-    else:
-        print("First time watch")
-        with open("scripts/tmp/ep_no", "w") as ep_no_file:
+        watching_ep = anime_history['episode']
+        # if : # if upstream is ahead
+        #     pass
+    else: # if there is no history
+        print("no history found")
+        if binge_watching:
+            print("binge watching")
+            with open("scripts/tmp/ep_no", "r") as ep_no_file_1:
+                current_ep = int(ep_no_file_1.read())
+            if current_ep == last_episode:
+                print("completed anime.")
+                # TODO: Add way to rate the anime
+                delete_anime(user_config['history_file'], anime_id, get_contents_of("id"))
+                exit(0)
 
-            if progress == last_episode:
-                user_input = input("Do you want to start this anime from beginning? (y/n):")
-                if user_input.lower() == "yes" or user_input.lower() == "y" or user_input.lower() == "":
-                    progress = 0
-                else:
-                    print("Starting last episode of anime")
-                    progress = last_episode - 1
+            else:
+                print(f"Next episode is here, goshujin sama progress: {current_ep} {type(current_ep)}")
+                with open("scripts/tmp/ep_no", "w") as ep_no_file:
+                    ep_no_file.write(str(int(current_ep)+1))
+            
+            watching_ep = current_ep+1
+        else:
+            print("First time watch")
+            with open("scripts/tmp/ep_no", "w") as ep_no_file:
 
-            watching_ep = progress+1
-            ep_no_file.write(str(watching_ep))
+                if progress == last_episode:
+                    user_input = input("Do you want to start this anime from beginning? (y/n):")
+                    if user_input.lower() == "yes" or user_input.lower() == "y" or user_input.lower() == "":
+                        progress = 0
+                    else:
+                        print("Starting last episode of anime")
+                        progress = last_episode - 1
+
+                watching_ep = progress+1
+                ep_no_file.write(str(watching_ep))
 
     os.system("./scripts/episode_url.sh")
 
@@ -233,15 +263,15 @@ while True:
     links = load_links("scripts/tmp/links")
 
     try:
-        salt = random.randint(0,500)
+        salt = random.randint(0,1500)
         print("SALT IS:"+str(salt))
-        start_video(links[0][1], salt)
-        command = """echo '{ "command": ["get_property", "playback-time"] }' | socat - /tmp/mpvsocket"""+str(salt)
+        start_video(links[0][1], salt, mpv_args)
+        connect_mpv_command = """echo '{ "command": ["get_property", "playback-time"] }' | socat - /tmp/mpvsocket"""+str(salt)
 
         while True:
             time.sleep(2)
 
-            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            result = subprocess.run(connect_mpv_command, shell=True, capture_output=True, text=True)
             # print(result)
             if result.returncode == 0:
                 output = result.stdout.strip()
@@ -258,15 +288,18 @@ while True:
                         update_anime(user_config['history_file'], str(anime_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(title))
                         print("Playback time:", playback_time)
                     else:
-                        print("Error:", data["error"])
-                        break
-
+                        if data['error'] == "property unavailable":
+                            pass
+                        else:
+                            print("Error:", data["error"])
+                            break
                 except json.decoder.JSONDecodeError as e:
                     print("Error decoding JSON:", e)
                     break  # Exit the loop on unexpected JSON error
             else:
                 killing_error = str(result.stderr)
                 if killing_error == "property unavailable": # mpv is not started yet
+                    print("passing")
                     pass
                 else:
                     print("Error:", killing_error)
