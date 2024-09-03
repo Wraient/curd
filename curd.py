@@ -19,12 +19,17 @@ from select_anime import load_anime_data
 from select_anime import extract_anime_info
 from select_anime import select_anime
 
+from track_anime import add_anime, update_anime, get_all_anime, delete_anime
 
 access_token = os.environ.get('ANILIST_ACCESS_TOKEN')
 user_id = os.environ.get('ANILIST_USER_ID')
 
 # print(access_token)
 # print(user_id)
+
+def get_contents_of(tmp_file_name):
+    with open(f"scripts/tmp/{tmp_file_name}", "r") as temp_file:
+        return temp_file.read()
 
 def run_script(script):
     os.system(f"./scripts/{script}.sh")
@@ -45,8 +50,10 @@ def load_config():
         print("Creating config")
         
         try:
+            print("making folder")
             os.makedirs(folder_name)
         except:
+            print("error making folder")
             pass
 
         with open(config_file_path, 'w') as file:
@@ -59,7 +66,7 @@ score_on_completion=true
 discord_presence=true
 presence_script_path="curddiscordpresence.py"
 """)
-
+            
     config_dict = {}
 
     with open(config_file_path, 'r') as file:
@@ -83,6 +90,16 @@ presence_script_path="curddiscordpresence.py"
                 
                 # Store in the dictionary
                 config_dict[key] = value
+
+    if not os.path.exists(config_dict['history_file']):
+        try:
+            os.makedirs(os.path.dirname(config_dict['history_file']))
+        except:
+            pass
+        print("creating history file")
+        with open(config_dict["history_file"], "w") as history_file:
+            history_file.write("")
+
     return config_dict
 
     # else:
@@ -90,8 +107,6 @@ presence_script_path="curddiscordpresence.py"
     #     return config_file.read()
 
 user_config = load_config() # python dictionary containing all the configs as key value pairs
-
-print(user_config)
 
 print("downloading user data")
 anilist_user_data = get_user_data(access_token, user_id)
@@ -160,10 +175,6 @@ except:
     print("Cannot automate")
     select_anime(anime_dict)
 
-# Remove everything from the last '(' including the parentheses
-
-
-# os.system("./scripts/episode_list.sh")
 run_script("episode_list")
 
 # with open("scripts/tmp/episode_list") as ep_list:
@@ -186,14 +197,16 @@ while True:
             current_ep = int(ep_no_file_1.read())
         if current_ep == last_episode:
             print("completed anime.")
-
             # TODO: Add way to rate the anime
+            delete_anime(user_config['history_file'], anime_id, get_contents_of("id"))
             exit(0)
 
         else:
             print(f"Next episode is here, goshujin sama progress: {current_ep} {type(current_ep)}")
             with open("scripts/tmp/ep_no", "w") as ep_no_file:
                 ep_no_file.write(str(int(current_ep)+1))
+        
+        watching_ep = current_ep+1
     else:
         print("First time watch")
         with open("scripts/tmp/ep_no", "w") as ep_no_file:
@@ -205,10 +218,9 @@ while True:
                 else:
                     print("Starting last episode of anime")
                     progress = last_episode - 1
-            # else:
 
-            # print(progress)
-            ep_no_file.write(str(progress+1))
+            watching_ep = progress+1
+            ep_no_file.write(str(watching_ep))
 
     os.system("./scripts/episode_url.sh")
 
@@ -217,9 +229,6 @@ while True:
         print(f"Anime ID: {anime_id}")
     else:
         print("Anime not found.")
-
-    # with open("scripts/tmp/link", 'r') as links:
-    #     link = links.read()
 
     links = load_links("scripts/tmp/links")
 
@@ -243,6 +252,10 @@ while True:
                     data = json.loads(output)
                     if data["error"] == "success":
                         playback_time = round(int(data["data"]))
+
+                        print(user_config['history_file'])
+
+                        update_anime(user_config['history_file'], str(anime_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(title))
                         print("Playback time:", playback_time)
                     else:
                         print("Error:", data["error"])
@@ -252,9 +265,12 @@ while True:
                     print("Error decoding JSON:", e)
                     break  # Exit the loop on unexpected JSON error
             else:
-                print("Error:", result.stderr)
-                break
-
+                killing_error = str(result.stderr)
+                if killing_error == "property unavailable": # mpv is not started yet
+                    pass
+                else:
+                    print("Error:", killing_error)
+                    break
     except ConnectionRefusedError:
         print("Player Closed")
     finally:
