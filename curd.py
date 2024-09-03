@@ -29,6 +29,70 @@ user_id = os.environ.get('ANILIST_USER_ID')
 def run_script(script):
     os.system(f"./scripts/{script}.sh")
 
+def load_config():
+    command = """echo $(xdg-user-dir CONFIG)"""
+
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    output = result.stdout.strip()
+
+    folder_name = f"{output}/.config/curd"
+    file_name = "curd.conf"
+
+    config_file_path = os.path.join(folder_name, file_name)
+
+    print(config_file_path)
+    if not os.path.exists(os.path.join(config_file_path)):
+        print("Creating config")
+        
+        try:
+            os.makedirs(folder_name)
+        except:
+            pass
+
+        with open(config_file_path, 'w') as file:
+            file.write(r"""player="mpv"
+show_adult_content=false
+history_file="$HOME/.local/share/curd/curd_history.txt"
+subs_language="english"
+sub_or_dub="sub"
+score_on_completion=true
+discord_presence=true
+presence_script_path="curddiscordpresence.py"
+""")
+
+    config_dict = {}
+
+    with open(config_file_path, 'r') as file:
+        for line in file:
+            # Strip whitespace and ignore comments or empty lines
+            line = line.strip()
+            if line and not line.startswith("#"):
+                # Split the line into key and value
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"')
+                
+                # Handle environment variables in the value
+                value = os.path.expandvars(value)
+                
+                # Convert boolean strings to actual booleans
+                if value.lower() == "true":
+                    value = True
+                elif value.lower() == "false":
+                    value = False
+                
+                # Store in the dictionary
+                config_dict[key] = value
+    return config_dict
+
+    # else:
+    # with open(config_file_path, "r") as config_file:
+    #     return config_file.read()
+
+user_config = load_config() # python dictionary containing all the configs as key value pairs
+
+print(user_config)
+
 print("downloading user data")
 anilist_user_data = get_user_data(access_token, user_id)
 with open("response.json", "w") as response:
@@ -48,13 +112,11 @@ except:
 
 # os.system("./scripts/anime_list.sh")
 
-
 # with open('response.json', 'r') as file:
     # data = json.load(file)
 
 # print(data)
 # print(type(data['data']))
-
 
 anime_dict = extract_anime_info(anilist_user_data)[0]
 # print(anime_dict)
@@ -110,22 +172,43 @@ run_script("episode_list")
 #     last_episode = temp[-1]
 # ep_no = input(f"Enter episode number: (number of episodes: {last_episode})\n")
 
+binge_watching = False
+
 while True:
-    with open("scripts/tmp/ep_no", "w") as ep_no_file:
-        with open("scripts/tmp/episode_list") as ep_list:
-            temp = ep_list.read()
-            temp = temp.split()
-            last_episode = int(temp[-1])
+    with open("scripts/tmp/episode_list") as ep_list:
+        temp = ep_list.read()
+        temp = temp.split()
+        last_episode = int(temp[-1])
 
-        if progress == last_episode:
-            user_input = input("Do you want to start this anime from beginning? (y/n):")
-            if user_input.lower() == "yes" or user_input.lower() == "y" or user_input.lower() == "":
-                progress = 0
-            else:
-                progress = last_episode - 1
+    if binge_watching:
+        print("binge watching")
+        with open("scripts/tmp/ep_no", "r") as ep_no_file_1:
+            current_ep = int(ep_no_file_1.read())
+        if current_ep == last_episode:
+            print("completed anime.")
 
-        # print(progress)
-        ep_no_file.write(str(progress+1))
+            # TODO: Add way to rate the anime
+            exit(0)
+
+        else:
+            print(f"Next episode is here, goshujin sama progress: {current_ep} {type(current_ep)}")
+            with open("scripts/tmp/ep_no", "w") as ep_no_file:
+                ep_no_file.write(str(int(current_ep)+1))
+    else:
+        print("First time watch")
+        with open("scripts/tmp/ep_no", "w") as ep_no_file:
+
+            if progress == last_episode:
+                user_input = input("Do you want to start this anime from beginning? (y/n):")
+                if user_input.lower() == "yes" or user_input.lower() == "y" or user_input.lower() == "":
+                    progress = 0
+                else:
+                    print("Starting last episode of anime")
+                    progress = last_episode - 1
+            # else:
+
+            # print(progress)
+            ep_no_file.write(str(progress+1))
 
     os.system("./scripts/episode_url.sh")
 
@@ -144,8 +227,8 @@ while True:
         salt = random.randint(0,500)
         print("SALT IS:"+str(salt))
         start_video(links[0][1], salt)
-        # print('test')
         command = """echo '{ "command": ["get_property", "playback-time"] }' | socat - /tmp/mpvsocket"""+str(salt)
+
         while True:
             time.sleep(2)
 
@@ -172,19 +255,12 @@ while True:
                 print("Error:", result.stderr)
                 break
 
-    # break
-    # Define the command to run
-
-    # Execute the command and capture the output
-    # result = subprocess.run(command, capture_output=True, text=True)
-
     except ConnectionRefusedError:
         print("Player Closed")
     finally:
         to_continue_or_not_to_continue = input("Continue? (y/n)\n")
         if to_continue_or_not_to_continue.lower() == "yes" or to_continue_or_not_to_continue.lower() == "y" or to_continue_or_not_to_continue == "":
-            pass
+            binge_watching = True
+            # ep_no_file
         else:
             break
-# except:
-#     pass
