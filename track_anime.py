@@ -80,13 +80,22 @@ def update_anime(database_file, anilist_id, allanime_id, episode, time, name):
     
     print("Updated the file")
 
+def find_anime(anime_list, anilist_id=-1, allanime_id=-1):
+    for anime in anime_list:
+        if anime['anilist_id'] == anilist_id or anime['allanime_id'] == allanime_id:
+            return anime
+        
+    return False
+
 # Example usage
-# database_name = "/home/wraient/.local/share/curd/curd_history.txt"
+database_name = "/home/wraient/.local/share/curd/curd_history.txt"
 # add_anime(database_name, '54321', '09876', '3', '100', 'My Hero Academia')
+
+
 
 # # Print all anime entries
 # update_anime(database_name, '21', 'ReooPAxPMsHM4KPMY', '1110', '10', 'ONE PIECE')
-# print(get_all_anime(database_name))
+# print(find_anime(get_all_anime(database_name), allanime_id="21"))
 # update_anime(database_name, '21', 'ReooPAxPMsHM4KPMY', '1110', '101', 'ONE PIECE')
 
 # # Update an entry
