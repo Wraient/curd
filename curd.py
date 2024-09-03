@@ -14,7 +14,7 @@ import time
 from anilist import search_anime_by_title
 from anilist import get_user_data
 from select_link import load_links
-from start_video import *
+from start_video import start_video, send_command, get_percentage_watched
 from select_anime import load_anime_data
 from select_anime import extract_anime_info
 from select_anime import select_anime
@@ -273,7 +273,15 @@ while True:
         salt = random.randint(0,1500)
         print("SALT IS:"+str(salt))
         start_video(links[0][1], salt, mpv_args)
-        connect_mpv_command = """echo '{ "command": ["get_property", "playback-time"] }' | socat - /tmp/mpvsocket"""+str(salt)
+
+        mpv_socket_path = "/tmp/mpvsocket"+str(salt)
+
+        connect_mpv_command = """echo '{ "command": ["get_property", "playback-time"] }' | socat - """+mpv_socket_path
+        
+        mpv_pos_command = """echo '{ "command": ["get_property", "time-pos"] }' | socat - """+mpv_socket_path
+        
+        mpv_duration_command = """echo '{ "command": ["get_property", "duration"] }' | socat - """+mpv_socket_path
+
 
         while True:
             time.sleep(2)
@@ -294,6 +302,13 @@ while True:
 
                         update_anime(user_config['history_file'], str(anime_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(title))
                         print("Playback time:", playback_time)
+
+                        watched_percentage = get_percentage_watched(mpv_socket_path)
+                        print(watched_percentage)
+                        if watched_percentage > 85:
+                            print("Completed")
+                        # video_duration = subprocess.run(mpv_duration_command, shell=True, capture_output=True, text=True)
+            
                     else:
                         if data['error'] == "property unavailable":
                             pass
