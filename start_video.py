@@ -19,4 +19,35 @@ def start_video(link, salt:str, args:list=[]):
     # client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     # client.connect(socket_path)
 
+def send_command(ipc_socket_path, command):
+    """
+    Sends a command to the MPV IPC socket and returns the response.
+    """
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(ipc_socket_path)
+        command_str = json.dumps({"command": command}) + "\n"
+        s.sendall(command_str.encode())
+        response = s.recv(4096).decode()
+
+        try:
+            response_data = json.loads(response)
+            if 'data' in response_data:
+                return response_data['data']
+        except json.JSONDecodeError:
+            return None
+    return None
+
+def get_percentage_watched(ipc_socket_path):
+    """
+    Calculates the percentage watched of the currently playing video.
+    """
+    # Get current playback time and total duration
+    current_time = send_command(ipc_socket_path, ["get_property", "time-pos"])
+    duration = send_command(ipc_socket_path, ["get_property", "duration"])
+
+    if current_time is not None and duration is not None and duration > 0:
+        percentage_watched = (current_time / duration) * 100
+        return percentage_watched
+    return None
+
 # start_video("https://video.wixstatic.com/video/36bbae_bef5207b465447f19c0f9366f3ee1c27/720p/mp4/file.mp4", "10", ['--start=100'])
