@@ -208,15 +208,22 @@ while True:
     # anime_watch_history[]
     anime_history = find_anime(anime_watch_history, anilist_id=anime_id, allanime_id=get_contents_of("id"))
 
-    if anime_history and not (int(anime_history['episode']) < progress): # if it exists and if the progress is not ahead
+    if anime_history: # if it exists and if the progress is not ahead
         print(f"came in history {str(progress)}")
-        if int(anime_history['episode']) == int(progress)+1:
+        if int(anime_history['episode']) != progress+1:
+            with open("scripts/tmp/ep_no", "w") as ep_no_file_2:
+                ep_no_file_2.write(str(int(progress)+1))
+            print(f"Starting anime from upstream {str(progress + 1)}")
+        
+            watching_ep = progress + 1
+
+        elif int(anime_history['episode']) == int(progress)+1:
             mpv_args.append(f"--start={anime_history['time']}")
             with open("scripts/tmp/ep_no", "w") as ep_no_file_2:
                 ep_no_file_2.write(anime_history['episode'])
             print(f"STARTING ANIME FROM EPISODE {anime_history['episode']} {anime_history['time']}")
         
-        watching_ep = anime_history['episode']
+            watching_ep = anime_history['episode']
         # if : # if upstream is ahead
         #     pass
     else: # if there is no history
