@@ -50,4 +50,10 @@ def get_percentage_watched(ipc_socket_path):
         return percentage_watched
     return None
 
+def percentage_watched(playback_time:int, duration:int):
+    if playback_time is not None and duration is not None and duration > 0:
+        video_percentage_watched = (playback_time/duration) * 100
+        return video_percentage_watched
+    return None
+
 # start_video("https://video.wixstatic.com/video/36bbae_bef5207b465447f19c0f9366f3ee1c27/720p/mp4/file.mp4", "10", ['--start=100'])
