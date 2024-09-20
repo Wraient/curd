@@ -48,6 +48,7 @@ def get_user_data(access_token, user_id):
           media {
             id
             episodes
+            duration
             title {
               romaji
               english
@@ -87,6 +88,7 @@ def search_anime_by_title(json_data, search_title):
             romaji_title = media['title']['romaji']
             english_title = media['title']['english']
             episodes = media['episodes']
+            duration = media['duration']
             try:
               if search_title.lower() in romaji_title.lower() or search_title.lower() in english_title.lower():
                   results.append({
@@ -95,6 +97,7 @@ def search_anime_by_title(json_data, search_title):
                       'romaji_title': romaji_title,
                       'english_title': english_title,
                       'episodes': episodes,
+                      'duration': duration,
                   })
             except:
               pass
