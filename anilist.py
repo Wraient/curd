@@ -2,6 +2,38 @@ import requests
 import json
 
 
+import requests
+
+def get_anilist_user_id(token):
+    url = "https://graphql.anilist.co"
+    query = '''
+    query {
+        Viewer {
+            id
+            name
+        }
+    }
+    '''
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    response = requests.post(url, json={"query": query}, headers=headers)
+    
+    if response.status_code == 200:
+        data = response.json()
+        user_id = data['data']['Viewer']['id']
+        user_name = data['data']['Viewer']['name']
+        return user_id, user_name
+    else:
+        raise Exception(f"Error: {response.status_code}, {response.text}")
+
+# Replace 'your_token' with your actual AniList token
+
+
 def get_user_data(access_token, user_id):
 # Replace with your actual access token and user ID
   # access_token = 
