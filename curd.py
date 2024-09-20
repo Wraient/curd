@@ -12,7 +12,7 @@ import subprocess
 import time
 
 from anilist import search_anime_by_title
-from anilist import get_user_data
+from anilist import get_user_data, get_anilist_user_id
 from select_link import load_links
 from start_video import start_video, send_command, get_percentage_watched
 from select_anime import load_anime_data
@@ -22,7 +22,13 @@ from select_anime import select_anime
 from track_anime import add_anime, update_anime, get_all_anime, delete_anime, find_anime
 
 access_token = os.environ.get('ANILIST_ACCESS_TOKEN')
-user_id = os.environ.get('ANILIST_USER_ID')
+
+user_id, user_name = get_anilist_user_id(access_token)
+# user_id = os.environ.get('ANILIST_USER_ID')
+
+if access_token == None:
+    print("No Access_token provided.")
+    exit(1)
 
 # print(access_token)
 # print(user_id)
