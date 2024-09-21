@@ -13,7 +13,7 @@ import subprocess
 import time
 
 from anilist import search_anime_by_title
-from anilist import get_user_data, get_anilist_user_id
+from anilist import get_user_data, get_anilist_user_id, update_anime_progress
 from select_link import load_links
 from start_video import start_video, send_command, get_percentage_watched, percentage_watched
 from select_anime import load_anime_data
@@ -293,7 +293,7 @@ while True:
 
                         # print(user_config['history_file'])
 
-                        update_anime(user_config['history_file'], str(anime_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(duration), str(title))
+                        update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(duration), str(title))
                         # print("Playback time:", playback_time)
 
                         watched_percentage = get_percentage_watched(mpv_socket_path)
@@ -322,6 +322,20 @@ while True:
                     print("Unknown:\n", e)
             else:
                 killing_error = str(result.stderr)
+                # print(killing_error[-19:-1])
+                try:
+                    if killing_error[-19:-1] == "Connection refused": # user closed the stream
+                        if watched_percentage > mark_episode_as_completed_at:
+                            # update_anime_progress(access_token, int(media_id), int(watching_ep))
+                            # watching_ep = int(watching_ep)+1
+                            # update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
+                            break
+                        else:
+                            print("Have a great day!")
+                            exit(0)
+
+                except Exception as e: # user did not close the stream
+                    print(e)
                 if killing_error == "property unavailable": # mpv is not started yet
                     # print("passing")
                     pass
@@ -339,9 +353,9 @@ while True:
         # exit(0)
     except KeyboardInterrupt:
         if watched_percentage > mark_episode_as_completed_at:
+            update_anime_progress(access_token, int(media_id), int(watching_ep))
             watching_ep = int(watching_ep)+1
-
-            update_anime(user_config['history_file'], str(anime_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
+            update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
 
         print("bye")
         exit(0)
@@ -354,40 +368,23 @@ while True:
     if current_ep == last_episode:
         print("completed anime.")
         # TODO: Add way to rate the anime
-        delete_anime(user_config['history_file'], anime_id, get_contents_of("id"))
+        delete_anime(user_config['history_file'], media_id, get_contents_of("id"))
         exit(0)
 
     else:
         print(f"Next episode is here, goshujin sama progress: {current_ep} {type(current_ep)}")
         # write_to_tmp("ep_no", str(int(current_ep)+1))
     
-    if watched_percentage > mark_episode_as_completed_at:
+    if watched_percentage > mark_episode_as_completed_at: # BINGE WATCHING
         last_episode = int(read_tmp("episode_list").split()[-1])
+        update_anime_progress(access_token, int(media_id), int(watching_ep))
 
         watching_ep = int(watching_ep)+1
         write_to_tmp("ep_no", str(watching_ep))
         update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
         anime_watch_history = get_all_anime(user_config['history_file'])
-        # anime_watch_history[]
-        anime_history = find_anime(anime_watch_history, anilist_id=anime_id, allanime_id=get_contents_of("id"))
+        anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
         episode_completed = False
-        if anime_history: # if it exists in local history
-            print(f"came in history {str(anime_history['episode'])}")
-            print("is ahead")
-            # write_to_tmp("ep_no", str(int(progress)+1))
-            # print(f"Starting anime from upstream {str(progress + 1)}")
-            
-            # watching_ep = progress + 1
-
-            # elif int(anime_history['episode']) == int(progress)+1: # if the upstream progress is NOT ahead
-                # print("is equal")
-            mpv_args.append(f"--start={anime_history['time']}")
-            # write_to_tmp("ep_no", watching_ep)
-            print(f"STARTING ANIME FROM EPISODE {anime_history['episode']} {anime_history['time']}")
-            watching_ep = int(anime_history['episode'])
-
-        print("watching ep", watching_ep)
-
         run_script("episode_url")
         links = load_links("scripts/tmp/links")
         mpv_args = []
