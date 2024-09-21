@@ -37,6 +37,14 @@ def send_command(ipc_socket_path, command):
             return None
     return None
 
+def get_mpv_playback_speed(ipc_socket_path):
+    current_speed = send_command(ipc_socket_path, ["get_property", "speed"])
+    if current_speed is not None:
+        return current_speed
+    else:
+        print("Failed to get playback speed.")
+
+
 def get_percentage_watched(ipc_socket_path):
     """
     Calculates the percentage watched of the currently playing video.

@@ -15,7 +15,7 @@ import time
 from anilist import search_anime_by_title
 from anilist import get_user_data, get_anilist_user_id, update_anime_progress
 from select_link import load_links
-from start_video import start_video, send_command, get_percentage_watched, percentage_watched
+from start_video import start_video, send_command, get_percentage_watched, percentage_watched, get_mpv_playback_speed
 from select_anime import load_anime_data
 from select_anime import extract_anime_info
 from select_anime import select_anime
@@ -103,6 +103,7 @@ history_file="$HOME/.local/share/curd/curd_history.txt"
 subs_language="english"
 sub_or_dub="sub"
 score_on_completion=true
+save_mpv_speed=true
 discord_presence=true
 presence_script_path="curddiscordpresence.py"
 """)
@@ -388,6 +389,11 @@ while True:
         run_script("episode_url")
         links = load_links("scripts/tmp/links")
         mpv_args = []
+        watched_percentage = 0
+
+        if user_config['save_mpv_speed']==True:
+            mpv_args.append(f'--speed={mpv_playback_speed}')
+
     # watching_ep = current_ep+1
 
         # to_continue_or_not_to_continue = input("Continue? (y/n)\n")
