@@ -6,7 +6,6 @@
 import re
 import os
 import json
-import socket
 import random
 import subprocess
 import time
