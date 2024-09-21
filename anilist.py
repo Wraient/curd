@@ -104,6 +104,39 @@ def search_anime_by_title(json_data, search_title):
     
     return results
 
+def update_anime_progress(token: str, media_id: int, progress: int):
+    url = "https://graphql.anilist.co"
+    
+    query = '''
+    mutation($mediaId: Int, $progress: Int) {
+        SaveMediaListEntry(mediaId: $mediaId, progress: $progress) {
+            id
+            progress
+        }
+    }
+    '''
+    
+    variables = {
+        "mediaId": media_id,  # The AniList ID of the anime
+        "progress": progress  # The number of the latest episode you watched
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    response = requests.post(url, json={"query": query, "variables": variables}, headers=headers)
+    
+    if response.status_code == 200:
+        data = response.json()
+        updated_progress = data['data']['SaveMediaListEntry']['progress']
+        print("updating progress..")
+        print(f"Anime progress updated! Latest watched episode: {updated_progress}")
+    else:
+        print(f"Error {response.status_code}: {response.text}")
+
 def main():
     # Load the JSON file
     json_file_path = 'response.json'  # Replace with the path to your JSON file
