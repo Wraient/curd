@@ -1,3 +1,5 @@
+# if you are trying to read this code, god help you.
+# this is how my implementation of the ani-cli code to get the anime works
 
 # search (anime_list.sh) -> tmp/anime_list 
 # anime_id -> episode_list.sh
@@ -58,14 +60,14 @@ def read_tmp(tmp_filename:str):
     
 def download_anilist_data(access_token, user_id):
     ''' dowlnoad anilist user data'''
-    print("downloading user data")
+    # print("downloading user data")
     anilist_user_data = get_user_data(access_token, user_id)
     with open("response.json", "w") as response:
         response.write(str(anilist_user_data))
     try:
         if anilist_user_data['data'] == None:
             print("Cannot process user data.")
-            print(anilist_user_data)
+            # print(anilist_user_data)
             exit()
     except:
         pass
@@ -83,7 +85,7 @@ def load_config():
 
     config_file_path = os.path.join(folder_name, file_name)
 
-    print(config_file_path)
+    # print(config_file_path)
     if not os.path.exists(os.path.join(config_file_path)):
         print("Creating config")
         
@@ -167,8 +169,8 @@ cleaned_text = re.sub(r'\(.*$', '', anime_name).strip()
 
 try:
     result = search_anime_by_title(anilist_user_data, cleaned_text)[0]
-    print(result)
-    anime_id = result['id']
+    # print(result)
+    media_id = result['id']
     progress = int(result['progress'])
     title = result['english_title']
     total_episodes = result['episodes']
@@ -176,16 +178,15 @@ try:
 except KeyboardInterrupt:
     print("bye")
     exit(0)
-except:
-    print("fucked up")
-    anime_id = 98460
-    progress = 0
+except Exception as e:
+    print(f"Searching anime error: {e}")
+    exit(1)
 
 try:
-    finding_anime = find_anime(get_all_anime(user_config["history_file"]), anilist_id=str(anime_id))
-    print(finding_anime)
+    finding_anime = find_anime(get_all_anime(user_config["history_file"]), anilist_id=str(media_id))
+    # print(finding_anime)
     if finding_anime:
-        print("AUTOMATICALLY BABY")
+        print("Found anime in history")
         write_to_tmp("id", finding_anime['allanime_id'])
         write_to_tmp("anime", finding_anime['name'])
     else:
@@ -196,7 +197,7 @@ except KeyboardInterrupt:
     print("bye")
     exit(0)
 except:
-    print("Cannot automate")
+    print("Please select anime")
     select_anime(anime_dict)
 
 run_script("episode_list")
@@ -215,26 +216,26 @@ last_episode = int(read_tmp("episode_list").split()[-1])
 
 anime_watch_history = get_all_anime(user_config['history_file'])
 # anime_watch_history[]
-anime_history = find_anime(anime_watch_history, anilist_id=anime_id, allanime_id=get_contents_of("id"))
+anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
 episode_completed = False
 if anime_history: # if it exists in local history
-    print(f"came in history {str(progress)}")
+    # print(f"came in history {str(progress)}")
     if int(anime_history['episode']) != progress+1: # if the upstream progress is ahead
         write_to_tmp("ep_no", str(int(progress)+1))
-        print(f"Starting anime from upstream {str(progress + 1)}")
+        # print(f"Starting anime from upstream {str(progress + 1)}")
     
         watching_ep = progress + 1
 
     elif int(anime_history['episode']) == int(progress)+1: # if the upstream progress is NOT ahead
         mpv_args.append(f"--start={anime_history['time']}")
         write_to_tmp("ep_no", anime_history['episode'])
-        print(f"STARTING ANIME FROM EPISODE {anime_history['episode']} {anime_history['time']}")
+        # print(f"STARTING ANIME FROM EPISODE {anime_history['episode']} {anime_history['time']}")
     
         watching_ep = int(anime_history['episode'])
 else: # if there is no history
-    print("no history found")
+    # print("no history found")
 
-    print("First time watch")
+    # print("First time watch")
 
     if progress == last_episode:
         user_input = input("Do you want to start this anime from beginning? (y/n):")
@@ -251,10 +252,12 @@ else: # if there is no history
 run_script("episode_url")
 
 # Print the result
-if anime_id:
-    print(f"Anime ID: {anime_id}")
+if media_id:
+    # print(f"Anime ID: {media_id}")
+    pass
 else:
     print("Anime not found.")
+    exit(1)
 
 links = load_links("scripts/tmp/links")
 
@@ -262,7 +265,7 @@ while True:
 
     try:
         salt = random.randint(0,1500)
-        print("SALT IS:"+str(salt))
+        # print("SALT IS:"+str(salt))
         start_video(links[0][1], salt, mpv_args)
 
         mpv_socket_path = "/tmp/mpvsocket"+str(salt)
@@ -294,21 +297,21 @@ while True:
                         # print("Playback time:", playback_time)
 
                         watched_percentage = get_percentage_watched(mpv_socket_path)
-                        print("watched percentage", watched_percentage)
+                        mpv_playback_speed = get_mpv_playback_speed(mpv_socket_path)
+                        # print("mpv speed", mpv_playback_speed)
+                        # print("watched percentage", watched_percentage)
                         if watched_percentage > mark_episode_as_completed_at:
 
                             episode_completed = True
                             binge_watching = True
-                        else:
-                            print(f"Episode not done: {watched_percentage} {mark_episode_as_completed_at}")
-                        # video_duration = subprocess.run(mpv_duration_command, shell=True, capture_output=True, text=True)
-
+                        # else:
+                            # print(f"Episode not done: {watched_percentage} {mark_episode_as_completed_at}")
+                        # video_duration = subprocess.run(mpv_duration_command, shell=True, capture_output=True, text=True):
+                    elif data['error'] == "property unavailable": # Stream has not started yet
+                        pass
                     else:
-                        if data['error'] == "property unavailable": # Stream has not started yet
-                            pass
-                        else:
-                            print("Error (330):", data["error"])
-                            break
+                        print("Error (330):", data["error"])
+                        break
                 except json.decoder.JSONDecodeError as e:
                     print("Error decoding JSON:", e)
                     break  # Exit the loop on unexpected JSON error
@@ -316,11 +319,11 @@ while True:
                     print("bye")
                     exit(0)
                 except Exception as e:
-                    print("some error fucked everything up:\n", e)
+                    print("Unknown:\n", e)
             else:
                 killing_error = str(result.stderr)
                 if killing_error == "property unavailable": # mpv is not started yet
-                    print("passing")
+                    # print("passing")
                     pass
                 else: # Stream has ended (maybe)
                     print("Error (346):", killing_error)
@@ -330,8 +333,10 @@ while True:
                     #     print("fuck")
                     #     print(f"Exception: {e}")
                     break
-    except ConnectionRefusedError:
+    except ConnectionRefusedError: # doesnt work ig
         print("Player Closed")
+        # print("have a great")
+        # exit(0)
     except KeyboardInterrupt:
         if watched_percentage > mark_episode_as_completed_at:
             watching_ep = int(watching_ep)+1
@@ -361,12 +366,7 @@ while True:
 
         watching_ep = int(watching_ep)+1
         write_to_tmp("ep_no", str(watching_ep))
-        print("here")
-        update_anime(user_config['history_file'], str(anime_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
-        print("inside")
-        print(f"Episode done: {type(watching_ep)}")
-        print(f"Episode done: {int(watching_ep)}")
-
+        update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
         anime_watch_history = get_all_anime(user_config['history_file'])
         # anime_watch_history[]
         anime_history = find_anime(anime_watch_history, anilist_id=anime_id, allanime_id=get_contents_of("id"))

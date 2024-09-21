@@ -4,7 +4,7 @@ import socket
 import subprocess
 
 def start_video(link, salt:str, args:list=[]):
-    print(f"SALT IS {salt}")
+    # print(f"SALT IS {salt}")
 
     args_str = ' '.join(args)
     

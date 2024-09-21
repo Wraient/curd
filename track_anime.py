@@ -81,7 +81,7 @@ def update_anime(database_file: str, anilist_id:str, allanime_id: str, episode:s
         for anime in updated_anime_list:
             writer.writerow([anime['anilist_id'], anime['allanime_id'], anime['episode'], anime['time'], anime['duration'], anime['name']])
     
-    print("Updated the file")
+    # print("Updated the file")
 
 def find_anime(anime_list, anilist_id=-1, allanime_id=-1):
     for anime in anime_list:
@@ -91,7 +91,7 @@ def find_anime(anime_list, anilist_id=-1, allanime_id=-1):
     return False
 
 # Example usage
-database_name = "/home/wraient/.local/share/curd/curd_history.txt"
+# database_name = "/home/wraient/.local/share/curd/curd_history.txt"
 # add_anime(database_name, '54321', '09876', '3', '100', '24',  'My Hero Academia')
 
 # # Print all anime entries
@@ -103,4 +103,4 @@ database_name = "/home/wraient/.local/share/curd/curd_history.txt"
 # update_anime(database_name, '12345', '67890', '13', '120', 'Attack on Titan')
 
 # # Print all anime entries after update
-print(get_all_anime(database_name))
+# print(get_all_anime(database_name))
