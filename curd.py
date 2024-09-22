@@ -281,8 +281,8 @@ episode_completed = False
 
 if anime_history: # if it exists in local history
     # print(f"came in history {str(progress)}")
+    # print(anime_history['episode'])
     if progress == last_episode or int(anime_history['episode']) == int(progress)+1:
-        # print(anime_history['episode'])
         if progress == last_episode:
             rewatching = True
         mpv_args.append(f"--start={anime_history['time']}")
@@ -302,9 +302,9 @@ else: # if history does not exist
         else:
             print("Starting last episode of anime")
             progress = last_episode - 1
-        watching_ep = int(progress)+1
-        write_to_tmp("ep_no", str(watching_ep))
-
+    watching_ep = int(progress)+1
+    write_to_tmp("ep_no", str(watching_ep))
+print(watching_ep)
 # os.system("{current_dir}/scripts/episode_url.sh")
 run_script("episode_url")
 
