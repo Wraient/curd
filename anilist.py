@@ -158,8 +158,8 @@ def main():
     else:
         print("Anime not found.")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
 
 
 # if __name__ == '__main__':
