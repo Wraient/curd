@@ -74,7 +74,37 @@ def download_anilist_data(access_token, user_id):
 
     return anilist_user_data
 
-def load_config():
+default_config = {
+    "player":"mpv",
+    "show_adult_content":False,
+    "history_file":"$HOME/.local/share/curd/curd_history.txt",
+    "subs_language":"english",
+    "sub_or_dub":"sub",
+    "next_episode_prompt":False,
+    "score_on_completion":False,
+    "save_mpv_speed": True,
+    "discord_presence": True,
+    "presence_script_path":"curddiscordpresence.py"
+}
+
+def get_userconfig_value(userconfig:dict, key:str):
+    return userconfig.get(key, default_config.get(key))
+
+def create_default_user_config(default_config):
+    output_string = ""
+    for key, value in default_config.items():
+        # Convert Python True/False to lowercase true/false
+        if isinstance(value, bool):
+            value_str = 'true' if value else 'false'
+        else:
+            value_str = str(value)
+            
+        # Write the key=value to the file with no spaces
+        output_string+=f"{key}={value_str}\n"
+
+    return output_string
+
+def load_config() -> dict:
     command = """echo $(xdg-user-dir CONFIG)"""
 
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
@@ -97,16 +127,7 @@ def load_config():
             pass
 
         with open(config_file_path, 'w') as file:
-            file.write(r"""player="mpv"
-show_adult_content=false
-history_file="$HOME/.local/share/curd/curd_history.txt"
-subs_language="english"
-sub_or_dub="sub"
-score_on_completion=true
-save_mpv_speed=true
-discord_presence=true
-presence_script_path="curddiscordpresence.py"
-""")
+            file.write(create_default_user_config(default_config))
             
     config_dict = {}
 
@@ -150,23 +171,14 @@ presence_script_path="curddiscordpresence.py"
 # START OF SCRIPT
 
 user_config = load_config() # python dictionary containing all the configs as key value pairs
-
 anilist_user_data = download_anilist_data(access_token, user_id)
-
 anime_dict = extract_anime_info(anilist_user_data)[0]
-
 select_anime(anime_dict)
-
 anime_name = read_tmp("anime")
-
 write_to_tmp("query", anime_name)
-
 run_script("anime_list")
-
 anime_dict = load_anime_data("scripts/tmp/anime_list")
-
-#clean anime name
-cleaned_text = re.sub(r'\(.*$', '', anime_name).strip()
+cleaned_text = re.sub(r'\(.*$', '', anime_name).strip() # clean anime name
 
 try:
     result = search_anime_by_title(anilist_user_data, cleaned_text)[0]
@@ -184,7 +196,7 @@ except Exception as e:
     exit(1)
 
 try:
-    finding_anime = find_anime(get_all_anime(user_config["history_file"]), anilist_id=str(media_id))
+    finding_anime = find_anime(get_all_anime(get_userconfig_value(user_config, "history_file")), anilist_id=str(media_id))
     # print(finding_anime)
     if finding_anime:
         print("Found anime in history")
@@ -203,29 +215,19 @@ except:
 
 run_script("episode_list")
 
-# with open("scripts/tmp/episode_list") as ep_list:
-#     temp = ep_list.read()
-#     temp = temp.split()
-#     last_episode = temp[-1]
-# ep_no = input(f"Enter episode number: (number of episodes: {last_episode})\n")
-
 binge_watching = False
-
 mpv_args = []
-
 last_episode = int(read_tmp("episode_list").split()[-1])
-
-anime_watch_history = get_all_anime(user_config['history_file'])
-# anime_watch_history[]
+anime_watch_history = get_all_anime(get_userconfig_value(user_config, 'history_file'))
 anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
 episode_completed = False
 rewatching = False
+
 if anime_history: # if it exists in local history
     # print(f"came in history {str(progress)}")
     if int(anime_history['episode']) != progress+1: # if the upstream progress is ahead
         write_to_tmp("ep_no", str(int(progress)+1))
         # print(f"Starting anime from upstream {str(progress + 1)}")
-    
         watching_ep = progress + 1
 
     elif int(anime_history['episode']) == int(progress)+1: # if the upstream progress is NOT ahead
@@ -265,18 +267,13 @@ while True:
         salt = random.randint(0,1500)
         # print("SALT IS:"+str(salt))
         start_video(links[0][1], salt, mpv_args)
-
         mpv_socket_path = "/tmp/mpvsocket"+str(salt)
-
         connect_mpv_command = """echo '{ "command": ["get_property", "playback-time"] }' | socat - """+mpv_socket_path
-        
         mpv_pos_command = """echo '{ "command": ["get_property", "time-pos"] }' | socat - """+mpv_socket_path
-        
         mpv_duration_command = """echo '{ "command": ["get_property", "duration"] }' | socat - """+mpv_socket_path
 
         while True:
             time.sleep(2)
-
             result = subprocess.run(connect_mpv_command, shell=True, capture_output=True, text=True)
             # print(result)
             if result.returncode == 0:
@@ -288,18 +285,13 @@ while True:
                     data = json.loads(output)
                     if data["error"] == "success":
                         playback_time = round(int(data["data"]), 2)
-
-                        # print(user_config['history_file'])
-
-                        update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(duration), str(title))
+                        update_anime(get_userconfig_value(user_config, 'history_file'), str(media_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(duration), str(title))
                         # print("Playback time:", playback_time)
-
                         watched_percentage = get_percentage_watched(mpv_socket_path)
                         mpv_playback_speed = get_mpv_playback_speed(mpv_socket_path)
                         # print("mpv speed", mpv_playback_speed)
                         # print("watched percentage", watched_percentage)
                         if watched_percentage > mark_episode_as_completed_at:
-
                             episode_completed = True
                             binge_watching = True
                         # else:
@@ -353,7 +345,7 @@ while True:
         if watched_percentage > mark_episode_as_completed_at and not rewatching:
             update_anime_progress(access_token, int(media_id), int(watching_ep))
             watching_ep = int(watching_ep)+1
-            update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
+            update_anime(get_userconfig_value(user_config, 'history_file'), str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
 
         print("bye")
         exit(0)
@@ -364,12 +356,12 @@ while True:
     current_ep = int(read_tmp("ep_no"))
 
     if current_ep == last_episode:
-        if binge_watching == True and not rewatching and user_config['score_on_completion'] == True: # Completed anime
+        if binge_watching == True and not rewatching and get_userconfig_value(user_config, 'score_on_completion') == True: # Completed anime
             anime_rating_by_user = input("Rate this anime:\n")
             update_anime_progress(access_token, int(media_id), int(watching_ep))
             rate_anime(access_token, media_id, anime_rating_by_user)
         print("completed anime.")
-        delete_anime(user_config['history_file'], media_id, get_contents_of("id"))
+        delete_anime(get_userconfig_value(user_config, 'history_file'), media_id, get_contents_of("id"))
         exit(0)
 
     else:
@@ -382,8 +374,8 @@ while True:
             update_anime_progress(access_token, int(media_id), int(watching_ep))
         watching_ep = int(watching_ep)+1
         write_to_tmp("ep_no", str(watching_ep))
-        update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
-        anime_watch_history = get_all_anime(user_config['history_file'])
+        update_anime(get_userconfig_value(user_config, 'history_file'), str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
+        anime_watch_history = get_all_anime(get_userconfig_value(user_config, 'history_file'))
         anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
         episode_completed = False
         run_script("episode_url")
@@ -391,18 +383,13 @@ while True:
         mpv_args = []
         watched_percentage = 0
 
-        if user_config['save_mpv_speed']==True:
+        if get_userconfig_value(user_config, 'save_mpv_speed') ==True:
             mpv_args.append(f'--speed={mpv_playback_speed}')
 
     # watching_ep = current_ep+1
-
-        # to_continue_or_not_to_continue = input("Continue? (y/n)\n")
-        # try:
-        #     # print("percentage watched",percentage_watched(playback_time, duration), "%")
-        # except:
-        #     pass
-        # if to_continue_or_not_to_continue.lower() == "yes" or to_continue_or_not_to_continue.lower() == "y" or to_continue_or_not_to_continue == "":
-        #     binge_watching = True
-            # ep_no_file
-        # else:
-        #     break
+        if get_userconfig_value(user_config, 'next_episode_prompt') == True:
+            to_continue_or_not_to_continue = input("Continue? (y/n)\n")
+            if to_continue_or_not_to_continue.lower() == "yes" or to_continue_or_not_to_continue.lower() == "y" or to_continue_or_not_to_continue == "":
+                binge_watching = True
+            else:
+                exit(0)
