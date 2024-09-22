@@ -137,6 +137,41 @@ def update_anime_progress(token: str, media_id: int, progress: int):
     else:
         print(f"Error {response.status_code}: {response.text}")
 
+def rate_anime(anilist_token, media_id, score):
+    url = 'https://graphql.anilist.co'
+    
+    # GraphQL mutation to rate anime
+    query = '''
+    mutation($mediaId: Int, $score: Float) {
+      SaveMediaListEntry(mediaId: $mediaId, score: $score) {
+        id
+        mediaId
+        score
+      }
+    }
+    '''
+    
+    # Variables for the mutation
+    variables = {
+        "mediaId": media_id,
+        "score": float(score)
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {anilist_token}",
+        "Content-Type": "application/json",
+    }
+    
+    response = requests.post(url, json={'query': query, 'variables': variables}, headers=headers)
+    
+    if response.status_code == 200:
+        data = response.json()
+        print(f"Successfully rated anime (mediaId: {media_id}) with score: {score}")
+        return data
+    else:
+        print(f"Failed to rate anime. Status Code: {response.status_code}, Response: {response.text}")
+        return None
+
 def main():
     # Load the JSON file
     json_file_path = 'response.json'  # Replace with the path to your JSON file

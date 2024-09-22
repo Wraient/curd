@@ -13,7 +13,7 @@ import subprocess
 import time
 
 from anilist import search_anime_by_title
-from anilist import get_user_data, get_anilist_user_id, update_anime_progress
+from anilist import get_user_data, get_anilist_user_id, update_anime_progress, rate_anime
 from select_link import load_links
 from start_video import start_video, send_command, get_percentage_watched, percentage_watched, get_mpv_playback_speed
 from select_anime import load_anime_data
@@ -243,7 +243,6 @@ else: # if there is no history
         else:
             print("Starting last episode of anime")
             progress = last_episode - 1
-
     watching_ep = int(progress)+1
     write_to_tmp("ep_no", str(watching_ep))
 
@@ -370,7 +369,6 @@ while True:
             update_anime_progress(access_token, int(media_id), int(watching_ep))
             rate_anime(access_token, media_id, anime_rating_by_user)
         print("completed anime.")
-        # TODO: Add way to rate the anime
         delete_anime(user_config['history_file'], media_id, get_contents_of("id"))
         exit(0)
 
