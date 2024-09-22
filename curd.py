@@ -6,6 +6,7 @@
 # anime_id -> episode_list.sh
 # episode_number -> episdoe_url.sh -> tmp/links 
 
+from pathlib import Path
 import re
 import os
 import json
@@ -167,9 +168,9 @@ def load_config() -> dict:
     #     return config_file.read()
 
 # START OF SCRIPT
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# print(current_dir)
+current_dir = Path(__file__).parent
+# current_dir = os.path.dirname(os.path.abspath(__file__))
+print(current_dir)
 if not os.path.exists(f"{current_dir}/scripts/tmp/"):
     try:
         os.makedirs(os.path.dirname(f"{current_dir}/scripts/tmp/"))
