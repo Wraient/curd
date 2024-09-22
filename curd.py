@@ -20,7 +20,6 @@ from start_video import start_video, send_command, get_percentage_watched, perce
 from select_anime import load_anime_data
 from select_anime import extract_anime_info
 from select_anime import select_anime
-
 from track_anime import add_anime, update_anime, get_all_anime, delete_anime, find_anime
 
 mark_episode_as_completed_at = 85
@@ -55,7 +54,7 @@ def read_tmp(tmp_filename:str):
             return ""
     except:
         return False
-    
+
 def download_anilist_data(access_token, user_id):
     ''' dowlnoad anilist user data'''
     # print("downloading user data")
@@ -175,10 +174,13 @@ if not os.path.exists("./scripts/tmp/"):
         pass
 
 access_token = os.environ.get('ANILIST_ACCESS_TOKEN')
+rewatching = False
 
 parser = argparse.ArgumentParser(description="Print a greeting message.")
 # parser.add_argument("--name", type=str, required=True, help="Your name")
 parser.add_argument("-new", action='store_true', help="Add new anime to watching (optional)")
+parser.add_argument("-sub", action='store_true', help="Anime audio type (optional)")
+parser.add_argument("-dub", action='store_true', help="Anime audio type (optional)")
 args = parser.parse_args()
 
 if args.new:
@@ -239,6 +241,16 @@ except:
     print("Please select anime")
     select_anime(anime_dict)
 
+if get_userconfig_value(user_config, "sub_or_dub")=="sub":
+    write_to_tmp("mode", "sub")
+elif get_userconfig_value(user_config, "sub_or_dub")=="dub":
+    write_to_tmp("mode", "dub")
+
+if args.sub: # arguments take precidence
+    write_to_tmp("mode", "sub")
+if args.dub:
+    write_to_tmp("mode", "dub")
+
 run_script("episode_list")
 
 binge_watching = False
@@ -247,22 +259,22 @@ last_episode = int(read_tmp("episode_list").split()[-1])
 anime_watch_history = get_all_anime(get_userconfig_value(user_config, 'history_file'))
 anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
 episode_completed = False
-rewatching = False
 
 if anime_history: # if it exists in local history
     # print(f"came in history {str(progress)}")
-    if int(anime_history['episode']) != progress+1: # if the upstream progress is ahead
-        write_to_tmp("ep_no", str(int(progress)+1))
-        # print(f"Starting anime from upstream {str(progress + 1)}")
-        watching_ep = progress + 1
-
-    elif int(anime_history['episode']) == int(progress)+1: # if the upstream progress is NOT ahead
+    if progress == last_episode or int(anime_history['episode']) == int(progress)+1:
+        # print(anime_history['episode'])
+        if progress == last_episode:
+            rewatching = True
         mpv_args.append(f"--start={anime_history['time']}")
-        write_to_tmp("ep_no", anime_history['episode'])
-        # print(f"STARTING ANIME FROM EPISODE {anime_history['episode']} {anime_history['time']}")
-    
         watching_ep = int(anime_history['episode'])
-else: # if there is no history
+        write_to_tmp("ep_no", str(watching_ep))
+        # print(f"STARTING ANIME FROM EPISODE {anime_history['episode']} {anime_history['time']}")
+    elif int(anime_history['episode']) < progress+1: # if the upstream progress is ahead
+        write_to_tmp("ep_no", str(int(progress)+1))
+        print(f"Starting anime from upstream {str(progress + 1)}")
+        watching_ep = progress + 1
+else: # if history does not exist
     if progress == last_episode:
         user_input = input("Do you want to start this anime from beginning? (y/n):")
         if user_input.lower() == "yes" or user_input.lower() == "y" or user_input.lower() == "":
@@ -271,8 +283,8 @@ else: # if there is no history
         else:
             print("Starting last episode of anime")
             progress = last_episode - 1
-    watching_ep = int(progress)+1
-    write_to_tmp("ep_no", str(watching_ep))
+        watching_ep = int(progress)+1
+        write_to_tmp("ep_no", str(watching_ep))
 
 # os.system("./scripts/episode_url.sh")
 run_script("episode_url")

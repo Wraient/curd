@@ -84,7 +84,8 @@ agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefo
 allanime_refr="https://allanime.to"
 allanime_base="allanime.day"
 allanime_api="https://api.${allanime_base}"
-mode="${ANI_CLI_MODE:-sub}"
+sub_or_dub=$(cat ./scripts/tmp/mode)
+mode="${ANI_CLI_MODE:-$sub_or_dub}"
 download_dir="${ANI_CLI_DOWNLOAD_DIR:-.}"
 quality="${ANI_CLI_QUALITY:-best}"
 case "$(uname -a)" in
