@@ -380,7 +380,6 @@ while True:
         last_episode = int(read_tmp("episode_list").split()[-1])
         if not rewatching:
             update_anime_progress(access_token, int(media_id), int(watching_ep))
-        else:
         watching_ep = int(watching_ep)+1
         write_to_tmp("ep_no", str(watching_ep))
         update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
