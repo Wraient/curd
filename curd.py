@@ -219,6 +219,7 @@ anime_watch_history = get_all_anime(user_config['history_file'])
 # anime_watch_history[]
 anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
 episode_completed = False
+rewatching = False
 if anime_history: # if it exists in local history
     # print(f"came in history {str(progress)}")
     if int(anime_history['episode']) != progress+1: # if the upstream progress is ahead
@@ -234,14 +235,11 @@ if anime_history: # if it exists in local history
     
         watching_ep = int(anime_history['episode'])
 else: # if there is no history
-    # print("no history found")
-
-    # print("First time watch")
-
     if progress == last_episode:
         user_input = input("Do you want to start this anime from beginning? (y/n):")
         if user_input.lower() == "yes" or user_input.lower() == "y" or user_input.lower() == "":
             progress = 0
+            rewatching = True
         else:
             print("Starting last episode of anime")
             progress = last_episode - 1
@@ -353,7 +351,7 @@ while True:
         # print("have a great")
         # exit(0)
     except KeyboardInterrupt:
-        if watched_percentage > mark_episode_as_completed_at:
+        if watched_percentage > mark_episode_as_completed_at and not rewatching:
             update_anime_progress(access_token, int(media_id), int(watching_ep))
             watching_ep = int(watching_ep)+1
             update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
@@ -367,19 +365,24 @@ while True:
     current_ep = int(read_tmp("ep_no"))
 
     if current_ep == last_episode:
+        if binge_watching == True and not rewatching and user_config['score_on_completion'] == True: # Completed anime
+            anime_rating_by_user = input("Rate this anime:\n")
+            update_anime_progress(access_token, int(media_id), int(watching_ep))
+            rate_anime(access_token, media_id, anime_rating_by_user)
         print("completed anime.")
         # TODO: Add way to rate the anime
         delete_anime(user_config['history_file'], media_id, get_contents_of("id"))
         exit(0)
 
     else:
-        print(f"Next episode is here, goshujin sama progress: {current_ep} {type(current_ep)}")
+        print(f"Starting next episode: {current_ep}")
         # write_to_tmp("ep_no", str(int(current_ep)+1))
     
-    if watched_percentage > mark_episode_as_completed_at: # BINGE WATCHING
+    if watched_percentage > mark_episode_as_completed_at: # IF BINGE WATCHING
         last_episode = int(read_tmp("episode_list").split()[-1])
-        update_anime_progress(access_token, int(media_id), int(watching_ep))
-
+        if not rewatching:
+            update_anime_progress(access_token, int(media_id), int(watching_ep))
+        else:
         watching_ep = int(watching_ep)+1
         write_to_tmp("ep_no", str(watching_ep))
         update_anime(user_config['history_file'], str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
