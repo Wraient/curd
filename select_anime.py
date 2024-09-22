@@ -137,8 +137,10 @@ def select_anime(anime_list):
         with open("scripts/tmp/anime", "w") as anime_name:
             anime_name.write(selected_anime)
 
-        with open("scripts/tmp/id", "w") as id:
-            id.write(selected_id)
+        with open("scripts/tmp/id", "w") as id_file:
+            id_file.write(str(selected_id))
+        
+        return True
 
     # Initialize curses
     try:

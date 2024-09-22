@@ -1,8 +1,50 @@
 import requests
 import json
 
+def search_anime_anilist(query, token):
+    url = "https://graphql.anilist.co"
 
-import requests
+    query_string = '''
+    query ($search: String) {
+      Page(page: 1, perPage: 10) {
+        media(search: $search, type: ANIME) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+        }
+      }
+    }
+    '''
+
+    variables = {
+        'search': query
+    }
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+
+    response = requests.post(url, json={'query': query_string, 'variables': variables}, headers=headers)
+    
+    if response.status_code == 200:
+        anime_list = response.json()['data']['Page']['media']
+        anime_dict = {}
+        for anime in anime_list:
+            if anime['title']['english']==None:
+                anime_dict[anime['title']['romaji']] = anime['id']
+            else:
+                anime_dict[anime['title']['english']] = anime['id']
+          
+        return anime_dict
+    else:
+        print(f"Failed to search for anime. Status Code: {response.status_code}, Response: {response.text}")
+        return {}
+
+
 
 def get_anilist_user_id(token):
     url = "https://graphql.anilist.co"
@@ -31,7 +73,33 @@ def get_anilist_user_id(token):
     else:
         raise Exception(f"Error: {response.status_code}, {response.text}")
 
-# Replace 'your_token' with your actual AniList token
+def add_anime_to_watching_list(anime_id: int, token: str):
+    url = "https://graphql.anilist.co"
+
+    mutation = '''
+    mutation ($mediaId: Int) {
+      SaveMediaListEntry (mediaId: $mediaId, status: CURRENT) {
+        id
+        status
+      }
+    }
+    '''
+
+    variables = {
+        'mediaId': anime_id
+    }
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+
+    response = requests.post(url, json={'query': mutation, 'variables': variables}, headers=headers)
+
+    if response.status_code == 200:
+        print(f"Anime with ID {anime_id} has been added to your watching list.")
+    else:
+        print(f"Failed to add anime. Status Code: {response.status_code}, Response: {response.text}")
 
 
 def get_user_data(access_token, user_id):

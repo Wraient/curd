@@ -11,9 +11,10 @@ import json
 import random
 import subprocess
 import time
+import argparse
 
 from anilist import search_anime_by_title
-from anilist import get_user_data, get_anilist_user_id, update_anime_progress, rate_anime
+from anilist import get_user_data, get_anilist_user_id, update_anime_progress, rate_anime, search_anime_anilist, add_anime_to_watching_list
 from select_link import load_links
 from start_video import start_video, send_command, get_percentage_watched, percentage_watched, get_mpv_playback_speed
 from select_anime import load_anime_data
@@ -23,17 +24,6 @@ from select_anime import select_anime
 from track_anime import add_anime, update_anime, get_all_anime, delete_anime, find_anime
 
 mark_episode_as_completed_at = 85
-
-access_token = os.environ.get('ANILIST_ACCESS_TOKEN')
-user_id, user_name = get_anilist_user_id(access_token)
-# user_id = os.environ.get('ANILIST_USER_ID')
-
-if access_token == None:
-    print("No Access_token provided.")
-    exit(1)
-
-# print(access_token)
-# print(user_id)
 
 def get_contents_of(tmp_file_name):
     with open(f"scripts/tmp/{tmp_file_name}", "r") as temp_file:
@@ -80,8 +70,8 @@ default_config = {
     "history_file":"$HOME/.local/share/curd/curd_history.txt",
     "subs_language":"english",
     "sub_or_dub":"sub",
-    "next_episode_prompt":False,
-    "score_on_completion":False,
+    "next_episode_prompt": False,
+    "score_on_completion": True,
     "save_mpv_speed": True,
     "discord_presence": True,
     "presence_script_path":"curddiscordpresence.py"
@@ -169,6 +159,27 @@ def load_config() -> dict:
     #     return config_file.read()
 
 # START OF SCRIPT
+access_token = os.environ.get('ANILIST_ACCESS_TOKEN')
+
+parser = argparse.ArgumentParser(description="Print a greeting message.")
+# parser.add_argument("--name", type=str, required=True, help="Your name")
+parser.add_argument("-new", action='store_true', help="Add new anime to watching (optional)")
+args = parser.parse_args()
+
+if args.new:
+    new_anime_name_ = input("Enter anime name: ")
+    temp__ = search_anime_anilist(new_anime_name_, access_token)
+    if temp__ :
+        select_anime(temp__)
+        add_anime_to_watching_list(read_tmp('id'), access_token)
+    else:
+        print("No anime found")
+
+user_id, user_name = get_anilist_user_id(access_token)
+
+if access_token == None:
+    print("No Access_token provided.")
+    exit(1)
 
 user_config = load_config() # python dictionary containing all the configs as key value pairs
 anilist_user_data = download_anilist_data(access_token, user_id)
