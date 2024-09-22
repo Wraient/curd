@@ -37,6 +37,10 @@ def write_to_tmp(tmp_filename:str, content:str):
         with open(f"scripts/tmp/{tmp_filename}", "w") as _:
             _.write(content)
         return True
+    except FileNotFoundError:
+        with open(f"./scripts/tmp/tmp_filename", "w") as _:
+            _.write(content)
+        return True
     except:
         return False
 
@@ -45,6 +49,10 @@ def read_tmp(tmp_filename:str):
         with open(f"scripts/tmp/{tmp_filename}", "r") as _:
             content = _.read()
             return content
+    except FileNotFoundError:
+        with open(f"./scripts/tmp/tmp_filename", "w") as _:
+            _.write("")
+            return ""
     except:
         return False
     
@@ -159,6 +167,13 @@ def load_config() -> dict:
     #     return config_file.read()
 
 # START OF SCRIPT
+
+if not os.path.exists("./scripts/tmp/"):
+    try:
+        os.makedirs(os.path.dirname("./scripts/tmp/"))
+    except:
+        pass
+
 access_token = os.environ.get('ANILIST_ACCESS_TOKEN')
 
 parser = argparse.ArgumentParser(description="Print a greeting message.")
