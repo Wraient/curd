@@ -191,7 +191,7 @@ if os.path.exists(access_token_path):
     # Read and use the token
     with open(access_token_path, "r") as token_file:
         access_token = token_file.read().strip()
-    print(f"Token found: {access_token}")
+    # print(f"Token found: {access_token}")
     
 else:
     print("Generate the token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token ")
