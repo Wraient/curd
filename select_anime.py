@@ -1,7 +1,8 @@
-
 import curses
+import os
 
 # Sample dictionary of anime names and their IDs
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
 def load_anime_data(filename):
     anime_list = {}
@@ -134,10 +135,10 @@ def select_anime(anime_list):
 
         # Print selected anime and its ID after exiting curses mode
         print(f"Selected Anime: {selected_anime}, ID: {selected_id}")
-        with open("scripts/tmp/anime", "w") as anime_name:
+        with open(f"{current_dir}/scripts/tmp/anime", "w") as anime_name:
             anime_name.write(selected_anime)
 
-        with open("scripts/tmp/id", "w") as id_file:
+        with open(f"{current_dir}/scripts/tmp/id", "w") as id_file:
             id_file.write(str(selected_id))
         
         return True

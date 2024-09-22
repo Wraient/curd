@@ -25,19 +25,19 @@ from track_anime import add_anime, update_anime, get_all_anime, delete_anime, fi
 mark_episode_as_completed_at = 85
 
 def get_contents_of(tmp_file_name):
-    with open(f"scripts/tmp/{tmp_file_name}", "r") as temp_file:
+    with open(f"{current_dir}/scripts/tmp/{tmp_file_name}", "r") as temp_file:
         return temp_file.read()
 
 def run_script(script: str):
-    os.system(f"./scripts/{script}.sh")
+    os.system(f"{current_dir}/scripts/{script}.sh")
 
 def write_to_tmp(tmp_filename:str, content:str):
     try:
-        with open(f"scripts/tmp/{tmp_filename}", "w") as _:
+        with open(f"{current_dir}/scripts/tmp/{tmp_filename}", "w") as _:
             _.write(content)
         return True
     except FileNotFoundError:
-        with open(f"./scripts/tmp/tmp_filename", "w") as _:
+        with open(f"{current_dir}/scripts/tmp/{tmp_filename}", "w") as _:
             _.write(content)
         return True
     except:
@@ -45,11 +45,11 @@ def write_to_tmp(tmp_filename:str, content:str):
 
 def read_tmp(tmp_filename:str):
     try:
-        with open(f"scripts/tmp/{tmp_filename}", "r") as _:
+        with open(f"{current_dir}/scripts/tmp/{tmp_filename}", "r") as _:
             content = _.read()
             return content
     except FileNotFoundError:
-        with open(f"./scripts/tmp/tmp_filename", "w") as _:
+        with open(f"{current_dir}/scripts/tmp/{tmp_filename}", "w") as _:
             _.write("")
             return ""
     except:
@@ -167,9 +167,11 @@ def load_config() -> dict:
 
 # START OF SCRIPT
 
-if not os.path.exists("./scripts/tmp/"):
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# print(current_dir)
+if not os.path.exists(f"{current_dir}/scripts/tmp/"):
     try:
-        os.makedirs(os.path.dirname("./scripts/tmp/"))
+        os.makedirs(os.path.dirname(f"{current_dir}/scripts/tmp/"))
     except:
         pass
 
@@ -192,7 +194,7 @@ if os.path.exists(access_token_path):
     with open(access_token_path, "r") as token_file:
         access_token = token_file.read().strip()
     # print(f"Token found: {access_token}")
-    
+
 else:
     print("Generate the token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token ")
     access_token = input("Token file not found. Please generate and enter your token: ")
@@ -222,7 +224,7 @@ select_anime(anime_dict)
 anime_name = read_tmp("anime")
 write_to_tmp("query", anime_name)
 run_script("anime_list")
-anime_dict = load_anime_data("scripts/tmp/anime_list")
+anime_dict = load_anime_data(f"{current_dir}/scripts/tmp/anime_list")
 cleaned_text = re.sub(r'\(.*$', '', anime_name).strip() # clean anime name
 
 try:
@@ -303,7 +305,7 @@ else: # if history does not exist
         watching_ep = int(progress)+1
         write_to_tmp("ep_no", str(watching_ep))
 
-# os.system("./scripts/episode_url.sh")
+# os.system("{current_dir}/scripts/episode_url.sh")
 run_script("episode_url")
 
 # Print the result
@@ -314,7 +316,7 @@ else:
     print("Anime not found.")
     exit(1)
 
-links = load_links("scripts/tmp/links")
+links = load_links(f"{current_dir}/scripts/tmp/links")
 
 while True:
 
@@ -434,7 +436,7 @@ while True:
         anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
         episode_completed = False
         run_script("episode_url")
-        links = load_links("scripts/tmp/links")
+        links = load_links(f"{current_dir}/scripts/tmp/links")
         mpv_args = []
         watched_percentage = 0
 

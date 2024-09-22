@@ -21,6 +21,6 @@ case "$(uname -a)" in
     *ish*) player_function="${ANI_CLI_PLAYER:-iSH}" ;;                # iOS (iSH)
     *) player_function="${ANI_CLI_PLAYER:-mpv}" ;;                    # Linux OS
 esac
-
-id=$(cat ./scripts/tmp/id)
-echo $(episodes_list "$id") > ./scripts/tmp/episode_list
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+id=$(cat $script_dir/tmp/id)
+echo $(episodes_list "$id") > $script_dir/tmp/episode_list

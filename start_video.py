@@ -11,7 +11,7 @@ def start_video(link, salt:str, args:list=[]):
     # Build the complete command string
     command = f"mpv {args_str} --input-ipc-server=/tmp/mpvsocket{salt} {link}"
 
-    subprocess.Popen(['alacritty', '-e', 'bash', '-c', command])
+    subprocess.Popen(command, shell=True)
     # os.system()
     # Path to the MPV socket
     # socket_path = f'/tmp/mpvsocket{salt}'

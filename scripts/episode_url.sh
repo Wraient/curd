@@ -57,6 +57,7 @@ select_quality() {
     printf "%s" "$result" | cut -d'>' -f2
 }
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # # gets embed urls, collects direct links into provider files, selects one with desired quality into $episode
 get_episode_url() {
     # get the embed urls of the selected episode
@@ -75,7 +76,7 @@ get_episode_url() {
     links=$(cat "$cache_dir"/* | sed 's|^Mp4-||g;/http/!d' | sort -g -r -s)
     rm -r "$cache_dir"
     episode=$(select_quality "$quality")
-    echo $links > ./scripts/tmp/links
+    echo $links > $script_dir/tmp/links
     [ -z "$episode" ] && die "Episode not released!"
 }
 
@@ -84,7 +85,7 @@ agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefo
 allanime_refr="https://allanime.to"
 allanime_base="allanime.day"
 allanime_api="https://api.${allanime_base}"
-sub_or_dub=$(cat ./scripts/tmp/mode)
+sub_or_dub=$(cat $script_dir/tmp/mode)
 mode="${ANI_CLI_MODE:-$sub_or_dub}"
 download_dir="${ANI_CLI_DOWNLOAD_DIR:-.}"
 quality="${ANI_CLI_QUALITY:-best}"
@@ -96,7 +97,6 @@ case "$(uname -a)" in
     *ish*) player_function="${ANI_CLI_PLAYER:-iSH}" ;;                # iOS (iSH)
     *) player_function="${ANI_CLI_PLAYER:-mpv}" ;;                    # Linux OS
 esac
-
-id=$(cat ./scripts/tmp/id)
-ep_no=$(cat ./scripts/tmp/ep_no)
+id=$(cat $script_dir/tmp/id)
+ep_no=$(cat $script_dir/tmp/ep_no)
 get_episode_url 

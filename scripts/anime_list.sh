@@ -22,9 +22,10 @@ case "$(uname -a)" in
 esac
 
 # Read the entire file content into a variable
-query=$(cat ./scripts/tmp/query)  # This is a shorthand for cat "$filename"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+query=$(cat $script_dir/tmp/query)  # This is a shorthand for cat "$filename"
 
 # query="one piece"
 anime_list=$(search_anime "$query")
 
-echo $anime_list > ./scripts/tmp/anime_list
+echo $anime_list > $script_dir/tmp/anime_list

@@ -1,5 +1,8 @@
 import curses
 import re
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
 def load_links(filename):
     links = []
@@ -45,7 +48,7 @@ def display_links(stdscr, links):
             stdscr.clear()
             stdscr.addstr(0, 0, f"Selected URL: {links[selected_index][1]}")
             # print("done")
-            with open("scripts/tmp/link", "w") as temp:
+            with open(f"{current_dir}/scripts/tmp/link", "w") as temp:
                 temp.write(links[selected_index][1])
             stdscr.refresh()
             # stdscr.getch()  # Wait for any key press to exit
@@ -55,7 +58,7 @@ def display_links(stdscr, links):
             break
 
 def main(stdscr):
-    filename = 'scripts/tmp/links'  # Replace with your file name
+    filename = f"{current_dir}/scripts/tmp/links"  # Replace with your file name
     links = load_links(filename)
     print("printed", display_links(stdscr, links))
     print("done")
