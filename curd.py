@@ -173,7 +173,6 @@ if not os.path.exists("./scripts/tmp/"):
     except:
         pass
 
-access_token = os.environ.get('ANILIST_ACCESS_TOKEN')
 rewatching = False
 
 parser = argparse.ArgumentParser(description="Print a greeting message.")
@@ -182,6 +181,28 @@ parser.add_argument("-new", action='store_true', help="Add new anime to watching
 parser.add_argument("-sub", action='store_true', help="Anime audio type (optional)")
 parser.add_argument("-dub", action='store_true', help="Anime audio type (optional)")
 args = parser.parse_args()
+
+user_config = load_config() # python dictionary containing all the configs as key value pairs
+history_file_path_ = os.path.expandvars(get_userconfig_value(user_config, "history_file"))
+history_file_path_ = os.path.dirname(history_file_path_)
+access_token_path = os.path.join(history_file_path_, "token")
+
+if os.path.exists(access_token_path):
+    # Read and use the token
+    with open(access_token_path, "r") as token_file:
+        access_token = token_file.read().strip()
+    print(f"Token found: {access_token}")
+    
+else:
+    print("Generate the token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token ")
+    access_token = input("Token file not found. Please generate and enter your token: ")
+    with open(access_token_path, "w") as token_file:
+        token_file.write(access_token)
+    print(f"Token saved to {access_token_path}")
+
+if access_token == None:
+    print("No Access_token provided.")
+    exit(1)
 
 if args.new:
     new_anime_name_ = input("Enter anime name: ")
@@ -194,11 +215,7 @@ if args.new:
 
 user_id, user_name = get_anilist_user_id(access_token)
 
-if access_token == None:
-    print("No Access_token provided.")
-    exit(1)
 
-user_config = load_config() # python dictionary containing all the configs as key value pairs
 anilist_user_data = download_anilist_data(access_token, user_id)
 anime_dict = extract_anime_info(anilist_user_data)[0]
 select_anime(anime_dict)
