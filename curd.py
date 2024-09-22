@@ -1,3 +1,4 @@
+#!/bin/python3
 # if you are trying to read this code, god help you.
 # this is how my implementation of the ani-cli code to get the anime works
 
@@ -102,7 +103,7 @@ def create_default_user_config(default_config):
     return output_string
 
 def load_config() -> dict:
-    command = """echo $(xdg-user-dir CONFIG)"""
+    command = """echo $HOME"""
 
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
     output = result.stdout.strip()
