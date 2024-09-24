@@ -9,7 +9,7 @@ def start_video(link, salt:str, args:list=[]):
     args_str = ' '.join(args)
     
     # Build the complete command string
-    command = f"mpv {args_str} --input-ipc-server=/tmp/mpvsocket{salt} {link}"
+    command = f"mpv {args_str} --no-terminal --really-quiet --input-ipc-server=/tmp/mpvsocket{salt} {link}"
 
     subprocess.Popen(command, shell=True)
     # os.system()

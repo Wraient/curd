@@ -24,7 +24,8 @@ get_links() {
         *) [ -n "$episode_link" ] && printf "%s\n" "$episode_link" ;;
     esac
     # echo $episode_link >> links
-    [ -z "$ANI_CLI_NON_INTERACTIVE" ] && printf "\033[1;32m%s\033[0m Links Fetched\n" "$provider_name" 1>&2
+    # [ -z "$ANI_CLI_NON_INTERACTIVE" ] && printf "\033[1;32m%s\033[0m Links Fetched\n" "$provider_name" 1>&2
+    [ -z "$ANI_CLI_NON_INTERACTIVE" ] 1>&2
 }
 
 # # innitialises provider_name and provider_id. First argument is the provider name, 2nd is the regex that matches that provider's link

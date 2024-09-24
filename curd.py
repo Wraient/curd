@@ -87,10 +87,12 @@ default_config = {
     "presence_script_path":"curddiscordpresence.py"
 }
 
-def convert_seconds_to_minutes(seconds):
+def convert_seconds_to_minutes(seconds) -> str:
     minutes = seconds // 60
     remaining_seconds = seconds % 60
-    return minutes, remaining_seconds
+    if remaining_seconds < 10:
+        return f"{minutes}:0{remaining_seconds}"
+    return f"{minutes}:{remaining_seconds}"
 
 def get_userconfig_value(userconfig:dict, key:str):
     return userconfig.get(key, default_config.get(key))
@@ -363,12 +365,11 @@ while True:
 
                             # print("mpv_status", mpv_status)
                             # print("is_paused", is_paused)
-                            playback_time_minutes = convert_seconds_to_minutes(playback_time)
                             if is_paused:
                                 # Update presence with paused status
                                 rpc.update(
                                     details=f"Watching {title}",
-                                    state=f"Episode {watching_ep} - {"{}:{}".format(playback_time_minutes[0], playback_time_minutes[1])} (Paused)",
+                                    state=f"Episode {watching_ep} - {convert_seconds_to_minutes(playback_time)} (Paused)",
                                     large_image=anime_image_url,
                                     large_text=title,
                                 )
@@ -376,7 +377,7 @@ while True:
                                 # Update presence with playback time
                                 rpc.update(
                                     details=f"Watching {title}",
-                                    state=f"Episode {watching_ep} - {playback_time_minutes[0]}:{playback_time_minutes[1]}/{duration}:00",
+                                    state=f"Episode {watching_ep} - {convert_seconds_to_minutes(playback_time)}/{duration}:00",
                                     large_image=anime_image_url,
                                     large_text=title,
                                 )
@@ -446,45 +447,47 @@ while True:
         exit(0)
     finally:
         binge_watching=True
+    try:
+        print("binge watching")
+        current_ep = int(read_tmp("ep_no"))
 
-    print("binge watching")
-    current_ep = int(read_tmp("ep_no"))
+        if current_ep == last_episode:
+            if binge_watching == True and not rewatching and get_userconfig_value(user_config, 'score_on_completion') == True: # Completed anime
+                anime_rating_by_user = input("Rate this anime:\n")
+                update_anime_progress(access_token, int(media_id), int(watching_ep))
+                rate_anime(access_token, media_id, anime_rating_by_user)
+            print("completed anime.")
+            delete_anime(get_userconfig_value(user_config, 'history_file'), media_id, get_contents_of("id"))
+            exit(0)
 
-    if current_ep == last_episode:
-        if binge_watching == True and not rewatching and get_userconfig_value(user_config, 'score_on_completion') == True: # Completed anime
-            anime_rating_by_user = input("Rate this anime:\n")
-            update_anime_progress(access_token, int(media_id), int(watching_ep))
-            rate_anime(access_token, media_id, anime_rating_by_user)
-        print("completed anime.")
-        delete_anime(get_userconfig_value(user_config, 'history_file'), media_id, get_contents_of("id"))
-        exit(0)
+        else:
+            print(f"Starting next episode: {current_ep}")
+            # write_to_tmp("ep_no", str(int(current_ep)+1))
+        
+        if watched_percentage > mark_episode_as_completed_at: # IF BINGE WATCHING
+            last_episode = int(read_tmp("episode_list").split()[-1])
+            if not rewatching:
+                update_anime_progress(access_token, int(media_id), int(watching_ep))
+            watching_ep = int(watching_ep)+1
+            write_to_tmp("ep_no", str(watching_ep))
+            update_anime(get_userconfig_value(user_config, 'history_file'), str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
+            anime_watch_history = get_all_anime(get_userconfig_value(user_config, 'history_file'))
+            anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
+            episode_completed = False
+            run_script("episode_url")
+            links = load_links(f"{current_dir}/scripts/tmp/links")
+            mpv_args = []
+            watched_percentage = 0
 
-    else:
-        print(f"Starting next episode: {current_ep}")
-        # write_to_tmp("ep_no", str(int(current_ep)+1))
-    
-    if watched_percentage > mark_episode_as_completed_at: # IF BINGE WATCHING
-        last_episode = int(read_tmp("episode_list").split()[-1])
-        if not rewatching:
-            update_anime_progress(access_token, int(media_id), int(watching_ep))
-        watching_ep = int(watching_ep)+1
-        write_to_tmp("ep_no", str(watching_ep))
-        update_anime(get_userconfig_value(user_config, 'history_file'), str(media_id), str(get_contents_of("id")), str(watching_ep), "0", str(duration), str(title))
-        anime_watch_history = get_all_anime(get_userconfig_value(user_config, 'history_file'))
-        anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
-        episode_completed = False
-        run_script("episode_url")
-        links = load_links(f"{current_dir}/scripts/tmp/links")
-        mpv_args = []
-        watched_percentage = 0
+            if get_userconfig_value(user_config, 'save_mpv_speed') ==True:
+                mpv_args.append(f'--speed={mpv_playback_speed}')
 
-        if get_userconfig_value(user_config, 'save_mpv_speed') ==True:
-            mpv_args.append(f'--speed={mpv_playback_speed}')
-
-    # watching_ep = current_ep+1
-        if get_userconfig_value(user_config, 'next_episode_prompt') == True:
-            to_continue_or_not_to_continue = input("Continue? (y/n)\n")
-            if to_continue_or_not_to_continue.lower() == "yes" or to_continue_or_not_to_continue.lower() == "y" or to_continue_or_not_to_continue == "":
-                binge_watching = True
-            else:
-                exit(0)
+        # watching_ep = current_ep+1
+            if get_userconfig_value(user_config, 'next_episode_prompt') == True:
+                to_continue_or_not_to_continue = input("Continue? (y/n)\n")
+                if to_continue_or_not_to_continue.lower() == "yes" or to_continue_or_not_to_continue.lower() == "y" or to_continue_or_not_to_continue == "":
+                    binge_watching = True
+                else:
+                    exit(0)
+    except Exception as e:
+        print(f"error:{e}\nMaybe try running again!")
