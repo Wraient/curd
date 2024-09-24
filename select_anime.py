@@ -134,7 +134,7 @@ def select_anime(anime_list):
             curses.endwin()
 
         # Print selected anime and its ID after exiting curses mode
-        print(f"Selected Anime: {selected_anime}, ID: {selected_id}")
+        # print(f"Selected Anime: {selected_anime}, ID: {selected_id}")
         with open(f"{current_dir}/scripts/tmp/anime", "w") as anime_name:
             anime_name.write(selected_anime)
 
