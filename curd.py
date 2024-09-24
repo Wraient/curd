@@ -13,18 +13,626 @@ import json
 import random
 import subprocess
 import time
+import curses
 import argparse
-
-from anilist import get_anime_image, search_anime_by_title
-from anilist import get_user_data, get_anilist_user_id, update_anime_progress, rate_anime, search_anime_anilist, add_anime_to_watching_list
-from select_link import load_links
-from start_video import get_mpv_paused_status, start_video, send_command, get_percentage_watched, percentage_watched, get_mpv_playback_speed
-from select_anime import load_anime_data
-from select_anime import extract_anime_info
-from select_anime import select_anime
-from track_anime import add_anime, update_anime, get_all_anime, delete_anime, find_anime
+import requests
+import csv
+import socket
 
 discord_client_id = "1287457464148820089"
+
+# ----------------------------------------------- AniList Functions ----------------------------------------
+
+def search_anime_anilist(query, token):
+    url = "https://graphql.anilist.co"
+
+    query_string = '''
+    query ($search: String) {
+      Page(page: 1, perPage: 10) {
+        media(search: $search, type: ANIME) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+        }
+      }
+    }
+    '''
+
+    variables = {
+        'search': query
+    }
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+
+    response = requests.post(url, json={'query': query_string, 'variables': variables}, headers=headers)
+    
+    if response.status_code == 200:
+        anime_list = response.json()['data']['Page']['media']
+        anime_dict = {}
+        for anime in anime_list:
+            if anime['title']['english']==None:
+                anime_dict[anime['title']['romaji']] = anime['id']
+            else:
+                anime_dict[anime['title']['english']] = anime['id']
+          
+        return anime_dict
+    else:
+        print(f"Failed to search for anime. Status Code: {response.status_code}, Response: {response.text}")
+        return {}
+
+def get_anilist_user_id(token):
+    url = "https://graphql.anilist.co"
+    query = '''
+    query {
+        Viewer {
+            id
+            name
+        }
+    }
+    '''
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    response = requests.post(url, json={"query": query}, headers=headers)
+    
+    if response.status_code == 200:
+        data = response.json()
+        user_id = data['data']['Viewer']['id']
+        user_name = data['data']['Viewer']['name']
+        return user_id, user_name
+    else:
+        raise Exception(f"Error: {response.status_code}, {response.text}")
+
+def add_anime_to_watching_list(anime_id: int, token: str):
+    url = "https://graphql.anilist.co"
+
+    mutation = '''
+    mutation ($mediaId: Int) {
+      SaveMediaListEntry (mediaId: $mediaId, status: CURRENT) {
+        id
+        status
+      }
+    }
+    '''
+
+    variables = {
+        'mediaId': anime_id
+    }
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+
+    response = requests.post(url, json={'query': mutation, 'variables': variables}, headers=headers)
+
+    if response.status_code == 200:
+        print(f"Anime with ID {anime_id} has been added to your watching list.")
+    else:
+        print(f"Failed to add anime. Status Code: {response.status_code}, Response: {response.text}")
+
+def get_anime_image(anilist_media_id):
+    url = "https://graphql.anilist.co"
+    query = '''
+    query ($id: Int) {
+      Media(id: $id) {
+        coverImage {
+          large
+        }
+      }
+    }
+    '''
+    variables = {
+        'id': anilist_media_id
+    }
+
+    # Make the API request
+    response = requests.post(url, json={'query': query, 'variables': variables})
+    
+    if response.status_code == 200:
+        data = response.json()
+        image_url = data['data']['Media']['coverImage']['large']
+        return image_url
+    else:
+        raise Exception(f"Failed to retrieve data from AniList API. Status Code: {response.status_code}")
+
+def get_user_data(access_token, user_id):
+  query = """
+  {
+    MediaListCollection(userId: %s, type: ANIME) {
+      lists {
+        entries {
+          media {
+            id
+            episodes
+            duration
+            title {
+              romaji
+              english
+            }
+          }
+          status
+          score
+          progress
+        }
+      }
+    }
+  }
+  """ % user_id
+
+  # Send the request
+  response = requests.post(
+      'https://graphql.anilist.co',
+      json={'query': query},
+      headers={'Authorization': f'Bearer {access_token}'}
+  )
+
+
+  # Print the response
+  return response.json()
+
+def load_json_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return json.load(file)
+
+def search_anime_by_title(json_data, search_title):
+    results = []
+    if search_title=="1P":
+      search_title = "ONE PIECE"
+    for list_item in json_data['data']['MediaListCollection']['lists']:
+        for entry in list_item['entries']:
+            media = entry['media']
+            romaji_title = media['title']['romaji']
+            english_title = media['title']['english']
+            episodes = media['episodes']
+            duration = media['duration']
+            try:
+              if search_title.lower() in romaji_title.lower() or search_title.lower() in english_title.lower():
+                  results.append({
+                      'id': media['id'],
+                      'progress': entry['progress'],
+                      'romaji_title': romaji_title,
+                      'english_title': english_title,
+                      'episodes': episodes,
+                      'duration': duration,
+                  })
+            except:
+              pass
+    
+    return results
+
+def update_anime_progress(token: str, media_id: int, progress: int):
+    url = "https://graphql.anilist.co"
+    
+    query = '''
+    mutation($mediaId: Int, $progress: Int) {
+        SaveMediaListEntry(mediaId: $mediaId, progress: $progress) {
+            id
+            progress
+        }
+    }
+    '''
+    
+    variables = {
+        "mediaId": media_id,  # The AniList ID of the anime
+        "progress": progress  # The number of the latest episode you watched
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    response = requests.post(url, json={"query": query, "variables": variables}, headers=headers)
+    
+    if response.status_code == 200:
+        data = response.json()
+        updated_progress = data['data']['SaveMediaListEntry']['progress']
+        print("updating progress..")
+        print(f"Anime progress updated! Latest watched episode: {updated_progress}")
+    else:
+        print(f"Error {response.status_code}: {response.text}")
+
+def rate_anime(anilist_token, media_id, score):
+    url = 'https://graphql.anilist.co'
+    
+    # GraphQL mutation to rate anime
+    query = '''
+    mutation($mediaId: Int, $score: Float) {
+      SaveMediaListEntry(mediaId: $mediaId, score: $score) {
+        id
+        mediaId
+        score
+      }
+    }
+    '''
+    
+    # Variables for the mutation
+    variables = {
+        "mediaId": media_id,
+        "score": float(score)
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {anilist_token}",
+        "Content-Type": "application/json",
+    }
+    
+    response = requests.post(url, json={'query': query, 'variables': variables}, headers=headers)
+    
+    if response.status_code == 200:
+        data = response.json()
+        print(f"Successfully rated anime (mediaId: {media_id}) with score: {score}")
+        return data
+    else:
+        print(f"Failed to rate anime. Status Code: {response.status_code}, Response: {response.text}")
+        return None
+
+# ----------------------------------------------- Select Anime Functions ----------------------------------------
+
+def load_anime_data(filename):
+    anime_list = {}
+    with open(filename, "r") as file:
+        data = file.read().strip()
+        entries = data.split("NEWLINEFROMHERE")
+        for entry in entries:
+            if entry.strip():
+                parts = entry.split(maxsplit=1)
+                if len(parts) == 2:
+                    anime_id, anime_name = parts
+                    anime_list[anime_name] = anime_id
+    return anime_list
+
+def extract_anime_info(json_data):
+    anime_info_list = []
+    anime_info_dict = {}
+
+    # Traverse the JSON structure to get to the list of entries
+    for list_entry in json_data['data']['MediaListCollection']['lists']:
+        for entry in list_entry['entries']:
+            anime = entry['media']
+            anime_info = {
+                'id': anime['id'],
+                'romaji_name': anime['title']['romaji'],
+                'english_name': anime['title']['english'],
+                'status': entry['status'],
+                'episodes': anime['episodes'],
+            }
+
+            if anime['title']['english'] == None:
+                anime['title']['english'] = anime['title']['romaji']
+            # if anime['title'][''] == None:
+            #     anime['title']['english'] = anime['title']['romanji']
+
+            anime_info_dict[anime['title']['english']] = str(anime['id']) # {anime_name: anime_id, ...}
+            anime_info_list.append(anime_info) # [{"id": anime_id, "romaji_name": anime_name_romnaji, "english_name": anime_name_english, status: anime_status}, ...]
+
+    return [anime_info_dict, anime_info_list]
+
+def select_anime(anime_list):
+    def main(stdscr):
+        # Clear screen
+        curses.curs_set(1)
+        stdscr.clear()
+        stdscr.refresh()
+
+        # Initial values
+        current_input = ""
+        filtered_list = list(anime_list.keys())
+        selected_index = 0
+        scroll_position = 0  # Position to start displaying the list from
+
+        try:
+            while True:
+                stdscr.clear()
+
+                # Get terminal dimensions
+                height, width = stdscr.getmaxyx()
+                list_height = height - 2  # Leave space for input and status lines
+
+                # Handle edge case where terminal window is too small
+                if height < 5 or width < len("Search Anime: ") + len(current_input):
+                    stdscr.addstr(0, 0, "Terminal window too small!")
+                    stdscr.refresh()
+                    continue
+
+                # Display search prompt
+                stdscr.addstr(0, 0, "Search Anime: " + current_input)
+
+                # Calculate scrolling parameters
+                if selected_index < scroll_position:
+                    scroll_position = selected_index
+                elif selected_index >= scroll_position + list_height:
+                    scroll_position = selected_index - list_height + 1
+
+                # Display filtered results with highlighting and scrolling
+                for idx in range(scroll_position, min(len(filtered_list), scroll_position + list_height)):
+                    anime = filtered_list[idx]
+                    display_idx = idx - scroll_position + 1
+                    if idx == selected_index:
+                        stdscr.addstr(display_idx, 0, anime, curses.A_REVERSE)
+                    else:
+                        stdscr.addstr(display_idx, 0, anime)
+
+                # Get user input
+                key = stdscr.getch()
+
+                # Handle key inputs
+                if key in [curses.KEY_BACKSPACE, 127, 8]:
+                    current_input = current_input[:-1]
+                    selected_index = 0
+                elif key == curses.KEY_DOWN:
+                    if selected_index < len(filtered_list) - 1:
+                        selected_index += 1
+                elif key == curses.KEY_UP:
+                    if selected_index > 0:
+                        selected_index -= 1
+                elif key == curses.KEY_ENTER or key in [10, 13]:  # Enter key
+                    if filtered_list:
+                        selected_anime = filtered_list[selected_index]
+                        selected_id = anime_list[selected_anime]
+                        break
+                elif key == ord('q'):  # Exit if 'q' is pressed
+                    return
+                else:
+                    try:
+                        current_input += chr(key)
+                        selected_index = 0
+                    except:
+                        pass
+
+                # Filter the anime list based on current input
+                filtered_list = [anime for anime in anime_list.keys() if current_input.lower() in anime.lower()]
+
+                # Ensure selected index is within bounds after filtering
+                if selected_index >= len(filtered_list):
+                    selected_index = len(filtered_list) - 1
+
+                # Refresh screen
+                stdscr.refresh()
+
+        except Exception as e:
+            # If an exception occurs, print it after exiting curses
+            curses.endwin()
+            print(f"An error occurred: {e}")
+        finally:
+            # Ensure curses always exits cleanly
+            curses.endwin()
+
+        # Print selected anime and its ID after exiting curses mode
+        # print(f"Selected Anime: {selected_anime}, ID: {selected_id}")
+        with open(f"/tmp/curd/curd_anime", "w") as anime_name:
+            anime_name.write(selected_anime)
+
+        with open(f"/tmp/curd/curd_id", "w") as id_file:
+            id_file.write(str(selected_id))
+        
+        return True
+
+    # Initialize curses
+    try:
+        curses.wrapper(main)
+    except:
+        pass
+
+# ----------------------------------------------- Select Link Functions ----------------------------------------
+
+
+def load_links(filename):
+    links = []
+    with open(filename, 'r') as file:
+        content = file.read()
+        # Regex to match the name and URL pairs
+        matches = re.findall(r'(\S+)\s*>\s*(https?://\S+)', content)
+        links = [(name, url) for name, url in matches]
+    return links
+
+def display_links(stdscr, links):
+    curses.curs_set(0)  # Hide the cursor
+    stdscr.clear()
+    h, w = stdscr.getmaxyx()
+    max_height = h - 1
+    start = 0
+    selected_index = 0
+
+    while True:
+        stdscr.clear()
+        for i in range(start, min(start + max_height, len(links))):
+            if i == selected_index:
+                stdscr.attron(curses.A_REVERSE)  # Highlight the selected item
+            stdscr.addstr(i - start, 0, links[i][0])
+            if i == selected_index:
+                stdscr.attroff(curses.A_REVERSE)  # Remove highlight after the line
+        stdscr.addstr(max_height, 0, "Use arrow keys to scroll, Enter to select, q to quit")
+        stdscr.refresh()
+        
+        key = stdscr.getch()
+        
+        if key == curses.KEY_DOWN:
+            if selected_index < len(links) - 1:
+                selected_index += 1
+                if selected_index >= start + max_height:
+                    start += 1
+        elif key == curses.KEY_UP:
+            if selected_index > 0:
+                selected_index -= 1
+                if selected_index < start:
+                    start -= 1
+        elif key == curses.KEY_ENTER or key == 10:  # Enter key
+            stdscr.clear()
+            stdscr.addstr(0, 0, f"Selected URL: {links[selected_index][1]}")
+            # print("done")
+            with open(f"/tmp/curd/curd_link", "w") as temp:
+                temp.write(links[selected_index][1])
+            stdscr.refresh()
+            # stdscr.getch()  # Wait for any key press to exit
+            return links[selected_index][1]
+            break
+        elif key == ord('q'):
+            break
+
+# ----------------------------------------------- Start Video Functions ----------------------------------------
+
+def start_video(link, salt:str, args:list=[]):
+    # print(f"SALT IS {salt}")
+
+    args_str = ' '.join(args)
+    
+    # Build the complete command string
+    command = f"mpv {args_str} --no-terminal --really-quiet --input-ipc-server=/tmp/curd/curd_mpvsocket{salt} {link}"
+
+    subprocess.Popen(command, shell=True)
+
+def send_command(ipc_socket_path, command):
+    """
+    Sends a command to the MPV IPC socket and returns the response.
+    """
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(ipc_socket_path)
+        command_str = json.dumps({"command": command}) + "\n"
+        s.sendall(command_str.encode())
+        response = s.recv(4096).decode()
+
+        try:
+            response_data = json.loads(response)
+            if 'data' in response_data:
+                return response_data['data']
+        except json.JSONDecodeError:
+            return None
+    return None
+
+def get_mpv_paused_status(ipc_socket_path):
+    status = send_command(ipc_socket_path, ["get_property", "pause"])
+    if status is not None:
+        return status
+    else:
+        return False
+
+def get_mpv_playback_speed(ipc_socket_path):
+    current_speed = send_command(ipc_socket_path, ["get_property", "speed"])
+    if current_speed is not None:
+        return current_speed
+    else:
+        print("Failed to get playback speed.")
+
+def get_percentage_watched(ipc_socket_path):
+    """
+    Calculates the percentage watched of the currently playing video.
+    """
+    # Get current playback time and total duration
+    current_time = send_command(ipc_socket_path, ["get_property", "time-pos"])
+    duration = send_command(ipc_socket_path, ["get_property", "duration"])
+
+    if current_time is not None and duration is not None and duration > 0:
+        percentage_watched = (current_time / duration) * 100
+        return percentage_watched
+    return None
+
+def percentage_watched(playback_time:int, duration:int):
+    if playback_time is not None and duration is not None and duration > 0:
+        video_percentage_watched = (playback_time/duration) * 100
+        return video_percentage_watched
+    return None
+
+# ----------------------------------------------- Track Anime Functions ----------------------------------------
+def add_anime(database_file, anilist_id, allanime_id, episode, time, duration, name):
+    with open(database_file, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([anilist_id, allanime_id, episode, time, duration, name])
+    print("Written to file")
+
+# Function to delete an anime entry by Anilist ID and Allanime ID
+def delete_anime(database_file, anilist_id, allanime_id):
+    anime_list = []
+    with open(database_file, mode='r', newline='') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            # Keep only entries that don't match the Anilist ID and Allanime ID
+            if row[0] != anilist_id or row[1] != allanime_id:
+                anime_list.append(row)
+
+    # Rewrite the database without the deleted entry
+    with open(database_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(anime_list)
+
+# Function to retrieve all anime entries
+def get_all_anime(database_file):
+    anime_list = []
+    with open(database_file, mode='r', newline='') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            anime_list.append({
+                'anilist_id': row[0],
+                'allanime_id': row[1],
+                'episode': row[2],
+                'time': row[3],
+                'duration': row[4],
+                'name': row[5]
+            })
+    return anime_list
+
+# Function to update or add a new anime entry
+def update_anime(database_file: str, anilist_id:str, allanime_id: str, episode:str, time:str, duration:str, name:str):
+    anime_list = get_all_anime(database_file)
+    updated = False
+
+    # Create a new list to store updated entries
+    updated_anime_list = []
+    
+    # Check if the anime entry exists and update it
+    for anime in anime_list:
+        if anime['anilist_id'] == anilist_id and anime['allanime_id'] == allanime_id:
+            updated_anime_list.append({
+                'anilist_id': anilist_id,
+                'allanime_id': allanime_id,
+                'episode': episode,
+                'time': time,
+                'duration': duration,
+                'name': name
+            })
+            updated = True
+        else:
+            updated_anime_list.append(anime)
+    
+    # If no entry was updated, add new entry
+    if not updated:
+        updated_anime_list.append({
+            'anilist_id': anilist_id,
+            'allanime_id': allanime_id,
+            'episode': episode,
+            'time': time,
+            'duration': duration,
+            'name': name
+        })
+
+    # Write all entries back to the file
+    with open(database_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        for anime in updated_anime_list:
+            writer.writerow([anime['anilist_id'], anime['allanime_id'], anime['episode'], anime['time'], anime['duration'], anime['name']])
+    
+    # print("Updated the file")
+
+def find_anime(anime_list, anilist_id=-1, allanime_id=-1):
+    for anime in anime_list:
+        if anime['anilist_id'] == anilist_id or anime['allanime_id'] == allanime_id:
+            return anime
+        
+    return False
+
+# ----------------------------------------------- Curd Functions ----------------------------------------
 
 def get_contents_of(tmp_file_name):
     with open(f"/tmp/curd/curd_{tmp_file_name}", "r") as temp_file:
@@ -59,16 +667,10 @@ def read_tmp(tmp_filename:str):
         print("fuck")
         return False
 
-# write_to_tmp("id", "this")
-# print(read_tmp("id"))
-# exit(0)
-
 def download_anilist_data(access_token, user_id):
     ''' dowlnoad anilist user data'''
     # print("downloading user data")
     anilist_user_data = get_user_data(access_token, user_id)
-    with open("response.json", "w") as response:
-        response.write(str(anilist_user_data))
     try:
         if anilist_user_data['data'] == None:
             print("Cannot process user data.")
@@ -182,11 +784,8 @@ def load_config() -> dict:
 
     return config_dict
 
-    # else:
-    # with open(config_file_path, "r") as config_file:
-    #     return config_file.read()
+# ----------------------------------------------- Start of script ----------------------------------------
 
-# START OF SCRIPT
 current_dir = Path(__file__).parent
 # current_dir = os.path.dirname(os.path.abspath(__file__))
 # print(current_dir)
@@ -238,7 +837,6 @@ if args.new:
 
 user_id, user_name = get_anilist_user_id(access_token)
 mark_episode_as_completed_at = get_userconfig_value(user_config, "percentage_to_mark_complete")
-print(mark_episode_as_completed_at)
 
 anilist_user_data = download_anilist_data(access_token, user_id)
 anime_dict = extract_anime_info(anilist_user_data)[0]
