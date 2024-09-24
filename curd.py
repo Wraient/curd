@@ -27,7 +27,7 @@ from track_anime import add_anime, update_anime, get_all_anime, delete_anime, fi
 discord_client_id = "1287457464148820089"
 
 def get_contents_of(tmp_file_name):
-    with open(f"{current_dir}/scripts/tmp/{tmp_file_name}", "r") as temp_file:
+    with open(f"/tmp/curd/curd_{tmp_file_name}", "r") as temp_file:
         return temp_file.read()
 
 def run_script(script: str):
@@ -35,27 +35,33 @@ def run_script(script: str):
 
 def write_to_tmp(tmp_filename:str, content:str):
     try:
-        with open(f"{current_dir}/scripts/tmp/{tmp_filename}", "w") as _:
+        with open(f"/tmp/curd/curd_{tmp_filename}", "w") as _:
             _.write(content)
         return True
     except FileNotFoundError:
-        with open(f"{current_dir}/scripts/tmp/{tmp_filename}", "w") as _:
+        with open(f"/tmp/curd/curd_{tmp_filename}", "w") as _:
             _.write(content)
         return True
     except:
+        print("fuck")
         return False
 
 def read_tmp(tmp_filename:str):
     try:
-        with open(f"{current_dir}/scripts/tmp/{tmp_filename}", "r") as _:
+        with open(f"/tmp/curd/curd_{tmp_filename}", "r") as _:
             content = _.read()
             return content
     except FileNotFoundError:
-        with open(f"{current_dir}/scripts/tmp/{tmp_filename}", "w") as _:
+        with open(f"/tmp/curd/curd_{tmp_filename}", "w") as _:
             _.write("")
             return ""
     except:
+        print("fuck")
         return False
+
+# write_to_tmp("id", "this")
+# print(read_tmp("id"))
+# exit(0)
 
 def download_anilist_data(access_token, user_id):
     ''' dowlnoad anilist user data'''
@@ -184,9 +190,9 @@ def load_config() -> dict:
 current_dir = Path(__file__).parent
 # current_dir = os.path.dirname(os.path.abspath(__file__))
 # print(current_dir)
-if not os.path.exists(f"{current_dir}/scripts/tmp/"):
+if not os.path.exists(f"/tmp/curd/"):
     try:
-        os.makedirs(os.path.dirname(f"{current_dir}/scripts/tmp/"))
+        os.makedirs(os.path.dirname(f"/tmp/curd/"))
     except:
         pass
 
@@ -240,7 +246,7 @@ select_anime(anime_dict)
 anime_name = read_tmp("anime")
 write_to_tmp("query", anime_name)
 run_script("anime_list")
-anime_dict = load_anime_data(f"{current_dir}/scripts/tmp/anime_list")
+anime_dict = load_anime_data(f"/tmp/curd/curd_anime_list")
 cleaned_text = re.sub(r'\(.*$', '', anime_name).strip() # clean anime name
 
 try:
@@ -332,7 +338,7 @@ else:
     print("Anime not found.")
     exit(1)
 
-links = load_links(f"{current_dir}/scripts/tmp/links")
+links = load_links(f"/tmp/curd/curd_links")
 
 if get_userconfig_value(user_config, "discord_presence") == True:
     from pypresence import Presence
@@ -347,11 +353,11 @@ while True:
         salt = random.randint(0,1500)
         # print("SALT IS:"+str(salt))
         start_video(links[0][1], salt, mpv_args)
-        mpv_socket_path = "/tmp/mpvsocket"+str(salt)
+        mpv_socket_path = "/tmp/curd/curd_mpvsocket"+str(salt)
         connect_mpv_command = """echo '{ "command": ["get_property", "playback-time"] }' | socat - """+mpv_socket_path
         is_paused = False
         while True:
-            time.sleep(2)
+            time.sleep(1)
             result = subprocess.run(connect_mpv_command, shell=True, capture_output=True, text=True)
             # print(result)
             if result.returncode == 0:
@@ -359,6 +365,7 @@ while True:
                 if not output:  # Check if output is empty
                     print("No data received. Retrying...")
                 try:
+                    time.sleep(1)
                     data = json.loads(output)
                     if data["error"] == "success":
                         playback_time = round(int(data["data"]), 2)
@@ -481,7 +488,7 @@ while True:
             anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
             episode_completed = False
             run_script("episode_url")
-            links = load_links(f"{current_dir}/scripts/tmp/links")
+            links = load_links(f"/tmp/curd/curd_links")
             mpv_args = []
             watched_percentage = 0
 
@@ -497,3 +504,4 @@ while True:
                     exit(0)
     except Exception as e:
         print(f"error:{e}\nMaybe try running again!")
+        exit(1)

@@ -22,5 +22,5 @@ case "$(uname -a)" in
     *) player_function="${ANI_CLI_PLAYER:-mpv}" ;;                    # Linux OS
 esac
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-id=$(cat $script_dir/tmp/id)
-echo $(episodes_list "$id") > $script_dir/tmp/episode_list
+id=$(cat /tmp/curd/curd_id)
+echo $(episodes_list "$id") > /tmp/curd/curd_episode_list

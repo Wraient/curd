@@ -23,9 +23,9 @@ esac
 
 # Read the entire file content into a variable
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-query=$(cat $script_dir/tmp/query)  # This is a shorthand for cat "$filename"
+query=$(cat /tmp/curd/curd_query)  # This is a shorthand for cat "$filename"
 
 # query="one piece"
 anime_list=$(search_anime "$query")
 
-echo $anime_list > $script_dir/tmp/anime_list
+echo $anime_list > /tmp/curd/curd_anime_list
