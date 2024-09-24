@@ -1,0 +1,5 @@
+__pycache__/*
+scripts/tmp/*
+response.json
+venv/*
+temp.py
