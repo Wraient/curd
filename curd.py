@@ -15,16 +15,17 @@ import subprocess
 import time
 import argparse
 
-from anilist import search_anime_by_title
+from anilist import get_anime_image, search_anime_by_title
 from anilist import get_user_data, get_anilist_user_id, update_anime_progress, rate_anime, search_anime_anilist, add_anime_to_watching_list
 from select_link import load_links
-from start_video import start_video, send_command, get_percentage_watched, percentage_watched, get_mpv_playback_speed
+from start_video import get_mpv_paused_status, start_video, send_command, get_percentage_watched, percentage_watched, get_mpv_playback_speed
 from select_anime import load_anime_data
 from select_anime import extract_anime_info
 from select_anime import select_anime
 from track_anime import add_anime, update_anime, get_all_anime, delete_anime, find_anime
 
 mark_episode_as_completed_at = 85
+discord_client_id = "1287457464148820089"
 
 def get_contents_of(tmp_file_name):
     with open(f"{current_dir}/scripts/tmp/{tmp_file_name}", "r") as temp_file:
@@ -85,6 +86,11 @@ default_config = {
     "discord_presence": True,
     "presence_script_path":"curddiscordpresence.py"
 }
+
+def convert_seconds_to_minutes(seconds):
+    minutes = seconds // 60
+    remaining_seconds = seconds % 60
+    return minutes, remaining_seconds
 
 def get_userconfig_value(userconfig:dict, key:str):
     return userconfig.get(key, default_config.get(key))
@@ -170,7 +176,7 @@ def load_config() -> dict:
 # START OF SCRIPT
 current_dir = Path(__file__).parent
 # current_dir = os.path.dirname(os.path.abspath(__file__))
-print(current_dir)
+# print(current_dir)
 if not os.path.exists(f"{current_dir}/scripts/tmp/"):
     try:
         os.makedirs(os.path.dirname(f"{current_dir}/scripts/tmp/"))
@@ -306,7 +312,7 @@ else: # if history does not exist
             progress = last_episode - 1
     watching_ep = int(progress)+1
     write_to_tmp("ep_no", str(watching_ep))
-print(watching_ep)
+# print(watching_ep)
 # os.system("{current_dir}/scripts/episode_url.sh")
 run_script("episode_url")
 
@@ -320,6 +326,13 @@ else:
 
 links = load_links(f"{current_dir}/scripts/tmp/links")
 
+if get_userconfig_value(user_config, "discord_presence") == True:
+    from pypresence import Presence
+    # print("imported pypresence")
+    rpc = Presence(discord_client_id)
+    rpc.connect()
+    anime_image_url = get_anime_image(media_id)
+
 while True:
 
     try:
@@ -328,28 +341,51 @@ while True:
         start_video(links[0][1], salt, mpv_args)
         mpv_socket_path = "/tmp/mpvsocket"+str(salt)
         connect_mpv_command = """echo '{ "command": ["get_property", "playback-time"] }' | socat - """+mpv_socket_path
-        mpv_pos_command = """echo '{ "command": ["get_property", "time-pos"] }' | socat - """+mpv_socket_path
-        mpv_duration_command = """echo '{ "command": ["get_property", "duration"] }' | socat - """+mpv_socket_path
-
+        is_paused = False
         while True:
             time.sleep(2)
             result = subprocess.run(connect_mpv_command, shell=True, capture_output=True, text=True)
             # print(result)
             if result.returncode == 0:
                 output = result.stdout.strip()
-
                 if not output:  # Check if output is empty
                     print("No data received. Retrying...")
                 try:
                     data = json.loads(output)
                     if data["error"] == "success":
                         playback_time = round(int(data["data"]), 2)
+                        if get_userconfig_value(user_config, "discord_presence") == True:
+                            mpv_status = get_mpv_paused_status(mpv_socket_path)
+                            if mpv_status == True:
+                                is_paused = True
+                            else:
+                                is_paused = False
+
+                            # print("mpv_status", mpv_status)
+                            # print("is_paused", is_paused)
+                            playback_time_minutes = convert_seconds_to_minutes(playback_time)
+                            if is_paused:
+                                # Update presence with paused status
+                                rpc.update(
+                                    details=f"Watching {title}",
+                                    state=f"Episode {watching_ep} - {"{}:{}".format(playback_time_minutes[0], playback_time_minutes[1])} (Paused)",
+                                    large_image=anime_image_url,
+                                    large_text=title,
+                                )
+                            else:
+                                # Update presence with playback time
+                                rpc.update(
+                                    details=f"Watching {title}",
+                                    state=f"Episode {watching_ep} - {playback_time_minutes[0]}:{playback_time_minutes[1]}/{duration}:00",
+                                    large_image=anime_image_url,
+                                    large_text=title,
+                                )
+
                         update_anime(get_userconfig_value(user_config, 'history_file'), str(media_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(duration), str(title))
                         # print("Playback time:", playback_time)
                         watched_percentage = get_percentage_watched(mpv_socket_path)
                         mpv_playback_speed = get_mpv_playback_speed(mpv_socket_path)
-                        # print("mpv speed", mpv_playback_speed)
-                        # print("watched percentage", watched_percentage)
+
                         if watched_percentage > mark_episode_as_completed_at:
                             episode_completed = True
                             binge_watching = True

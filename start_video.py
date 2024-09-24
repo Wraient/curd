@@ -37,6 +37,13 @@ def send_command(ipc_socket_path, command):
             return None
     return None
 
+def get_mpv_paused_status(ipc_socket_path):
+    status = send_command(ipc_socket_path, ["get_property", "pause"])
+    if status is not None:
+        return status
+    else:
+        return False
+
 def get_mpv_playback_speed(ipc_socket_path):
     current_speed = send_command(ipc_socket_path, ["get_property", "speed"])
     if current_speed is not None:
