@@ -24,7 +24,6 @@ from select_anime import extract_anime_info
 from select_anime import select_anime
 from track_anime import add_anime, update_anime, get_all_anime, delete_anime, find_anime
 
-mark_episode_as_completed_at = 85
 discord_client_id = "1287457464148820089"
 
 def get_contents_of(tmp_file_name):
@@ -80,6 +79,7 @@ default_config = {
     "history_file":"$HOME/.local/share/curd/curd_history.txt",
     "subs_language":"english",
     "sub_or_dub":"sub",
+    "percentage_to_mark_complete":85,
     "next_episode_prompt": False,
     "score_on_completion": True,
     "save_mpv_speed": True,
@@ -157,6 +157,11 @@ def load_config() -> dict:
                 elif value.lower() == "false":
                     value = False
                 
+                try:
+                    value = int(value)
+                except:
+                    pass
+
                 # Store in the dictionary
                 config_dict[key] = value
 
@@ -226,7 +231,8 @@ if args.new:
         print("No anime found")
 
 user_id, user_name = get_anilist_user_id(access_token)
-
+mark_episode_as_completed_at = get_userconfig_value(user_config, "percentage_to_mark_complete")
+print(mark_episode_as_completed_at)
 
 anilist_user_data = download_anilist_data(access_token, user_id)
 anime_dict = extract_anime_info(anilist_user_data)[0]
