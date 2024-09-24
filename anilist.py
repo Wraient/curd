@@ -101,6 +101,30 @@ def add_anime_to_watching_list(anime_id: int, token: str):
     else:
         print(f"Failed to add anime. Status Code: {response.status_code}, Response: {response.text}")
 
+def get_anime_image(anilist_media_id):
+    url = "https://graphql.anilist.co"
+    query = '''
+    query ($id: Int) {
+      Media(id: $id) {
+        coverImage {
+          large
+        }
+      }
+    }
+    '''
+    variables = {
+        'id': anilist_media_id
+    }
+
+    # Make the API request
+    response = requests.post(url, json={'query': query, 'variables': variables})
+    
+    if response.status_code == 200:
+        data = response.json()
+        image_url = data['data']['Media']['coverImage']['large']
+        return image_url
+    else:
+        raise Exception(f"Failed to retrieve data from AniList API. Status Code: {response.status_code}")
 
 def get_user_data(access_token, user_id):
 # Replace with your actual access token and user ID
