@@ -606,15 +606,21 @@ def mpv_send_command(ipc_socket_path, command):
             return None
     return None
 
+def seek_mpv(ipc_socket_path, time):
+    """Seek MPV to a specific time."""
+    command = ["seek", time, "absolute"]
+    return mpv_send_command(ipc_socket_path, command)
+
+
 def get_mpv_paused_status(ipc_socket_path):
-    status = send_command(ipc_socket_path, ["get_property", "pause"])
+    status = mpv_send_command(ipc_socket_path, ["get_property", "pause"])
     if status is not None:
         return status
     else:
         return False
 
 def get_mpv_playback_speed(ipc_socket_path):
-    current_speed = send_command(ipc_socket_path, ["get_property", "speed"])
+    current_speed = mpv_send_command(ipc_socket_path, ["get_property", "speed"])
     if current_speed is not None:
         return current_speed
     else:
@@ -625,13 +631,13 @@ def get_percentage_watched(ipc_socket_path):
     Calculates the percentage watched of the currently playing video.
     """
     # Get current playback time and total duration
-    current_time = send_command(ipc_socket_path, ["get_property", "time-pos"])
-    duration = send_command(ipc_socket_path, ["get_property", "duration"])
+    current_time = mpv_send_command(ipc_socket_path, ["get_property", "time-pos"])
+    duration = mpv_send_command(ipc_socket_path, ["get_property", "duration"])
 
     if current_time is not None and duration is not None and duration > 0:
         percentage_watched = (current_time / duration) * 100
         return percentage_watched
-    return None
+    return 0
 
 def percentage_watched(playback_time:int, duration:int):
     if playback_time is not None and duration is not None and duration > 0:
@@ -867,7 +873,8 @@ def load_config() -> dict:
                 
                 try:
                     value = int(value)
-                except:
+                except Exception as e:
+                    # print_error("878: {e}")
                     pass
 
                 # Store in the dictionary
@@ -876,8 +883,8 @@ def load_config() -> dict:
     if not os.path.exists(config_dict['history_file']):
         try:
             os.makedirs(os.path.dirname(config_dict['history_file']))
-        except:
-            pass
+        except Exception as e:
+            print_error("888: {e}")
         print("creating history file")
         with open(config_dict["history_file"], "w") as history_file:
             history_file.write("")
@@ -1130,7 +1137,7 @@ write_to_tmp("query", anime_name)
 run_script("anime_list")
 anime_dict = load_anime_data(f"/tmp/curd/curd_anime_list")
 cleaned_text = re.sub(r'\(.*$', '', anime_name).strip() # clean anime name
-
+# print(cleaned_text)
 try:
     result = search_anime_by_title(anilist_user_data, cleaned_text)[0]
     # print(result)
@@ -1150,7 +1157,7 @@ try:
     finding_anime = find_anime(get_all_anime(get_userconfig_value(user_config, "history_file")), anilist_id=str(media_id))
     # print(finding_anime)
     if finding_anime:
-        print("Found anime in history")
+        print("Found anime in local history")
         write_to_tmp("id", finding_anime['allanime_id'])
         write_to_tmp("anime", finding_anime['name'])
     else:
@@ -1160,7 +1167,8 @@ try:
 except KeyboardInterrupt:
     print("bye")
     exit(0)
-except:
+except Exception as e:
+    # print_error(e)
     print("Please select anime")
     select_anime(anime_dict)
 
@@ -1300,6 +1308,7 @@ while True:
                     print("bye")
                     exit(0)
                 except Exception as e:
+                    print_error(f"Unknown:\n {e}")
                     print("Unknown:\n", e)
             else:
                 killing_error = str(result.stderr)
@@ -1328,7 +1337,7 @@ while True:
                     #     print("fuck")
                     #     print(f"Exception: {e}")
                     break
-    except ConnectionRefusedError: # doesnt work ig
+    except ConnectionRefusedError: # execption is never reached ig
         print("Player Closed")
         # print("have a great")
         # exit(0)
@@ -1343,7 +1352,7 @@ while True:
     finally:
         binge_watching=True
     try:
-        print("binge watching")
+        # print("binge watching")
         current_ep = int(read_tmp("ep_no"))
 
         if current_ep == last_episode:
@@ -1356,7 +1365,7 @@ while True:
             exit(0)
 
         else:
-            print(f"Starting next episode: {current_ep}")
+            print(f"Starting next episode: {watching_ep}")
             # write_to_tmp("ep_no", str(int(current_ep)+1))
         
         if watched_percentage > mark_episode_as_completed_at: # IF BINGE WATCHING
@@ -1369,6 +1378,7 @@ while True:
             anime_watch_history = get_all_anime(get_userconfig_value(user_config, 'history_file'))
             anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
             episode_completed = False
+            print("Fetching anime")
             run_script("episode_url")
             links = load_links(f"/tmp/curd/curd_links")
             mpv_args = []
@@ -1385,5 +1395,7 @@ while True:
                 else:
                     exit(0)
     except Exception as e:
-        print(f"error:{e}\nMaybe try running again!")
+        # print(f"error:{e}\nMaybe try running again!")
+        print_error(f"{e}")
+        print("Maybe try running again!")
         exit(1)
