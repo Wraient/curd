@@ -235,7 +235,8 @@ def get_anime_id_and_image(anilist_media_id):
     if response.status_code == 200:
         data = response.json()
         image_url = data['data']['Media']['coverImage']['large']
-        return image_url
+        malId = data['data']['Media']['idMal']
+        return malId, image_url
     else:
         raise Exception(f"Failed to retrieve data from AniList API. Status Code: {response.status_code}")
 
