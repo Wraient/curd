@@ -15,6 +15,7 @@ import subprocess
 import time
 import curses
 import argparse
+import traceback
 import requests
 import csv
 import socket
@@ -494,7 +495,7 @@ def start_video(link, salt:str, args:list=[]):
 
     subprocess.Popen(command, shell=True)
 
-def send_command(ipc_socket_path, command):
+def mpv_send_command(ipc_socket_path, command):
     """
     Sends a command to the MPV IPC socket and returns the response.
     """
@@ -633,6 +634,12 @@ def find_anime(anime_list, anilist_id=-1, allanime_id=-1):
     return False
 
 # ----------------------------------------------- Curd Functions ----------------------------------------
+
+def print_error(message):
+    """Print error message with full traceback."""
+    print(f"ERROR: {message}")
+    print("Traceback:")
+    traceback.print_exc()
 
 def get_contents_of(tmp_file_name):
     with open(f"/tmp/curd/curd_{tmp_file_name}", "r") as temp_file:
