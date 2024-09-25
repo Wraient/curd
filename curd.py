@@ -18,9 +18,77 @@ import argparse
 import traceback
 import requests
 import csv
+import math
 import socket
+# pypresence is also imported later if user enabled it in the config
 
 discord_client_id = "1287457464148820089"
+
+# ----------------------------------------------- AniSkip Functions ----------------------------------------
+
+def get_aniskip_data(anime_id, episode):
+    base_url = "https://api.aniskip.com/v1/skip-times"
+    url = f"{base_url}/{anime_id}/{episode}?types=op&types=ed"
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        return response.text
+    except requests.RequestException as e:
+        print(f"Error fetching data from AniSkip API: {e}")
+        return None
+
+def round_time(time_value, precision=0):
+    """
+    Round a time value to a specified precision.
+    precision=0 rounds to the nearest second.
+    precision=1 rounds to the nearest tenth of a second, etc.
+    """
+    multiplier = 10 ** precision
+    return math.floor(time_value * multiplier + 0.5) / multiplier
+
+def parse_aniskip_response(response_text, time_precision=1):
+    if response_text is None:
+        return None
+    
+    data = json.loads(response_text)
+    
+    if not data['found']:
+        return None
+    
+    skip_intervals = {}
+    op = data['results'][0]['interval']
+    # print(op)
+    skip_intervals['op'] = {'start_time': round_time(op['start_time'], time_precision),
+                            'end_time': round_time(op['end_time'], time_precision),
+    }
+    ed = data['results'][-1]['interval']
+    skip_intervals['ed'] = {'start_time': round_time(ed['start_time'], time_precision),
+                            'end_time': round_time(ed['end_time'], time_precision),
+    }
+
+    return skip_intervals
+    
+def get_and_parse_aniskip_data(anime_id, episode, time_precision=1):
+    response_text = get_aniskip_data(anime_id, episode)
+    return parse_aniskip_response(response_text, time_precision)
+
+# Example usage
+# anime_id = 28223
+# episode = 10
+
+# skip_intervals = get_and_parse_aniskip_data(anime_id, episode)
+
+# print(skip_intervals)
+
+# exit(0)
+
+# if skip_intervals:
+#     for interval in skip_intervals:
+#         print(f"{interval['skip_type'].upper()} - Start: {interval['start_time']:.2f}, End: {interval['end_time']:.2f}")
+# else:
+#     print("No skip intervals found.")
+
 
 # ----------------------------------------------- AniList Functions ----------------------------------------
 
