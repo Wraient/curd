@@ -1077,15 +1077,12 @@ get_episode_url
 
 # ----------------------------------------------- Start of script ----------------------------------------
 
-create_anime_list()
-create_episode_list()
-create_episode_url()
-
 current_dir = Path(__file__).parent
 # current_dir = os.path.dirname(os.path.abspath(__file__))
 # print(current_dir)
 if not os.path.exists(f"/tmp/curd/"):
     try:
+        print("making tmp directory")
         os.makedirs(os.path.dirname(f"/tmp/curd/"))
     except:
         pass
@@ -1103,6 +1100,10 @@ user_config = load_config() # python dictionary containing all the configs as ke
 history_file_path_ = os.path.expandvars(get_userconfig_value(user_config, "history_file"))
 history_file_path_ = os.path.dirname(history_file_path_)
 access_token_path = os.path.join(history_file_path_, "token")
+
+create_anime_list()
+create_episode_list()
+create_episode_url()
 
 if os.path.exists(access_token_path):
     # Read and use the token
