@@ -685,15 +685,30 @@ def get_all_anime(database_file):
 
 # Function to update or add a new anime entry
 def update_anime(database_file: str, anilist_id:str, allanime_id: str, episode:str, time:str, duration:str, name:str):
-    anime_list = get_all_anime(database_file)
-    updated = False
+    try:
+        anime_list = get_all_anime(database_file)
+        updated = False
 
-    # Create a new list to store updated entries
-    updated_anime_list = []
-    
-    # Check if the anime entry exists and update it
-    for anime in anime_list:
-        if anime['anilist_id'] == anilist_id and anime['allanime_id'] == allanime_id:
+        # Create a new list to store updated entries
+        updated_anime_list = []
+        
+        # Check if the anime entry exists and update it
+        for anime in anime_list:
+            if anime['anilist_id'] == anilist_id and anime['allanime_id'] == allanime_id:
+                updated_anime_list.append({
+                    'anilist_id': anilist_id,
+                    'allanime_id': allanime_id,
+                    'episode': episode,
+                    'time': time,
+                    'duration': duration,
+                    'name': name
+                })
+                updated = True
+            else:
+                updated_anime_list.append(anime)
+        
+        # If no entry was updated, add new entry
+        if not updated:
             updated_anime_list.append({
                 'anilist_id': anilist_id,
                 'allanime_id': allanime_id,
@@ -702,28 +717,16 @@ def update_anime(database_file: str, anilist_id:str, allanime_id: str, episode:s
                 'duration': duration,
                 'name': name
             })
-            updated = True
-        else:
-            updated_anime_list.append(anime)
-    
-    # If no entry was updated, add new entry
-    if not updated:
-        updated_anime_list.append({
-            'anilist_id': anilist_id,
-            'allanime_id': allanime_id,
-            'episode': episode,
-            'time': time,
-            'duration': duration,
-            'name': name
-        })
 
-    # Write all entries back to the file
-    with open(database_file, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        for anime in updated_anime_list:
-            writer.writerow([anime['anilist_id'], anime['allanime_id'], anime['episode'], anime['time'], anime['duration'], anime['name']])
-    
-    # print("Updated the file")
+        # Write all entries back to the file
+        with open(database_file, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            for anime in updated_anime_list:
+                writer.writerow([anime['anilist_id'], anime['allanime_id'], anime['episode'], anime['time'], anime['duration'], anime['name']])
+        
+        # print("Updated the file")
+    except Exception as e:
+        print_error(f"This: {e}")
 
 def find_anime(anime_list, anilist_id=-1, allanime_id=-1):
     for anime in anime_list:
@@ -795,10 +798,11 @@ default_config = {
     "sub_or_dub":"sub",
     "percentage_to_mark_complete":85,
     "next_episode_prompt": False,
+    "skip_op": True,
+    "skip_ed": True,
     "score_on_completion": True,
     "save_mpv_speed": True,
-    "discord_presence": True,
-    "presence_script_path":"curddiscordpresence.py"
+    "discord_presence": False,
 }
 
 def convert_seconds_to_minutes(seconds) -> str:
@@ -1218,6 +1222,7 @@ else: # if history does not exist
     write_to_tmp("ep_no", str(watching_ep))
 # print(watching_ep)
 # os.system("{current_dir}/scripts/episode_url.sh")
+print("Fetching anime")
 run_script("episode_url")
 
 # Print the result
@@ -1235,7 +1240,14 @@ if get_userconfig_value(user_config, "discord_presence") == True:
     # print("imported pypresence")
     rpc = Presence(discord_client_id)
     rpc.connect()
-    anime_image_url = get_anime_image(media_id)
+    anime_mal_id, anime_image_url = get_anime_id_and_image(media_id)
+else:
+    anime_mal_id = get_anime_mal_id(media_id)
+
+# default variable declaration
+watched_percentage = 0
+is_paused = False
+mpv_playback_speed = 1.0
 
 while True:
 
@@ -1245,9 +1257,17 @@ while True:
         start_video(links[0][1], salt, mpv_args)
         mpv_socket_path = "/tmp/curd/curd_mpvsocket"+str(salt)
         connect_mpv_command = """echo '{ "command": ["get_property", "playback-time"] }' | socat - """+mpv_socket_path
-        is_paused = False
+        if get_userconfig_value(user_config, "skip_op") == True or get_userconfig_value(user_config, "skip_end"):
+            skip_intervals = get_and_parse_aniskip_data(anime_mal_id, watching_ep)
+            if skip_intervals == None:
+                print("failed to get skip times")
+
         while True:
-            time.sleep(1)
+            # Example usage
+            # anime_id = 28223
+            # episode = 10
+
+            time.sleep(2)
             result = subprocess.run(connect_mpv_command, shell=True, capture_output=True, text=True)
             # print(result)
             if result.returncode == 0:
@@ -1255,16 +1275,12 @@ while True:
                 if not output:  # Check if output is empty
                     print("No data received. Retrying...")
                 try:
-                    time.sleep(1)
                     data = json.loads(output)
                     if data["error"] == "success":
                         playback_time = round(int(data["data"]), 2)
                         if get_userconfig_value(user_config, "discord_presence") == True:
-                            mpv_status = get_mpv_paused_status(mpv_socket_path)
-                            if mpv_status == True:
-                                is_paused = True
-                            else:
-                                is_paused = False
+                            is_paused = get_mpv_paused_status(mpv_socket_path)
+                            
 
                             # print("mpv_status", mpv_status)
                             # print("is_paused", is_paused)
@@ -1284,6 +1300,16 @@ while True:
                                     large_image=anime_image_url,
                                     large_text=title,
                                 )
+                        if skip_intervals:
+                            if get_userconfig_value(user_config, "skip_op") == True:
+                                if round(int(playback_time)) > round(int(skip_intervals['op']['start_time'])) and round(int(playback_time)) < round(int(skip_intervals['op']['start_time']))+10:
+                                    print("skipped opening")
+                                    seek_mpv(mpv_socket_path, int(skip_intervals['op']['end_time']))
+                                    
+                            if get_userconfig_value(user_config, "skip_ed") == True:
+                                if round(int(playback_time)) > round(int(skip_intervals['ed']['start_time'])) and round(int(playback_time)) < round(int(skip_intervals['ed']['start_time']))+10:
+                                    print("skipped ending")
+                                    seek_mpv(mpv_socket_path, int(skip_intervals['ed']['end_time']))    
 
                         update_anime(get_userconfig_value(user_config, 'history_file'), str(media_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(duration), str(title))
                         # print("Playback time:", playback_time)
