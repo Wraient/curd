@@ -48,7 +48,7 @@ python3 curd.py
 
 |Description            | Command          |
 ------------------------|------------------
-|*Watching new anime*   | ` curd -new`     |
+|*Watching new anime*   | `curd -new`     |
 |*Watch dub*            | `curd -dub`      |
 |*Watch sub*            | `curd -sub`      |
 |*Help*                 | `curd -help`     |
