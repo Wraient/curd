@@ -5,6 +5,9 @@ A cli application to stream anime with [Anilist](https://anilist.co/) integratio
 
 Note: This currently only works for linux.
 
+## Demo Video
+https://github.com/user-attachments/assets/3b9578aa-396a-4313-8254-d0954041d6ba
+
 ## Features
 - Stream anime online
 - Update anime in Anilist after completion
