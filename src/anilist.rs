@@ -1,4 +1,3 @@
-
 use reqwest::{header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE}, Error};
 use serde::{Serialize, Deserialize};
 
@@ -37,12 +36,12 @@ struct ResponseData {
 }
 
 #[derive(Deserialize, Debug)]
-struct ApiResponse {
-    data: ResponseData,
+pub struct ApiResponse {
+    pub data: ResponseData,
 }
 
 pub struct AnimeApi {
-    token: String,
+    pub token: String,
 }
 
 impl AnimeApi {
@@ -95,10 +94,27 @@ impl AnimeApi {
             let api_response: ApiResponse = response.json()?;
             Ok(api_response)
         } else {
-            Err(Error)
+            Ok(ApiResponse{
+                data: ResponseData{
+                    Page: Page {
+                        media: vec![
+                            Media{
+                                id: 0,
+                                title: Title {
+                                    romaji: String::from("None"),
+                                    english: Some(String::from("None")),
+                                    native: String::from("None"),
+                                }
+                            }
+                        ]
+                    }
+                }
+            })
         }
+
     }
 }
+
 
 
 // pub fn parse_search_anime_anilist(response_text: &String) -> Result<Vec<SkipTime>, Box<dyn Error>>{
