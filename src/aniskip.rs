@@ -4,7 +4,7 @@ use std::{error::Error};
 use serde_json;
 
 // Define the enum for SkipType
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub enum SkipType {
     #[serde(rename = "op")]
     Op,
@@ -98,6 +98,24 @@ pub fn parse_aniskip_response(response_text: &String) -> Result<Vec<SkipTime>, B
     }).collect();
 
     Ok(skip_times)
+}
+
+pub fn get_skip_times(anime_id: i32, episode_number: i32) -> Result<Vec<SkipTime>, Box<dyn Error>> {
+
+    let mut response_text = get_aniskip_data(anime_id, episode_number);
+
+    match response_text{
+        Ok(response_text) => {
+            let skip_times = parse_aniskip_response(&response_text);
+            // println!("{:?}", skip_times);
+            skip_times
+            
+        },
+        Err(e) => {
+            // eprintln!("Error fetching Aniskip data: {}", e);
+            Err(e)
+        }
+    }
 }
 
 // Unit tests
