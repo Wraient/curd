@@ -1,5 +1,5 @@
 use std::process::exit;
-use curd_rust::aniskip::{get_aniskip_data, parse_aniskip_response, SkipInterval, SkipType, SkipResult, SkipTime};
+use curd::aniskip::{get_aniskip_data, parse_aniskip_response, SkipInterval, SkipType, SkipResult, SkipTime};
 
 fn main() {
     let anime_id = 21;

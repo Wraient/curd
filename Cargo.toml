@@ -1,5 +1,5 @@
 [package]
-name = "curd-rust"
+name = "curd"
 version = "0.1.0"
 edition = "2021"
 
