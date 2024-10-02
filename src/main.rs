@@ -32,20 +32,15 @@ fn main() {
         }
     );
 
-    match anime.skip_times {
-        Some(anime_skip) => {
-            for skip in anime_skip{
-                // println!("{:?}", anime.skip_times);
-                if skip.kind == SkipType::Op {
+    anime.skip_times.map(|anime_skip| { // Would never fail as it would be 0 0
+        for skip in anime_skip {
+            if skip.kind == SkipType::Op {
                 println!("Opening: {} to {}", skip.intervals.start, skip.intervals.end);
-                }
-                else if skip.kind == SkipType::Ed {
-                    println!("Ending: {} to {}", skip.intervals.start, skip.intervals.end);
-                }
             }
-        },
-        None => {
-            println!("Failed to get skip times");
+            else if skip.kind == SkipType::Ed {
+                println!("Ending: {} to {}", skip.intervals.start, skip.intervals.end);
+            }
         }
-    }
+    });
+
 }
