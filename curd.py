@@ -1094,6 +1094,7 @@ parser = argparse.ArgumentParser(description="Print a greeting message.")
 parser.add_argument("-new", action='store_true', help="Add new anime to watching (optional)")
 parser.add_argument("-sub", action='store_true', help="Anime audio type (optional)")
 parser.add_argument("-dub", action='store_true', help="Anime audio type (optional)")
+parser.add_argument("-c", action='store_true', help="Continue last watching anime (optional)")
 args = parser.parse_args()
 
 user_config = load_config() # python dictionary containing all the configs as key value pairs
@@ -1133,10 +1134,9 @@ if args.new:
 
 user_id, user_name = get_anilist_user_id(access_token)
 mark_episode_as_completed_at = get_userconfig_value(user_config, "percentage_to_mark_complete")
-
 anilist_user_data = download_anilist_data(access_token, user_id)
 anime_dict = extract_anime_info(anilist_user_data)[0]
-select_anime(anime_dict)
+if not args.c: select_anime(anime_dict)
 anime_name = read_tmp("anime")
 write_to_tmp("query", anime_name)
 run_script("anime_list")
