@@ -3,7 +3,7 @@ use curd::aniskip::{get_aniskip_data, parse_aniskip_response, SkipInterval, Skip
 
 fn main() {
     let anime_id = 21;
-    let episode_no = 1;
+    let episode_no = 2;
 
     let mut response_text = get_aniskip_data(anime_id, episode_no);
 
@@ -27,9 +27,4 @@ fn main() {
         }
     }
 
-
-    // Ok(())
-
-    // let number: f32 = 35.303;
-    // println!("{}", number.round());
 }

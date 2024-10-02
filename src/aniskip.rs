@@ -129,9 +129,31 @@ mod tests {
     }
 
     #[test]
-    fn tmp(){
-        // let skip = SkipTime::new(SkipType::Ed, 1100, 1130);
-        // println!("{}", skip);
+    fn test_parse_aniskip_response(){
+        let anime_id = 21;
+        let episode_no = 2;
+    
+        let response_text = get_aniskip_data(anime_id, episode_no);
+    
+        match response_text{
+            Ok(response_text) => {
+                let skip_times = parse_aniskip_response(&response_text);
+                // println!("{:?}", skip_times);
+                match skip_times{
+                    Ok(skip_times) => {
+                        for skip in skip_times {
+                            println!("{:?} skips from {} to {}", skip.kind, skip.intervals.start, skip.intervals.end);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e}")
+                    }
+                }
+            },
+            Err(e) => {
+                eprintln!("Error fetching Aniskip data, Are you connected to internet?: {}", e);
+            }
+        }
     }
 
 }
