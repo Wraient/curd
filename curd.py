@@ -489,6 +489,8 @@ def select_anime(anime_list):
 
                 # Filter the anime list based on current input
                 filtered_list = [anime for anime in anime_list.keys() if current_input.lower() in anime.lower()]
+                if filtered_list == []:
+                    filtered_list = ['No anime found']
 
                 # Ensure selected index is within bounds after filtering
                 if selected_index >= len(filtered_list):
@@ -500,6 +502,10 @@ def select_anime(anime_list):
         except Exception as e:
             # If an exception occurs, print it after exiting curses
             curses.endwin()
+            print("e:", e)
+            if e == 'No anime found':
+                print("No anime selected.")
+                exit(0)
             print(f"An error occurred: {e}")
         finally:
             # Ensure curses always exits cleanly
