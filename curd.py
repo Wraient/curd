@@ -20,6 +20,7 @@ import requests
 import csv
 import math
 import socket
+import urllib.parse
 # pypresence is also imported later if user enabled it in the config
 
 discord_client_id = "1287457464148820089"
@@ -1115,6 +1116,17 @@ if os.path.exists(access_token_path):
 else:
     print("Generate the token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token ")
     access_token = input("Token file not found. Please generate and enter your token: ")
+    if "https://" in access_token:
+        # Parse the URL fragment part (after the `#`)
+        fragment = urllib.parse.urlparse(access_token).fragment
+
+        # Parse the fragment into components
+        params = urllib.parse.parse_qs(fragment)
+
+        # Extract only the access_token without any other parameters
+        access_token = params['access_token'][0] if 'access_token' in params else None
+
+        print("Access Token:", access_token)
     with open(access_token_path, "w") as token_file:
         token_file.write(access_token)
     print(f"Token saved to {access_token_path}")
