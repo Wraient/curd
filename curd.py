@@ -476,7 +476,10 @@ def select_anime(anime_list):
                 elif key == curses.KEY_ENTER or key in [10, 13]:  # Enter key
                     if filtered_list:
                         selected_anime = filtered_list[selected_index]
-                        selected_id = anime_list[selected_anime]
+                        if selected_anime == 'Add new anime':
+                            selected_id = "0"
+                        else:
+                            selected_id = anime_list[selected_anime]
                         break
                 elif key == ord('q'):  # Exit if 'q' is pressed
                     return
@@ -490,7 +493,8 @@ def select_anime(anime_list):
                 # Filter the anime list based on current input
                 filtered_list = [anime for anime in anime_list.keys() if current_input.lower() in anime.lower()]
                 if filtered_list == []:
-                    filtered_list = ['No anime found']
+                    tmp_anime_list = {'Add new anime': '0'}
+                    filtered_list = [anime for anime in tmp_anime_list.keys()]
 
                 # Ensure selected index is within bounds after filtering
                 if selected_index >= len(filtered_list):
@@ -503,7 +507,7 @@ def select_anime(anime_list):
             # If an exception occurs, print it after exiting curses
             curses.endwin()
             print("e:", e)
-            if e == 'No anime found':
+            if e == 'Add new anime':
                 print("No anime selected.")
                 exit(0)
             print(f"An error occurred: {e}")
@@ -1139,20 +1143,29 @@ if access_token == None:
     print("No Access_token provided.")
     exit(1)
 
-if args.new:
+user_id, user_name = get_anilist_user_id(access_token)
+mark_episode_as_completed_at = get_userconfig_value(user_config, "percentage_to_mark_complete")
+anilist_user_data = download_anilist_data(access_token, user_id)
+anime_dict = extract_anime_info(anilist_user_data)[0]
+
+if not args.c and not args.new:
+    select_anime(anime_dict)
+    if read_tmp("anime") == 'Add new anime':
+        search_for_new_anime = True
+    else:
+        search_for_new_anime = False
+
+if args.new or search_for_new_anime:
     new_anime_name_ = input("Enter anime name: ")
     temp__ = search_anime_anilist(new_anime_name_, access_token)
     if temp__ :
         select_anime(temp__)
         add_anime_to_watching_list(read_tmp('id'), access_token)
+        anilist_user_data = download_anilist_data(access_token, user_id)
     else:
         print("No anime found")
+        exit(0)
 
-user_id, user_name = get_anilist_user_id(access_token)
-mark_episode_as_completed_at = get_userconfig_value(user_config, "percentage_to_mark_complete")
-anilist_user_data = download_anilist_data(access_token, user_id)
-anime_dict = extract_anime_info(anilist_user_data)[0]
-if not args.c and not args.new: select_anime(anime_dict)
 anime_name = read_tmp("anime")
 write_to_tmp("query", anime_name)
 run_script("anime_list")
