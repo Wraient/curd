@@ -513,11 +513,9 @@ def select_anime(anime_list):
 
         # Print selected anime and its ID after exiting curses mode
         # print(f"Selected Anime: {selected_anime}, ID: {selected_id}")
-        with open(f"/tmp/curd/curd_anime", "w") as anime_name:
-            anime_name.write(selected_anime)
+        write_to_tmp("anime", selected_anime)
 
-        with open(f"/tmp/curd/curd_id", "w") as id_file:
-            id_file.write(str(selected_id))
+        write_to_tmp("id", str(selected_id))
         
         return True
 
