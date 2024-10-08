@@ -904,6 +904,20 @@ def load_config() -> dict:
 
     return config_dict
 
+def update_script():
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    script_file = os.path.join(script_dir, "curd.py")
+
+    response = requests.get("https://raw.githubusercontent.com/Wraient/curd/refs/heads/main/curd.py")
+    if response.status_code == 200:
+    # Write the content to a file
+        with open(script_file, 'wb') as file:
+            file.write(response.content)
+            print(f"Script update successfully at {script_file}")
+    else:
+        print(f"Failed to download the script. Status code: {response.status_code}")
+        exit(1)
+
 # ----------------------------------------------- Create Bash Script ----------------------------------------
 
 def create_anime_list():
@@ -1104,7 +1118,12 @@ parser.add_argument("-new", action='store_true', help="Add new anime to watching
 parser.add_argument("-sub", action='store_true', help="Anime audio type (optional)")
 parser.add_argument("-dub", action='store_true', help="Anime audio type (optional)")
 parser.add_argument("-c", action='store_true', help="Continue last watching anime (optional)")
+parser.add_argument("-u", action='store_true', help="Update script (optional)")
 args = parser.parse_args()
+
+if args.u:
+    update_script()
+    exit(0)
 
 user_config = load_config() # python dictionary containing all the configs as key value pairs
 history_file_path_ = os.path.expandvars(get_userconfig_value(user_config, "history_file"))
