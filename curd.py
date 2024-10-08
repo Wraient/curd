@@ -1120,7 +1120,7 @@ parser.add_argument("-dub", action='store_true', help="Anime audio type (optiona
 parser.add_argument("-c", action='store_true', help="Continue last watching anime (optional)")
 parser.add_argument("-u", action='store_true', help="Update script (optional)")
 args = parser.parse_args()
-#test
+
 if args.u:
     update_script()
     exit(0)
