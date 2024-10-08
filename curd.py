@@ -520,7 +520,16 @@ def select_anime(anime_list):
         write_to_tmp("anime", selected_anime)
 
         write_to_tmp("id", str(selected_id))
+
+        history_file_path_ = os.path.expandvars(get_userconfig_value(user_config, "history_file"))
+        history_file_path_ = os.path.dirname(history_file_path_)
         
+        with open(os.path.join(history_file_path_, "curd_id"), "w") as temp1_:
+            temp1_.write(selected_id)
+        
+        with open(os.path.join(history_file_path_, "curd_anime"), "w") as temp1_:
+            temp1_.write(selected_anime)
+
         return True
 
     # Initialize curses
@@ -1167,12 +1176,20 @@ mark_episode_as_completed_at = get_userconfig_value(user_config, "percentage_to_
 anilist_user_data = download_anilist_data(access_token, user_id)
 anime_dict = extract_anime_info(anilist_user_data)[0]
 
+search_for_new_anime = False
 if not args.c and not args.new:
     select_anime(anime_dict)
     if read_tmp("anime") == 'Add new anime':
         search_for_new_anime = True
-    else:
-        search_for_new_anime = False
+
+if args.c:
+    try:
+        with open(os.path.join(history_file_path_, "curd_id"), "r") as temp1_:
+            write_to_tmp("id", temp1_.read())
+        with open(os.path.join(history_file_path_, "curd_anime"), "r") as temp1_:
+            write_to_tmp("anime", temp1_.read())
+    except:
+        print("No previous history!")
 
 if args.new or search_for_new_anime:
     new_anime_name_ = input("Enter anime name: ")
@@ -1299,7 +1316,6 @@ is_paused = False
 mpv_playback_speed = 1.0
 
 while True:
-
     try:
         salt = random.randint(0,1500)
         # print("SALT IS:"+str(salt))
