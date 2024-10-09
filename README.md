@@ -36,6 +36,11 @@ https://github.com/user-attachments/assets/3b9578aa-396a-4313-8254-d0954041d6ba
 ```
 paru -Sy curd
 ```
+or
+```
+yay -Sy curd
+```
+
 </details>
 
 
