@@ -1456,7 +1456,7 @@ while True:
             exit(0)
 
         else:
-            print(f"Starting next episode: {watching_ep}")
+            print(f"Starting next episode: {int(watching_ep)+1}")
             # write_to_tmp("ep_no", str(int(current_ep)+1))
         
         if watched_percentage > mark_episode_as_completed_at: # IF BINGE WATCHING
