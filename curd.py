@@ -1452,7 +1452,7 @@ while True:
                 update_anime_progress(access_token, int(media_id), int(watching_ep))
                 rate_anime(access_token, media_id, anime_rating_by_user)
             print("completed anime.")
-            delete_anime(get_userconfig_value(user_config, 'history_file'), media_id, get_contents_of("id"))
+            delete_anime(get_userconfig_value(user_config, 'history_file'), str(media_id), str(get_contents_of("id")))
             exit(0)
 
         else:
@@ -1490,3 +1490,4 @@ while True:
         print_error(f"{e}")
         print("Maybe try running again!")
         exit(1)
+
