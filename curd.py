@@ -1128,6 +1128,7 @@ parser.add_argument("-sub", action='store_true', help="Anime audio type (optiona
 parser.add_argument("-dub", action='store_true', help="Anime audio type (optional)")
 parser.add_argument("-c", action='store_true', help="Continue last watching anime (optional)")
 parser.add_argument("-u", action='store_true', help="Update script (optional)")
+parser.add_argument("-e", action='store_true', help="Edit config (optional)")
 args = parser.parse_args()
 
 if args.u:
@@ -1138,6 +1139,11 @@ user_config = load_config() # python dictionary containing all the configs as ke
 history_file_path_ = os.path.expandvars(get_userconfig_value(user_config, "history_file"))
 history_file_path_ = os.path.dirname(history_file_path_)
 access_token_path = os.path.join(history_file_path_, "token")
+
+if args.e:
+    os.system("vim "+get_userconfig_value(user_config, "history_file"))
+    print("updated config.")
+    exit(0)
 
 create_anime_list()
 create_episode_list()
