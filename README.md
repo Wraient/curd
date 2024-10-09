@@ -34,13 +34,7 @@ https://github.com/user-attachments/assets/3b9578aa-396a-4313-8254-d0954041d6ba
 <details><summary>Arch Linux</summary>
   
 ```
-sudo pacman -Sy socat
-git clone https://github.com/wraient/curd --depth=1
-cd ./curd
-python -m venv venv
-source ./venv/bin/activate
-pip3 install pypresence requests
-python3 curd.py
+paru -Sy curd
 ```
 </details>
 
