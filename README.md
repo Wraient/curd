@@ -53,7 +53,10 @@ yay -Sy curd
 |*Watching new anime*   | `curd -new`     |
 |*Watch dub*            | `curd -dub`      |
 |*Watch sub*            | `curd -sub`      |
+|*Update the script*    | `curd -u`        |
+|*Continue last watching anime* |`curd -c`  |
 |*Help*                 | `curd -help`     |
+
 
 Script is made in a way that you use it for one session of watching.
 
@@ -62,8 +65,10 @@ You can quit it anytime and the resume time would be saved in the history file
 more settings can be found at config file.
 config file is located at ```~/.config/curd/curd.conf```
 
-**Help**
-    
+## Dependencies
+- mpv - Video player (vlc support might be added later)
+- Socat - Receive output of mpv commands
+- Pypresence - Discord RPC
     
 ## API Used
 - [Anilist API](https://anilist.gitbook.io/anilist-apiv2-docs) - To update user data and download user data
