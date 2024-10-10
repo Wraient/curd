@@ -35,6 +35,9 @@ def get_aniskip_data(anime_id, episode):
         response = requests.get(url)
         response.raise_for_status()  # Raise an exception for bad status codes
         return response.text
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
     except requests.RequestException as e:
         print(f"Error fetching data from AniSkip API: {e}")
         return None
@@ -301,6 +304,9 @@ def search_anime_by_title(json_data, search_title):
                       'episodes': episodes,
                       'duration': duration,
                   })
+            except KeyboardInterrupt:
+                print("bye")
+                exit(0)
             except:
               pass
     
@@ -503,6 +509,9 @@ def select_anime(anime_list):
                 # Refresh screen
                 stdscr.refresh()
 
+        except KeyboardInterrupt:
+            print("bye")
+            exit(0)
         except Exception as e:
             # If an exception occurs, print it after exiting curses
             curses.endwin()
@@ -535,6 +544,9 @@ def select_anime(anime_list):
     # Initialize curses
     try:
         curses.wrapper(main)
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
     except:
         pass
 
@@ -620,6 +632,9 @@ def mpv_send_command(ipc_socket_path, command):
             response_data = json.loads(response)
             if 'data' in response_data:
                 return response_data['data']
+        except KeyboardInterrupt:
+            print("bye")
+            exit(0)
         except json.JSONDecodeError:
             return None
     return None
@@ -743,6 +758,9 @@ def update_anime(database_file: str, anilist_id:str, allanime_id: str, episode:s
                 writer.writerow([anime['anilist_id'], anime['allanime_id'], anime['episode'], anime['time'], anime['duration'], anime['name']])
         
         # print("Updated the file")
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
     except Exception as e:
         print_error(f"This: {e}")
 
@@ -803,6 +821,9 @@ def download_anilist_data(access_token, user_id):
             print("Cannot process user data.")
             # print(anilist_user_data)
             exit()
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
     except:
         pass
 
@@ -865,6 +886,9 @@ def load_config() -> dict:
         try:
             print("making folder")
             os.makedirs(folder_name)
+        except KeyboardInterrupt:
+            print("bye")
+            exit(0)
         except:
             print("error making folder")
             pass
@@ -895,6 +919,9 @@ def load_config() -> dict:
                 
                 try:
                     value = int(value)
+                except KeyboardInterrupt:
+                    print("bye")
+                    exit(0)
                 except Exception as e:
                     # print_error("878: {e}")
                     pass
@@ -1108,112 +1135,124 @@ get_episode_url
     os.chmod(script_path, 0o755)
 
 # ----------------------------------------------- Start of script ----------------------------------------
+try:
+    current_dir = Path(__file__).parent
+    # current_dir = os.path.dirname(os.path.abspath(__file__))
+    # print(current_dir)
+    if not os.path.exists(f"/tmp/curd/"):
+        try:
+            print("making tmp directory")
+            os.makedirs(os.path.dirname(f"/tmp/curd/"))
+        except KeyboardInterrupt:
+            print("bye")
+            exit(0)
+        except:
+            pass
 
-current_dir = Path(__file__).parent
-# current_dir = os.path.dirname(os.path.abspath(__file__))
-# print(current_dir)
-if not os.path.exists(f"/tmp/curd/"):
-    try:
-        print("making tmp directory")
-        os.makedirs(os.path.dirname(f"/tmp/curd/"))
-    except:
-        pass
+    rewatching = False
 
-rewatching = False
+    parser = argparse.ArgumentParser(description="Print a greeting message.")
+    # parser.add_argument("--name", type=str, required=True, help="Your name")
+    parser.add_argument("-new", action='store_true', help="Add new anime to watching (optional)")
+    parser.add_argument("-sub", action='store_true', help="Anime audio type (optional)")
+    parser.add_argument("-dub", action='store_true', help="Anime audio type (optional)")
+    parser.add_argument("-c", action='store_true', help="Continue last watching anime (optional)")
+    parser.add_argument("-u", action='store_true', help="Update script (optional)")
+    parser.add_argument("-e", action='store_true', help="Edit config (optional)")
+    args = parser.parse_args()
 
-parser = argparse.ArgumentParser(description="Print a greeting message.")
-# parser.add_argument("--name", type=str, required=True, help="Your name")
-parser.add_argument("-new", action='store_true', help="Add new anime to watching (optional)")
-parser.add_argument("-sub", action='store_true', help="Anime audio type (optional)")
-parser.add_argument("-dub", action='store_true', help="Anime audio type (optional)")
-parser.add_argument("-c", action='store_true', help="Continue last watching anime (optional)")
-parser.add_argument("-u", action='store_true', help="Update script (optional)")
-parser.add_argument("-e", action='store_true', help="Edit config (optional)")
-args = parser.parse_args()
-
-if args.u:
-    update_script()
-    exit(0)
-
-user_config = load_config() # python dictionary containing all the configs as key value pairs
-history_file_path_ = os.path.expandvars(get_userconfig_value(user_config, "history_file"))
-history_file_path_ = os.path.dirname(history_file_path_)
-access_token_path = os.path.join(history_file_path_, "token")
-
-if args.e:
-    os.system("vim "+get_userconfig_value(user_config, "history_file"))
-    print("updated config.")
-    exit(0)
-
-create_anime_list()
-create_episode_list()
-create_episode_url()
-
-if os.path.exists(access_token_path):
-    # Read and use the token
-    with open(access_token_path, "r") as token_file:
-        access_token = token_file.read().strip()
-    # print(f"Token found: {access_token}")
-
-else:
-    print("Generate the token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token ")
-    access_token = input("Token file not found. Please generate and enter your token: ")
-    if "https://" in access_token:
-        # Parse the URL fragment part (after the `#`)
-        fragment = urllib.parse.urlparse(access_token).fragment
-
-        # Parse the fragment into components
-        params = urllib.parse.parse_qs(fragment)
-
-        # Extract only the access_token without any other parameters
-        access_token = params['access_token'][0] if 'access_token' in params else None
-
-        print("Access Token:", access_token)
-    with open(access_token_path, "w") as token_file:
-        token_file.write(access_token)
-    print(f"Token saved to {access_token_path}")
-
-if access_token == None:
-    print("No Access_token provided.")
-    exit(1)
-
-user_id, user_name = get_anilist_user_id(access_token)
-mark_episode_as_completed_at = get_userconfig_value(user_config, "percentage_to_mark_complete")
-anilist_user_data = download_anilist_data(access_token, user_id)
-anime_dict = extract_anime_info(anilist_user_data)[0]
-
-search_for_new_anime = False
-if not args.c and not args.new:
-    select_anime(anime_dict)
-    if read_tmp("anime") == 'Add new anime':
-        search_for_new_anime = True
-
-if args.c:
-    try:
-        with open(os.path.join(history_file_path_, "curd_id"), "r") as temp1_:
-            write_to_tmp("id", temp1_.read())
-        with open(os.path.join(history_file_path_, "curd_anime"), "r") as temp1_:
-            write_to_tmp("anime", temp1_.read())
-    except:
-        print("No previous history!")
-
-if args.new or search_for_new_anime:
-    new_anime_name_ = input("Enter anime name: ")
-    temp__ = search_anime_anilist(new_anime_name_, access_token)
-    if temp__ :
-        select_anime(temp__)
-        add_anime_to_watching_list(read_tmp('id'), access_token)
-        anilist_user_data = download_anilist_data(access_token, user_id)
-    else:
-        print("No anime found")
+    if args.u:
+        update_script()
         exit(0)
 
-anime_name = read_tmp("anime")
-write_to_tmp("query", anime_name)
-run_script("anime_list")
-anime_dict = load_anime_data(f"/tmp/curd/curd_anime_list")
-cleaned_text = re.sub(r'\(.*$', '', anime_name).strip() # clean anime name
-# print(cleaned_text)
+    user_config = load_config() # python dictionary containing all the configs as key value pairs
+    history_file_path_ = os.path.expandvars(get_userconfig_value(user_config, "history_file"))
+    history_file_path_ = os.path.dirname(history_file_path_)
+    access_token_path = os.path.join(history_file_path_, "token")
+
+    if args.e:
+        os.system("vim "+get_userconfig_value(user_config, "history_file"))
+        print("updated config.")
+        exit(0)
+
+    create_anime_list()
+    create_episode_list()
+    create_episode_url()
+
+    if os.path.exists(access_token_path):
+        # Read and use the token
+        with open(access_token_path, "r") as token_file:
+            access_token = token_file.read().strip()
+        # print(f"Token found: {access_token}")
+
+    else:
+        print("Generate the token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token ")
+        access_token = input("Token file not found. Please generate and enter your token: ")
+        if "https://" in access_token:
+            # Parse the URL fragment part (after the `#`)
+            fragment = urllib.parse.urlparse(access_token).fragment
+
+            # Parse the fragment into components
+            params = urllib.parse.parse_qs(fragment)
+
+            # Extract only the access_token without any other parameters
+            access_token = params['access_token'][0] if 'access_token' in params else None
+
+            print("Access Token:", access_token)
+        with open(access_token_path, "w") as token_file:
+            token_file.write(access_token)
+        print(f"Token saved to {access_token_path}")
+
+    if access_token == None:
+        print("No Access_token provided.")
+        exit(1)
+
+    user_id, user_name = get_anilist_user_id(access_token)
+    mark_episode_as_completed_at = get_userconfig_value(user_config, "percentage_to_mark_complete")
+    anilist_user_data = download_anilist_data(access_token, user_id)
+    anime_dict = extract_anime_info(anilist_user_data)[0]
+
+    search_for_new_anime = False
+    if not args.c and not args.new:
+        select_anime(anime_dict)
+        if read_tmp("anime") == 'Add new anime':
+            search_for_new_anime = True
+
+    if args.c:
+        try:
+            with open(os.path.join(history_file_path_, "curd_id"), "r") as temp1_:
+                write_to_tmp("id", temp1_.read())
+            with open(os.path.join(history_file_path_, "curd_anime"), "r") as temp1_:
+                write_to_tmp("anime", temp1_.read())
+        except KeyboardInterrupt:
+            print("bye")
+            exit(0)
+        except:
+            print("No previous history!")
+
+    if args.new or search_for_new_anime:
+        new_anime_name_ = input("Enter anime name: ")
+        temp__ = search_anime_anilist(new_anime_name_, access_token)
+        if temp__ :
+            select_anime(temp__)
+            add_anime_to_watching_list(read_tmp('id'), access_token)
+            anilist_user_data = download_anilist_data(access_token, user_id)
+        else:
+            print("No anime found")
+            exit(0)
+
+    anime_name = read_tmp("anime")
+    write_to_tmp("query", anime_name)
+    run_script("anime_list")
+    anime_dict = load_anime_data(f"/tmp/curd/curd_anime_list")
+    cleaned_text = re.sub(r'\(.*$', '', anime_name).strip() # clean anime name
+    # print(cleaned_text)
+except KeyboardInterrupt:
+    print('bye')
+    exit(0)
+except Exception as e:
+    print("error: ", e)
+
 try:
     result = search_anime_by_title(anilist_user_data, cleaned_text)[0]
     # print(result)
@@ -1248,79 +1287,82 @@ except Exception as e:
     print("Please select anime")
     select_anime(anime_dict)
 
-if get_userconfig_value(user_config, "sub_or_dub")=="sub":
-    write_to_tmp("mode", "sub")
-elif get_userconfig_value(user_config, "sub_or_dub")=="dub":
-    write_to_tmp("mode", "dub")
+try:
+    if get_userconfig_value(user_config, "sub_or_dub")=="sub":
+        write_to_tmp("mode", "sub")
+    elif get_userconfig_value(user_config, "sub_or_dub")=="dub":
+        write_to_tmp("mode", "dub")
 
-if args.sub: # arguments take precidence
-    write_to_tmp("mode", "sub")
-if args.dub:
-    write_to_tmp("mode", "dub")
+    if args.sub: # arguments take precidence
+        write_to_tmp("mode", "sub")
+    if args.dub:
+        write_to_tmp("mode", "dub")
 
-run_script("episode_list")
+    run_script("episode_list")
 
-binge_watching = False
-mpv_args = []
-last_episode = int(read_tmp("episode_list").split()[-1])
-anime_watch_history = get_all_anime(get_userconfig_value(user_config, 'history_file'))
-anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
-episode_completed = False
+    binge_watching = False
+    mpv_args = []
+    last_episode = int(read_tmp("episode_list").split()[-1])
+    anime_watch_history = get_all_anime(get_userconfig_value(user_config, 'history_file'))
+    anime_history = find_anime(anime_watch_history, anilist_id=media_id, allanime_id=get_contents_of("id"))
+    episode_completed = False
 
-if anime_history: # if it exists in local history
-    # print(f"came in history {str(progress)}")
-    # print(anime_history['episode'])
-    if progress == last_episode or int(anime_history['episode']) == int(progress)+1:
+    if anime_history: # if it exists in local history
+        # print(f"came in history {str(progress)}")
+        # print(anime_history['episode'])
+        if progress == last_episode or int(anime_history['episode']) == int(progress)+1:
+            if progress == last_episode:
+                rewatching = True
+            mpv_args.append(f"--start={anime_history['time']}")
+            watching_ep = int(anime_history['episode'])
+            write_to_tmp("ep_no", str(watching_ep))
+            # print(f"STARTING ANIME FROM EPISODE {anime_history['episode']} {anime_history['time']}")
+        elif int(anime_history['episode']) < progress+1: # if the upstream progress is ahead
+            write_to_tmp("ep_no", str(int(progress)+1))
+            print(f"Starting anime from upstream {str(progress + 1)}")
+            watching_ep = progress + 1
+    else: # if history does not exist
         if progress == last_episode:
-            rewatching = True
-        mpv_args.append(f"--start={anime_history['time']}")
-        watching_ep = int(anime_history['episode'])
+            user_input = input("Do you want to start this anime from beginning? (y/n):")
+            if user_input.lower() == "yes" or user_input.lower() == "y" or user_input.lower() == "":
+                progress = 0
+                rewatching = True
+            else:
+                print("Starting last episode of anime")
+                progress = last_episode - 1
+        watching_ep = int(progress)+1
         write_to_tmp("ep_no", str(watching_ep))
-        # print(f"STARTING ANIME FROM EPISODE {anime_history['episode']} {anime_history['time']}")
-    elif int(anime_history['episode']) < progress+1: # if the upstream progress is ahead
-        write_to_tmp("ep_no", str(int(progress)+1))
-        print(f"Starting anime from upstream {str(progress + 1)}")
-        watching_ep = progress + 1
-else: # if history does not exist
-    if progress == last_episode:
-        user_input = input("Do you want to start this anime from beginning? (y/n):")
-        if user_input.lower() == "yes" or user_input.lower() == "y" or user_input.lower() == "":
-            progress = 0
-            rewatching = True
-        else:
-            print("Starting last episode of anime")
-            progress = last_episode - 1
-    watching_ep = int(progress)+1
-    write_to_tmp("ep_no", str(watching_ep))
-# print(watching_ep)
-# os.system("{current_dir}/scripts/episode_url.sh")
-print("Fetching anime")
-run_script("episode_url")
+    # print(watching_ep)
+    # os.system("{current_dir}/scripts/episode_url.sh")
+    print("Fetching anime")
+    run_script("episode_url")
 
-# Print the result
-if media_id:
-    # print(f"Anime ID: {media_id}")
-    pass
-else:
-    print("Anime not found.")
-    exit(1)
+    # Print the result
+    if media_id:
+        # print(f"Anime ID: {media_id}")
+        pass
+    else:
+        print("Anime not found.")
+        exit(1)
 
-links = load_links(f"/tmp/curd/curd_links")
+    links = load_links(f"/tmp/curd/curd_links")
 
-if get_userconfig_value(user_config, "discord_presence") == True:
-    from pypresence import Presence
-    # print("imported pypresence")
-    rpc = Presence(discord_client_id)
-    rpc.connect()
-    anime_mal_id, anime_image_url = get_anime_id_and_image(media_id)
-else:
-    anime_mal_id = get_anime_mal_id(media_id)
+    if get_userconfig_value(user_config, "discord_presence") == True:
+        from pypresence import Presence
+        # print("imported pypresence")
+        rpc = Presence(discord_client_id)
+        rpc.connect()
+        anime_mal_id, anime_image_url = get_anime_id_and_image(media_id)
+    else:
+        anime_mal_id = get_anime_mal_id(media_id)
 
-# default variable declaration
-watched_percentage = 0
-is_paused = False
-mpv_playback_speed = 1.0
-
+    # default variable declaration
+    watched_percentage = 0
+    is_paused = False
+    mpv_playback_speed = 1.0
+except KeyboardInterrupt:
+    print("bye")
+    exit(0)
 while True:
     try:
         salt = random.randint(0,1500)
@@ -1421,6 +1463,9 @@ while True:
                             print("Have a great day!")
                             exit(0)
 
+                except KeyboardInterrupt:
+                    print("bye")
+                    exit(0)
                 except Exception as e: # user did not close the stream
                     print(e)
                 if killing_error == "property unavailable": # mpv is not started yet
@@ -1448,6 +1493,7 @@ while True:
         exit(0)
     finally:
         binge_watching=True
+
     try:
         # print("binge watching")
         current_ep = int(read_tmp("ep_no"))
@@ -1491,6 +1537,9 @@ while True:
                     binge_watching = True
                 else:
                     exit(0)
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
     except Exception as e:
         # print(f"error:{e}\nMaybe try running again!")
         print_error(f"{e}")
