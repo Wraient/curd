@@ -868,6 +868,19 @@ def create_default_user_config(default_config):
 
     return output_string
 
+def get_config_file_path():
+    command = """echo $HOME"""
+
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    output = result.stdout.strip()
+
+    folder_name = f"{output}/.config/curd"
+    file_name = "curd.conf"
+
+    config_file_path = os.path.join(folder_name, file_name)
+
+    return config_file_path
+
 def load_config() -> dict:
     command = """echo $HOME"""
 
@@ -1171,7 +1184,7 @@ try:
     access_token_path = os.path.join(history_file_path_, "token")
 
     if args.e:
-        os.system("vim "+get_userconfig_value(user_config, "history_file"))
+        os.system("vim "+get_config_file_path())
         print("updated config.")
         exit(0)
 
