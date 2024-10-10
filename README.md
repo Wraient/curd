@@ -34,14 +34,13 @@ https://github.com/user-attachments/assets/3b9578aa-396a-4313-8254-d0954041d6ba
 <details><summary>Arch Linux</summary>
   
 ```
-sudo pacman -Sy socat
-git clone https://github.com/wraient/curd --depth=1
-cd ./curd
-python -m venv venv
-source ./venv/bin/activate
-pip3 install pypresence requests
-python3 curd.py
+paru -Sy curd
 ```
+or
+```
+yay -Sy curd
+```
+
 </details>
 
 
@@ -54,7 +53,10 @@ python3 curd.py
 |*Watching new anime*   | `curd -new`     |
 |*Watch dub*            | `curd -dub`      |
 |*Watch sub*            | `curd -sub`      |
+|*Update the script*    | `curd -u`        |
+|*Continue last watching anime* |`curd -c`  |
 |*Help*                 | `curd -help`     |
+
 
 Script is made in a way that you use it for one session of watching.
 
@@ -63,8 +65,10 @@ You can quit it anytime and the resume time would be saved in the history file
 more settings can be found at config file.
 config file is located at ```~/.config/curd/curd.conf```
 
-**Help**
-    
+## Dependencies
+- mpv - Video player (vlc support might be added later)
+- Socat - Receive output of mpv commands
+- Pypresence - Discord RPC
     
 ## API Used
 - [Anilist API](https://anilist.gitbook.io/anilist-apiv2-docs) - To update user data and download user data
