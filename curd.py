@@ -467,8 +467,13 @@ def select_anime(anime_list):
                         stdscr.addstr(display_idx, 0, anime)
 
                 # Get user input
-                key = stdscr.getch()
-
+                try:
+                    key = stdscr.getch()
+                except KeyboardInterrupt:
+                    curses.endwin()
+                    print("Have a great day!")
+                    os._exit(0)
+                    
                 # Handle key inputs
                 if key in [curses.KEY_BACKSPACE, 127, 8]:
                     current_input = current_input[:-1]
