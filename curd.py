@@ -122,9 +122,12 @@ def search_anime_anilist(query, token):
         'Authorization': f'Bearer {token}',
         'Content-Type': 'application/json'
     }
+    try:
+        response = requests.post(url, json={'query': query_string, 'variables': variables}, headers=headers)
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
 
-    response = requests.post(url, json={'query': query_string, 'variables': variables}, headers=headers)
-    
     if response.status_code == 200:
         anime_list = response.json()['data']['Page']['media']
         anime_dict = {}
@@ -155,9 +158,12 @@ def get_anilist_user_id(token):
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
-    
-    response = requests.post(url, json={"query": query}, headers=headers)
-    
+    try:
+        response = requests.post(url, json={"query": query}, headers=headers)
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
+
     if response.status_code == 200:
         data = response.json()
         user_id = data['data']['Viewer']['id']
@@ -186,8 +192,11 @@ def add_anime_to_watching_list(anime_id: int, token: str):
         'Authorization': f'Bearer {token}',
         'Content-Type': 'application/json'
     }
-
-    response = requests.post(url, json={'query': mutation, 'variables': variables}, headers=headers)
+    try:
+        response = requests.post(url, json={'query': mutation, 'variables': variables}, headers=headers)
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
 
     if response.status_code == 200:
         print(f"Anime with ID {anime_id} has been added to your watching list.")
@@ -208,8 +217,12 @@ def get_anime_mal_id(anilist_media_id):
     }
 
     # Make the API request
-    response = requests.post(url, json={'query': query, 'variables': variables})
-    
+    try:
+        response = requests.post(url, json={'query': query, 'variables': variables})
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
+
     if response.status_code == 200:
         data = response.json()
         malId = data['data']['Media']['idMal']
@@ -234,8 +247,11 @@ def get_anime_id_and_image(anilist_media_id):
     }
 
     # Make the API request
-    response = requests.post(url, json={'query': query, 'variables': variables})
-    
+    try:
+        response = requests.post(url, json={'query': query, 'variables': variables})
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
     if response.status_code == 200:
         data = response.json()
         image_url = data['data']['Media']['coverImage']['large']
@@ -269,11 +285,15 @@ def get_user_data(access_token, user_id):
   """ % user_id
 
   # Send the request
-  response = requests.post(
-      'https://graphql.anilist.co',
-      json={'query': query},
-      headers={'Authorization': f'Bearer {access_token}'}
-  )
+  try:
+    response = requests.post(
+        'https://graphql.anilist.co',
+        json={'query': query},
+        headers={'Authorization': f'Bearer {access_token}'}
+    )
+  except KeyboardInterrupt:
+    print("bye")
+    exit(0)
 
 
   # Print the response
@@ -334,9 +354,12 @@ def update_anime_progress(token: str, media_id: int, progress: int):
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
-    
-    response = requests.post(url, json={"query": query, "variables": variables}, headers=headers)
-    
+    try:
+        response = requests.post(url, json={"query": query, "variables": variables}, headers=headers)
+    except KeyboardInterrupt:
+        print("bye")
+        exit(0)
+
     if response.status_code == 200:
         data = response.json()
         updated_progress = data['data']['SaveMediaListEntry']['progress']
@@ -473,7 +496,7 @@ def select_anime(anime_list):
                     curses.endwin()
                     print("Have a great day!")
                     os._exit(0)
-                    
+
                 # Handle key inputs
                 if key in [curses.KEY_BACKSPACE, 127, 8]:
                     current_input = current_input[:-1]
