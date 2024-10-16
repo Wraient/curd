@@ -73,9 +73,10 @@ config file is located at ```~/.config/curd/curd.conf```
 - Pypresence - Discord RPC
     
 ## API Used
-- [Anilist API](https://anilist.gitbook.io/anilist-apiv2-docs) - To update user data and download user data
-- [AniSkip API](https://api.aniskip.com/api-docs) - To get anime intro and outro timings
-- [AllAnime Content](https://allanime.to/) - To fetch anime url
+- [Anilist API](https://anilist.gitbook.io/anilist-apiv2-docs) - Update user data and download user data
+- [AniSkip API](https://api.aniskip.com/api-docs) - Get anime intro and outro timings
+- [AllAnime Content](https://allanime.to/) - Fetch anime url
+- [Jikan](https://jikan.moe/) - Get filler episode number
 
 ## Credits
 - [ani-cli](https://github.com/pystardust/ani-cli) - Code for fetching anime url
