@@ -1517,7 +1517,8 @@ while True: # loop for each episode
                             if get_userconfig_value(user_config, "skip_ed") == True:
                                 if round(int(playback_time)) > round(int(skip_intervals['ed']['start_time'])) and round(int(playback_time)) < round(int(skip_intervals['ed']['start_time']))+10:
                                     print("skipped ending")
-                                    seek_mpv(mpv_socket_path, int(skip_intervals['ed']['end_time']))    
+                                    seek_mpv(mpv_socket_path, int(skip_intervals['ed']['end_time']))
+                                    watched_percentage = get_percentage_watched(mpv_socket_path)
 
                         update_anime(get_userconfig_value(user_config, 'history_file'), str(media_id), str(get_contents_of("id")), str(watching_ep), str(playback_time), str(duration), str(title))
                         # print("Playback time:", playback_time)
