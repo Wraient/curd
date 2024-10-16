@@ -12,6 +12,7 @@ https://github.com/user-attachments/assets/3b9578aa-396a-4313-8254-d0954041d6ba
 - Stream anime online
 - Update anime in Anilist after completion
 - Skip anime Intro and Outro
+- Skip Filler and Recap episodes
 - Discord RPC about the anime
 - Local anime history to continue from where you left off last time
 - Save mpv speed for next episode
@@ -54,6 +55,7 @@ yay -Sy curd
 |*Watch dub*            | `curd -dub`      |
 |*Watch sub*            | `curd -sub`      |
 |*Update the script*    | `curd -u`        |
+|*Edit config file*    | `curd -e`        |
 |*Continue last watching anime* |`curd -c`  |
 |*Help*                 | `curd -help`     |
 
