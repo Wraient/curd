@@ -25,6 +25,41 @@ import urllib.parse
 
 discord_client_id = "1287457464148820089"
 
+
+# ----------------------------------------------- Jikan Functions ----------------------------------------
+
+def get_episode_data(anime_id: int, episode_no: int):
+    url = f"https://api.jikan.moe/v4/anime/{anime_id}/episodes/{episode_no}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        json_data = json.loads(response.text)
+        return json_data['data']
+    except requests.RequestException as e:
+        print(f"Error fetching data from Jikan (MyAnimeList) API: {e}")
+        return None
+    except Exception as e:
+        print(f"Error: ", e)
+        return None
+
+# response.text : {
+#   "data": {
+#     "mal_id": 0,
+#     "url": "string",
+#     "title": "string",
+#     "title_japanese": "string",
+#     "title_romanji": "string",
+#     "duration": 0,
+#     "aired": "string",
+#     "filler": true,
+#     "recap": true,
+#     "synopsis": "string"
+#   }
+# }
+
+# response = get_episode_data(21, 5)
+# print(response['title'])
+# exit(0)
 # ----------------------------------------------- AniSkip Functions ----------------------------------------
 
 def get_aniskip_data(anime_id, episode):
@@ -867,6 +902,8 @@ default_config = {
     "next_episode_prompt": False,
     "skip_op": True,
     "skip_ed": True,
+    "skip_filler": True,
+    "skip_recap": True,
     "score_on_completion": True,
     "save_mpv_speed": True,
     "discord_presence": False,
@@ -1404,8 +1441,26 @@ try:
 except KeyboardInterrupt:
     print("bye")
     exit(0)
-while True:
+while True: # loop for each episode
     try:
+
+        skip_filler = get_userconfig_value(user_config, "skip_filler")
+        skip_recap = get_userconfig_value(user_config, "skip_recap")
+
+        if skip_filler == True or skip_recap == True:
+            episode_data = get_episode_data(anime_mal_id, watching_ep)
+            if episode_data:
+                # print(episode_data)
+                is_filler = episode_data['filler']
+                is_recap = episode_data['recap']
+                if skip_filler and is_filler or skip_recap and is_recap and not rewatching:
+                    print("starting next.")
+                    watched_percentage = 95
+                    raise Exception("Filler or Recap Episode. Starting next episode.")
+
+            else:
+                print("Error fetching episode details")
+
         salt = random.randint(0,1500)
         # print("SALT IS:"+str(salt))
         start_video(links[0][1], salt, mpv_args)
@@ -1416,7 +1471,7 @@ while True:
             if skip_intervals == None:
                 print("failed to get skip times")
 
-        while True:
+        while True: # loop while episode is being watched
             # Example usage
             # anime_id = 28223
             # episode = 10
@@ -1434,7 +1489,6 @@ while True:
                         playback_time = round(int(data["data"]), 2)
                         if get_userconfig_value(user_config, "discord_presence") == True:
                             is_paused = get_mpv_paused_status(mpv_socket_path)
-                            
 
                             # print("mpv_status", mpv_status)
                             # print("is_paused", is_paused)
@@ -1532,6 +1586,8 @@ while True:
 
         print("bye")
         exit(0)
+    except Exception as e:
+        print(e)
     finally:
         binge_watching=True
 
