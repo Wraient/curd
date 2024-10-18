@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os/exec"
     "encoding/json"
+	"net"
+	"time"
     "os"
 )
 var logFile = "debug.log"
@@ -15,16 +17,66 @@ func StartMpv(videoURL, socketPath string) error {
 	return cmd.Start()
 }
 
+// sendIpcMessage sends a JSON message to the mpv IPC socket and reads the response.
+func sendIpcMessage(socketPath string, msg map[string]interface{}) (map[string]interface{}, error) {
+	// Create a Unix socket connection
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to IPC socket: %w", err)
+	}
+	defer conn.Close()
+
+	// Marshal the message into JSON
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal JSON message: %w", err)
+	}
+
+	// Write the message to the socket
+	_, err = conn.Write(append(data, '\n')) // Ensure newline at the end
+	if err != nil {
+		return nil, fmt.Errorf("failed to send message to IPC socket: %w", err)
+	}
+
+	// Set a read deadline to prevent blocking forever
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+
+	// Read the response from the socket
+	var response map[string]interface{}
+	decoder := json.NewDecoder(conn)
+	if err := decoder.Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return response, nil
+}
+
 // GetMpvProperty retrieves a property from mpv via IPC.
 func GetMpvProperty(socketPath, property string) (string, error) {
-	// Prepare the command to read from the socket
-	cmd := exec.Command("mpv", "--input-ipc-server="+socketPath, "get_property", property)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to get property '%s': %w", property, err)
+	// Prepare the JSON message to request the property
+	msg := map[string]interface{}{
+		"command": []interface{}{"get_property", property},
 	}
-	return string(output), nil
+
+	// Send the message via IPC and get the response
+	response, err := sendIpcMessage(socketPath, msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to send IPC message: %w", err)
+	}
+
+	// Check the response for errors and extract the value
+	if errVal, ok := response["error"]; ok && errVal != "success" {
+		return "", fmt.Errorf("mpv returned an error: %v", errVal)
+	}
+
+	// Retrieve the value from the response
+	if data, ok := response["data"]; ok {
+		return fmt.Sprintf("%v", data), nil
+	}
+
+	return "", fmt.Errorf("no data in response")
 }
+
 
 // SendMpvCommand sends a command to mpv via IPC.
 func SendMpvCommand(socketPath, command string, args ...string) error {
