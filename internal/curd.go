@@ -9,6 +9,22 @@ import (
 	// "log"
 )
 
+type curdConfig struct {
+	player string
+	historyFile string
+	subs_language string
+	sub_or_dub string
+	percentageToMarkComplete int
+	nextEpisodePrompt bool
+	skipOp bool
+	skipEd bool
+	skipFiller bool
+	skipRecap bool
+	scoreOnCompletion bool
+	saveMpvSpeed bool
+	discordPresence bool
+}
+
 // LogData logs the input data into a specified log file with the format [LOG] time lineNumber: logData
 func Log(data interface{}, logFile string) error {
 	// Open or create the log file
