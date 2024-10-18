@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/wraient/curd/internal"	
-	"os"
 	"math/rand"
+	"os"
+	"strconv"
+	"time"
+	"github.com/wraient/curd/internal"
 )
 
 type Title struct {
@@ -100,8 +102,10 @@ func main(){
 
 	// Generate a random number between 0 and 99
 	randomNumber := rand.Intn(100) // Change 100 to the desired range
+	fmt.Println("random number", randomNumber)
+	mpvSocketPath := "/tmp/mpvsocket"+strconv.Itoa(randomNumber)
 
-	err = internal.StartMpv(link[0], "/tmp/mpvsocket"+string(randomNumber))
+	err = internal.StartMpv(link[0], mpvSocketPath)
 
 	if err != nil {
 		internal.Log("Failed to start mpv", logFile)
