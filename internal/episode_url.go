@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"encoding/json"
@@ -6,13 +6,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"unicode"
 )
 
-type Config struct {
+type config struct {
 	Agent        string
 	AllanimeRefr string
 	AllanimeBase string
@@ -21,7 +20,7 @@ type Config struct {
 	Quality      string
 }
 
-type AllanimeResponse struct {
+type allanimeResponse struct {
 	Data struct {
 		Episode struct {
 			SourceUrls []struct {
@@ -31,13 +30,13 @@ type AllanimeResponse struct {
 	} `json:"data"`
 }
 
-func getDefaultConfig() Config {
-	return Config{
+func GetDefaultAllanimeConfig() config {
+	return config{
 		Agent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
 		AllanimeRefr: "https://allanime.to",
 		AllanimeBase: "allanime.day",
 		AllanimeAPI:  "https://api.allanime.day",
-		Mode:         "dub",
+		Mode:         "sub",
 		Quality:      "best",
 	}
 }
@@ -125,7 +124,7 @@ func extractLinks(provider_id string) map[string]interface{} {
 // Returns:
 // - []string: a list of links for specified episode.
 // - error: an error if the episode is not found or if there is an issue during the search.
-func getEpisodeURL(config Config, id, epNo string) ([]string, error) {
+func GetEpisodeURL(config config, id, epNo string) ([]string, error) {
 	query := `query($showId:String!,$translationType:VaildTranslationTypeEnumType!,$episodeString:String!){episode(showId:$showId,translationType:$translationType,episodeString:$episodeString){episodeString sourceUrls}}`
 
 	variables := map[string]string{
@@ -168,7 +167,7 @@ func getEpisodeURL(config Config, id, epNo string) ([]string, error) {
 	responseStr := string(body)
 
 	// Unmarshal the JSON data into the struct
-	var response AllanimeResponse
+	var response allanimeResponse
 	err = json.Unmarshal([]byte(responseStr), &response)
 	if err != nil {
 		fmt.Println("Error parsing JSON: ", err)
@@ -198,25 +197,25 @@ func getEpisodeURL(config Config, id, epNo string) ([]string, error) {
 	return allinks, nil
 }
 
-func main() {
-	config := getDefaultConfig()
+// func main() {
+// 	config := getDefaultConfig()
 
-	id := "ReooPAxPMsHM4KPMY" // One piece
-	// id := "RezHft5pjutwWcE3B" // Death note
-	epNo := "945"
+// 	id := "ReooPAxPMsHM4KPMY" // One piece
+// 	// id := "RezHft5pjutwWcE3B" // Death note
+// 	epNo := "945"
 
-	links, err := getEpisodeURL(config, id, epNo)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		if strings.Contains(err.Error(), "no source URLs found") {
-			fmt.Println("Episode not released!")
-		}
-		os.Exit(1)
-	}
+// 	links, err := getEpisodeURL(config, id, epNo)
+// 	if err != nil {
+// 		fmt.Printf("Error: %v\n", err)
+// 		if strings.Contains(err.Error(), "no source URLs found") {
+// 			fmt.Println("Episode not released!")
+// 		}
+// 		os.Exit(1)
+// 	}
 
-	// Print all found links
-	// fmt.Println("links:", links)
-	for _, link := range links {
-		fmt.Println(link)
-	}
-}
+// 	// Print all found links
+// 	// fmt.Println("links:", links)
+// 	for _, link := range links {
+// 		fmt.Println(link)
+// 	}
+// }

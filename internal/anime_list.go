@@ -1,42 +1,41 @@
-package main
+package internal
 
 import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
-	"strings"
+	// "strings"
 )
 
-type Anime struct {
+type anime struct {
 	ID               string      `json:"_id"`
 	Name             string      `json:"name"`
 	AvailableEpisodes interface{} `json:"availableEpisodes"`
 }
 
-type Response struct {
+type response struct {
 	Data struct {
 		Shows struct {
-			Edges []Anime `json:"edges"`
+			Edges []anime `json:"edges"`
 		} `json:"shows"`
 	} `json:"data"`
 }
 
-func main() {
-	// Get environment variables
-	mode := getEnv("ANI_CLI_MODE", "sub")
+// func main() {
+// 	// Get environment variables
+// 	mode := "sub"
 
-	// Query for the anime (from a file in this example)
-	query := "One piece"
+// 	// Query for the anime (from a file in this example)
+// 	query := "Death note"
 
-	// Search anime
-	animeList := searchAnime(string(query), mode)
-	fmt.Println(animeList)
-}
+// 	// Search anime
+// 	animeList := searchAnime(string(query), mode)
+// 	fmt.Println(animeList)
+// }
 
 // searchAnime performs the API call and fetches anime information
-func searchAnime(query, mode string) string {
+func SearchAnime(query, mode string) (map[string]string, error) {
 	const (
 		agent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
 		allanimeRef   = "https://allanime.to"
@@ -44,6 +43,9 @@ func searchAnime(query, mode string) string {
 		allanimeAPI   = "https://api." + allanimeBase + "/api"
 	)
 
+	// Format and return the anime list
+	animeList := make(map[string]string)
+	
 	searchGql := `query( $search: SearchInput $limit: Int $page: Int $translationType: VaildTranslationTypeEnumType $countryOrigin: VaildCountryOriginEnumType ) { shows( search: $search limit: $limit page: $page translationType: $translationType countryOrigin: $countryOrigin ) { edges { _id name availableEpisodes __typename } } }`
 
 	// Build the request URL
@@ -53,7 +55,7 @@ func searchAnime(query, mode string) string {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		fmt.Println("Error creating HTTP request:", err)
-		return ""
+		return animeList, err
 	}
 	req.Header.Set("User-Agent", agent)
 	req.Header.Set("Referer", allanimeRef)
@@ -62,26 +64,24 @@ func searchAnime(query, mode string) string {
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println("Error making HTTP request:", err)
-		return ""
+		return animeList, err
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println("Error reading response body:", err)
-		return ""
+		return animeList, err
 	}
 
 	// Parse the JSON response
-	var response Response
+	var response response
 	err = json.Unmarshal(body, &response)
 	if err != nil {
 		fmt.Println("Error parsing JSON:", err)
-		return ""
+		return animeList, err
 	}
 
-	// Format and return the anime list
-	var animeList strings.Builder
 	for _, anime := range response.Data.Shows.Edges {
 		// availableEpisodes, _ := anime.AvailableEpisodes.Int64() // Converts json.Number to int64
 
@@ -97,23 +97,8 @@ func searchAnime(query, mode string) string {
 		default:
 			episodesStr = "Unknown"
 		}
-
-
-		animeList.WriteString(fmt.Sprintf("%s\t%s (%s episodes)\n", anime.ID, anime.Name, episodesStr))
-
-		// In the formatting part
-		// animeList.WriteString(fmt.Sprintf("%s\t%s (%d episodes)NEWLINEFROMHERE\n", anime.ID, anime.Name, availableEpisodes))
-
-		// animeList.WriteString(fmt.Sprintf("%s\t%s (%d episodes)NEWLINEFROMHERE\n", anime.ID, anime.Name, anime.AvailableEpisodes))
+		animeList[anime.ID] = fmt.Sprintf("%s (%s episodes)", anime.Name, episodesStr)
+		// animeList.WriteString(fmt.Sprintf("%s\t%s (%s episodes)\n", anime.ID, anime.Name, episodesStr))
 	}
-	return animeList.String()
-}
-
-// getEnv returns the value of an environment variable or a default value if it's not set
-func getEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	return value
+	return animeList, nil
 }

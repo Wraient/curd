@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"encoding/json"
@@ -7,10 +7,9 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 )
 
-type EpisodesResponse struct {
+type episodesResponse struct {
 	Data struct {
 		Show struct {
 			ID                   string                 `json:"_id"`
@@ -19,20 +18,20 @@ type EpisodesResponse struct {
 	} `json:"data"`
 }
 
-func main() {
-	// Get environment variables
-	// Read the ID from the file
-	id := "ReooPAxPMsHM4KPMY"
+// func main() {
+// 	// Get environment variables
+// 	// Read the ID from the file
+// 	id := "ReooPAxPMsHM4KPMY"
 
-	// Fetch episodes list
-	episodeList := episodesList(string(id), "sub")
+// 	// Fetch episodes list
+// 	episodeList := episodesList(string(id), "sub")
 
-	// Write the episode list to a file
-	fmt.Println(episodeList)
-}
+// 	// Write the episode list to a file
+// 	fmt.Println(episodeList)
+// }
 
 // episodesList performs the API call and fetches the episodes list
-func episodesList(showID, mode string) string {
+func EpisodesList(showID, mode string) ([]string, error) {
 	const (
 		agent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
 		allanimeRef   = "https://allanime.to"
@@ -44,12 +43,13 @@ func episodesList(showID, mode string) string {
 	
 	// Build the request URL
 	url := fmt.Sprintf("%s?variables={\"showId\":\"%s\"}&query=%s", allanimeAPI, showID, episodesListGql)
+	episodes := []string{}
 
 	// Make the HTTP request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		fmt.Println("Error creating HTTP request:", err)
-		return ""
+		return episodes, err
 	}
 	req.Header.Set("User-Agent", agent)
 	req.Header.Set("Referer", allanimeRef)
@@ -58,27 +58,27 @@ func episodesList(showID, mode string) string {
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println("Error making HTTP request:", err)
-		return ""
+		return episodes, err
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println("Error reading response body:", err)
-		return ""
+		return episodes, err
 	}
 
 	// Parse the JSON response
-	var response EpisodesResponse
+	var response episodesResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
 		fmt.Println("Error parsing JSON:", err)
-		return ""
+		return episodes, err
 	}
 
 	// Extract and sort the episodes
-	episodes := extractEpisodes(response.Data.Show.AvailableEpisodesDetail, mode)
-	return strings.Join(episodes, "\n")
+	episodes = extractEpisodes(response.Data.Show.AvailableEpisodesDetail, mode)
+	return episodes, nil
 }
 
 // extractEpisodes extracts the episodes list from the availableEpisodesDetail field
@@ -100,7 +100,7 @@ func extractEpisodes(availableEpisodesDetail map[string]interface{}, mode string
 	// Convert to string and return
 	var episodesStr []string
 	for _, ep := range episodes {
-		episodesStr = append(episodesStr, fmt.Sprintf("%.1f", ep))
+		episodesStr = append(episodesStr, fmt.Sprintf("%v", ep))
 	}
 	return episodesStr
 }
