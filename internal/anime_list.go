@@ -27,10 +27,13 @@ type response struct {
 // 	mode := "sub"
 
 // 	// Query for the anime (from a file in this example)
-// 	query := "Death note"
+// 	query := "one piece"
 
 // 	// Search anime
-// 	animeList := searchAnime(string(query), mode)
+// 	animeList, err := SearchAnime(string(query), mode)
+// 	if err != nil {
+
+// 	}
 // 	fmt.Println(animeList)
 // }
 
