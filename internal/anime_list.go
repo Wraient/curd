@@ -90,16 +90,21 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 
 		var episodesStr string
 
-		switch v := anime.AvailableEpisodes.(type) {
-		case float64:
-			episodesStr = fmt.Sprintf("%d", int(v))  // Handle numbers
-		case string:
-			episodesStr = v                         // Handle string
-		case nil:
-			episodesStr = "N/A"                     // Handle nulls
-		default:
-			episodesStr = "Unknown"
+		// Log(anime.AvailableEpisodes, logFile)
+		// episodesStr = anime.AvailableEpisodes.sub
+
+		//anime is = {"dub":0,"raw":0,"sub":4}
+
+		if episodes, ok := anime.AvailableEpisodes.(map[string]interface{}); ok {
+			// Log(episodes, logFile)
+			if subEpisodes, ok := episodes["sub"].(float64); ok {
+				episodesStr = fmt.Sprintf("%d", int(subEpisodes))
+			} else {
+				Log(subEpisodes, logFile)
+				episodesStr = "Unknown"
+			}
 		}
+
 		animeList[anime.ID] = fmt.Sprintf("%s (%s episodes)", anime.Name, episodesStr)
 		// animeList.WriteString(fmt.Sprintf("%s\t%s (%s episodes)\n", anime.ID, anime.Name, episodesStr))
 	}
