@@ -27,6 +27,9 @@ func (m Model) Init() tea.Cmd {
 
 // Update handles user input and updates the model
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Only filter options if a key press modifies the filter
+	updateFilter := false
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -35,12 +38,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "backspace":
 			if len(m.filter) > 0 {
 				m.filter = m.filter[:len(m.filter)-1]
+				updateFilter = true // Mark for updating the filter
 			}
 		case "down":
+			// Move cursor down within bounds
 			if m.selected < len(m.filteredKeys)-1 {
 				m.selected++
 			}
 		case "up":
+			// Move cursor up within bounds
 			if m.selected > 0 {
 				m.selected--
 			}
@@ -49,12 +55,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			if msg.String() != "" {
 				m.filter += msg.String()
+				updateFilter = true // Mark for updating the filter
 			}
 		}
-		m.filterOptions()
 	}
+
+	// Only filter options if the filter was actually modified
+	if updateFilter {
+		m.filterOptions()
+		// Reset selected index after filtering
+		m.selected = 0
+	}
+
 	return m, nil
 }
+
 
 // View renders the UI
 func (m Model) View() string {
