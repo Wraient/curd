@@ -74,7 +74,14 @@ func main(){
 
 	if err != nil{
 		fmt.Println("No episode list found")
+		internal.RestoreScreen()
 		os.Exit(1)
+	}
+
+	if episodeList == nil { // if user selected "Add new anime option"
+		fmt.Println("Add new anime")
+		internal.RestoreScreen()
+		os.Exit(0)
 	}
 
 	internal.Log(episodeList, logFile)
@@ -98,6 +105,7 @@ func main(){
 
 	if err != nil {
 		internal.Log("Failed to start mpv", logFile)
+		os.Exit(1)
 	}
 
 	for { // Loop while video is playing
