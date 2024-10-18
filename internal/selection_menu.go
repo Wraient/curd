@@ -57,8 +57,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected--
 			}
 		case "enter":
-			return m, tea.Quit // Or return the selected option
-		default:
+            // If "Add new anime" is selected, handle it here
+            if m.filteredKeys[m.selected].Key == "add_new" {
+                // Implement your logic for adding a new anime
+                fmt.Println("Adding a new anime...") // Temporary print statement
+                return m, tea.Quit
+            }
+            return m, tea.Quit // Or return the selected option for other cases
+        default:
 			if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
 				m.filter += msg.String()
 				updateFilter = true // Mark for updating the filter
@@ -78,45 +84,46 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the UI
 func (m Model) View() string {
-	var b strings.Builder
+    var b strings.Builder
 
-	b.WriteString("Search (Press Ctrl+C to quit):\n\n")
-	b.WriteString("Filter: " + m.filter + "\n\n")
+    b.WriteString("Search (Press Ctrl+C to quit):\n\n")
+    b.WriteString("Filter: " + m.filter + "\n\n")
 
-	if len(m.filteredKeys) == 0 {
-		b.WriteString("No matches found.\n")
-	} else {
-		// Determine how many entries can fit in the terminal
-		maxEntries := m.terminalHeight - 4 // Adjust for header and padding
-		if maxEntries < 1 {
-			maxEntries = 1 // At least show one option
-		}
+    if len(m.filteredKeys) == 0 {
+        b.WriteString("No matches found.\n")
+    } else {
+        // Determine how many entries can fit in the terminal
+        maxEntries := m.terminalHeight - 4 // Adjust for header and padding
+        if maxEntries < 1 {
+            maxEntries = 1 // At least show one option
+        }
 
-		// Limit the number of displayed entries
-		start := m.selected
-		if start >= len(m.filteredKeys) {
-			start = len(m.filteredKeys) - 1
-		}
-		end := start + maxEntries
-		if end > len(m.filteredKeys) {
-			end = len(m.filteredKeys)
-		}
-		if start > end {
-			start = end
-		}
+        // Limit the number of displayed entries
+        start := m.selected
+        if start >= len(m.filteredKeys) {
+            start = len(m.filteredKeys) - 1
+        }
+        end := start + maxEntries
+        if end > len(m.filteredKeys) {
+            end = len(m.filteredKeys)
+        }
+        if start > end {
+            start = end
+        }
 
-		// Display the filtered keys with selection indicator
-		for i := start; i < end; i++ {
-			if i == m.selected {
-				b.WriteString(fmt.Sprintf("▶ %s\n", m.filteredKeys[i].Label))
-			} else {
-				b.WriteString(fmt.Sprintf("  %s\n", m.filteredKeys[i].Label))
-			}
-		}
-	}
+        // Display the filtered keys with selection indicator
+        for i := start; i < end; i++ {
+            if i == m.selected {
+                b.WriteString(fmt.Sprintf("▶ %s\n", m.filteredKeys[i].Label))
+            } else {
+                b.WriteString(fmt.Sprintf("  %s\n", m.filteredKeys[i].Label))
+            }
+        }
+    }
 
-	return b.String()
+    return b.String()
 }
+
 
 // filterOptions filters options based on the search term
 func (m *Model) filterOptions() {
@@ -128,7 +135,16 @@ func (m *Model) filterOptions() {
             m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: value, Key: key})
         }
     }
+
+    // If no matches were found, add the "Add new anime" option
+    if len(m.filteredKeys) == 0 {
+        m.filteredKeys = append(m.filteredKeys, SelectionOption{
+            Label: "Add new anime",
+            Key:   "add_new", // Special key to identify this option
+        })
+    }
 }
+
 
 // DynamicSelect displays a full-screen selection prompt with search
 func DynamicSelect(options map[string]string) (SelectionOption, error) {
