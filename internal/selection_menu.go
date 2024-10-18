@@ -8,8 +8,8 @@ import (
 
 // SelectionOption holds the label and the internal key
 type SelectionOption struct {
-    Label string
-    Key   string
+	Label string
+	Key   string
 }
 
 // Model represents the application state for the selection prompt
@@ -18,6 +18,7 @@ type Model struct {
 	filter       string
 	filteredKeys []SelectionOption
 	selected     int
+	terminalHeight int // New field to hold the terminal height
 }
 
 // Init initializes the model
@@ -27,6 +28,11 @@ func (m Model) Init() tea.Cmd {
 
 // Update handles user input and updates the model
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle terminal resize messages
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		m.terminalHeight = wsm.Height // Get the terminal height
+	}
+
 	// Only filter options if a key press modifies the filter
 	updateFilter := false
 
@@ -53,7 +59,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			return m, tea.Quit // Or return the selected option
 		default:
-			if msg.String() != "" {
+			if len(msg.String()) == 1 && msg.String() >= " " && msg.String() <= "~" {
 				m.filter += msg.String()
 				updateFilter = true // Mark for updating the filter
 			}
@@ -70,7 +76,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-
 // View renders the UI
 func (m Model) View() string {
 	var b strings.Builder
@@ -81,11 +86,31 @@ func (m Model) View() string {
 	if len(m.filteredKeys) == 0 {
 		b.WriteString("No matches found.\n")
 	} else {
-		for i, option := range m.filteredKeys {
+		// Determine how many entries can fit in the terminal
+		maxEntries := m.terminalHeight - 4 // Adjust for header and padding
+		if maxEntries < 1 {
+			maxEntries = 1 // At least show one option
+		}
+
+		// Limit the number of displayed entries
+		start := m.selected
+		if start >= len(m.filteredKeys) {
+			start = len(m.filteredKeys) - 1
+		}
+		end := start + maxEntries
+		if end > len(m.filteredKeys) {
+			end = len(m.filteredKeys)
+		}
+		if start > end {
+			start = end
+		}
+
+		// Display the filtered keys with selection indicator
+		for i := start; i < end; i++ {
 			if i == m.selected {
-				b.WriteString(fmt.Sprintf("▶ %s\n", option.Label))
+				b.WriteString(fmt.Sprintf("▶ %s\n", m.filteredKeys[i].Label))
 			} else {
-				b.WriteString(fmt.Sprintf("  %s\n", option.Label))
+				b.WriteString(fmt.Sprintf("  %s\n", m.filteredKeys[i].Label))
 			}
 		}
 	}
@@ -95,18 +120,20 @@ func (m Model) View() string {
 
 // filterOptions filters options based on the search term
 func (m *Model) filterOptions() {
-	m.filteredKeys = nil
-	for key, value := range m.options {
-		if strings.Contains(strings.ToLower(value), strings.ToLower(m.filter)) { // Check values instead of keys
-			m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: value, Key: key}) // Set Label to value
-		}
-	}
+    // Clear the filteredKeys slice before appending new matches
+    m.filteredKeys = []SelectionOption{}
+
+    for key, value := range m.options {
+        if strings.Contains(strings.ToLower(value), strings.ToLower(m.filter)) {
+            m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: value, Key: key})
+        }
+    }
 }
 
 // DynamicSelect displays a full-screen selection prompt with search
 func DynamicSelect(options map[string]string) (SelectionOption, error) {
-	ClearScreen()
-	defer RestoreScreen()
+	// ClearScreen()
+	// defer RestoreScreen()
 	model := &Model{ // Use a pointer to Model
 		options: options,
 		filteredKeys: make([]SelectionOption, 0), // Initialize filteredKeys
