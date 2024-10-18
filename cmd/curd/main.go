@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/wraient/curd/internal"	
 	"os"
+	"math/rand"
 )
 
 type Title struct {
@@ -45,8 +46,9 @@ func main(){
 	
 	fmt.Println("Enter anime: ")
 	fmt.Scanln(&userQuery) // Scan input until a newline
-	// fmt.Println("You entered:", input)
 	animeList, err := internal.SearchAnime(string(userQuery), "sub")
+
+	internal.Log(userQuery, logFile)
 
 	if err != nil {
 		fmt.Println("Failed to get anime list")
@@ -57,14 +59,9 @@ func main(){
         fmt.Println("No results found.")
         os.Exit(0)
     }
-	if len(animeList) == 1 {
-		internal.Log("one result",  logFile)
-		internal.Log(animeList, logFile)
-    }
 
 	selectedOption, err := internal.DynamicSelect(animeList)
 
-	// Output the selected anime and its internal key
 	if err != nil {
 		fmt.Println("No anime Selected")
 		os.Exit(0)
@@ -77,6 +74,7 @@ func main(){
 
 	if err != nil{
 		fmt.Println("No episode list found")
+		os.Exit(1)
 	}
 
 	internal.Log(episodeList, logFile)
@@ -88,8 +86,21 @@ func main(){
 
 	if err != nil {
 		fmt.Println("Failed to get episode link")
+		os.Exit(1)
 	}
 
 	internal.Log(link, logFile)
+
+	// Generate a random number between 0 and 99
+	randomNumber := rand.Intn(100) // Change 100 to the desired range
+
+	err = internal.StartMpv(link[0], "/tmp/mpvsocket"+string(randomNumber))
+
+	if err != nil {
+		internal.Log("Failed to start mpv", logFile)
+	}
+
+	for { // Loop while video is playing
+	}
 
 }
