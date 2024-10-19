@@ -10,12 +10,6 @@ import (
 	"strings"
 )
 
-// AnimeTitle represents the title in different languages
-type AnimeTitle struct {
-	Romaji  string
-	English   string
-	Japanese  string
-}
 
 // AniListAnime is the struct for the API response
 type AniListAnime struct {
@@ -37,6 +31,13 @@ type ResponseData struct {
 	Page Page `json:"Page"`
 }
 
+// AnimeTitle represents the title in different languages
+type AnimeTitle struct {
+	Romaji    string
+	English   string
+	Japanese  string
+}
+
 
 type Media struct {
 	Duration int    `json:"duration"`
@@ -46,7 +47,7 @@ type Media struct {
 }
 
 type Entry struct {
-	Media   Media `json:"media"`
+	Media    Media `json:"media"`
 	Progress int   `json:"progress"`
 	Score    float64 `json:"score"`
 	Status   string `json:"status"`

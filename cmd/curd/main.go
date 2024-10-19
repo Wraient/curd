@@ -9,36 +9,45 @@ import (
 	"github.com/wraient/curd/internal"
 )
 
-type Title struct {
-	Romanji_title string
-	English_title string
-	Japanese_title string
+type AnimeTitle struct {
+	Romaji		string
+	English		string
+	Japanese	string
 }
 
 type Anime struct {
-	Tit Title 
-	Ep Episode
-	Total_episodes int
-	Mal_id int
-	Allanime_id string
+	Tit				AnimeTitle 
+	Ep				Episode
+	TotalEpisodes	int
+	MalId			int
+	AnilistId		int
+	AllanimeId		string
 }
 
 type SkipTimes struct {
-	Op int
-	Ed int
+	Op	int
+	Ed	int
 }
 
 type Episode struct {
-	Tit Title
-	Number int
-	Skip_times SkipTimes 
-	Mode string
-	Links []string
-	Is_filler bool
-	Is_recap bool
-	Aired string
-	Synopsis string
+	Tit 		AnimeTitle
+	Number	    int
+	Skip_times	SkipTimes 
+	Mode		string
+	Links 		[]string
+	Is_filler 	bool
+	Is_recap 	bool
+	Aired 		string
+	Synopsis 	string
 }
+
+type User struct {
+	token 		string
+	username 	string
+	id 			int
+	animeList 	internal.AnimeList
+}
+
 
 func main(){
 	internal.ClearScreen()
