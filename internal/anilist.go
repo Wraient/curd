@@ -38,7 +38,6 @@ type AnimeTitle struct {
 	Japanese  string
 }
 
-
 type Media struct {
 	Duration int    `json:"duration"`
 	Episodes int    `json:"episodes"`
@@ -54,11 +53,42 @@ type Entry struct {
 }
 
 type AnimeList struct {
-	Watching []Entry `json:"watching"`
-	Completed []Entry `json:"completed"`
-	Paused   []Entry `json:"paused"`
-	Dropped  []Entry `json:"dropped"`
-	Planning []Entry `json:"planning"`
+	Watching	[]Entry `json:"watching"`
+	Completed	[]Entry `json:"completed"`
+	Paused		[]Entry `json:"paused"`
+	Dropped 	[]Entry `json:"dropped"`
+	Planning 	[]Entry `json:"planning"`
+}
+
+// FindKeyByValue searches for a key associated with a given value in a map[string]string
+func FindKeyByValue(m map[string]string, value string) (string, error) {
+	for key, val := range m {
+		if val == value {
+			return key, nil // Return the key and true if the value is found
+		}
+	}
+	return "", fmt.Errorf("No key with value %v", value) // Return empty string and false if the value is not found
+}
+
+// GetAnimeMap takes an AnimeList and returns a map with media.id as key and media.title.english as value.
+func GetAnimeMap(animeList AnimeList) map[string]string {
+	animeMap := make(map[string]string)
+
+	// Helper function to populate the map from a slice of entries
+	populateMap := func(entries []Entry) {
+		for _, entry := range entries {
+			animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.English
+		}
+	}
+
+	// Populate the map for each category
+	populateMap(animeList.Watching)
+	populateMap(animeList.Completed)
+	populateMap(animeList.Paused)
+	populateMap(animeList.Dropped)
+	populateMap(animeList.Planning)
+
+	return animeMap
 }
 
 // SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
@@ -512,4 +542,32 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 	}
 
 	return animeList
+}
+
+// FindAnimeByID searches for an anime by its ID in the AnimeList
+func FindAnimeByAnilistID(list AnimeList, idStr string) (*Entry, error) {
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid ID format: %s", idStr)
+	}
+
+	// Define a slice of pointers to hold categories
+	categories := [][]Entry{
+		list.Watching,
+		list.Completed,
+		list.Paused,
+		list.Dropped,
+		list.Planning,
+	}
+
+	// Iterate through each category
+	for _, category := range categories {
+		for _, entry := range category {
+			if entry.Media.ID == id {
+				return &entry, nil // Return a pointer to the found entry
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("anime with ID %d not found", id) // Return an error if not found
 }
