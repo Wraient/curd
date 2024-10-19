@@ -3,26 +3,24 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"runtime"
+	"strings"
 	"time"
-	// "log"
 )
 
-type curdConfig struct {
-	player string
-	historyFile string
-	subs_language string
-	sub_or_dub string
-	percentageToMarkComplete int
-	nextEpisodePrompt bool
-	skipOp bool
-	skipEd bool
-	skipFiller bool
-	skipRecap bool
-	scoreOnCompletion bool
-	saveMpvSpeed bool
-	discordPresence bool
+func GetTokenFromFile(filePath string) (string, error) {
+	// Read the token from the file
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read token from file: %w", err)
+	}
+
+	// Convert the byte slice to a string and remove any surrounding whitespace or newlines
+	token := strings.TrimSpace(string(data))
+
+	return token, nil
 }
 
 // LogData logs the input data into a specified log file with the format [LOG] time lineNumber: logData
