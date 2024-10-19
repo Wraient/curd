@@ -93,7 +93,7 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 		// Log(anime.AvailableEpisodes, logFile)
 		// episodesStr = anime.AvailableEpisodes.sub
 
-		//anime is = {"dub":0,"raw":0,"sub":4}
+		//anime = {"dub":0,"raw":0,"sub":4}
 
 		if episodes, ok := anime.AvailableEpisodes.(map[string]interface{}); ok {
 			// Log(episodes, logFile)
