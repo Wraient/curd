@@ -12,9 +12,9 @@ import (
 
 // AnimeTitle represents the title in different languages
 type AnimeTitle struct {
-	Romanji_title   string
-	English_title   string
-	Japanese_title  string
+	Romaji  string
+	English   string
+	Japanese  string
 }
 
 // AniListAnime is the struct for the API response
@@ -35,6 +35,29 @@ type Page struct {
 // ResponseData represents the full response structure
 type ResponseData struct {
 	Page Page `json:"Page"`
+}
+
+
+type Media struct {
+	Duration int    `json:"duration"`
+	Episodes int    `json:"episodes"`
+	ID       int    `json:"id"`
+	Title    AnimeTitle  `json:"title"`
+}
+
+type Entry struct {
+	Media   Media `json:"media"`
+	Progress int   `json:"progress"`
+	Score    float64 `json:"score"`
+	Status   string `json:"status"`
+}
+
+type AnimeList struct {
+	Watching []Entry `json:"watching"`
+	Completed []Entry `json:"completed"`
+	Paused   []Entry `json:"paused"`
+	Dropped  []Entry `json:"dropped"`
+	Planning []Entry `json:"planning"`
 }
 
 // SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
@@ -235,6 +258,7 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 						title {
 							romaji
 							english
+							native
 						}
 					}
 					status
@@ -413,4 +437,78 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 	}
 
 	return responseData, nil
+}
+
+func ParseAnimeList(input map[string]interface{}) AnimeList {
+	var animeList AnimeList
+
+	toInt := func(value interface{}) int {
+		switch v := value.(type) {
+		case int:
+			return v
+		case float64:
+			return int(v) // You could also use int(math.Round(v)) to round
+		default:
+			return 0 // Default value for unexpected types
+		}
+	}
+
+	safeString := func(value interface{}) string {
+		if value == nil {
+			return ""
+		}
+
+		// Attempt to assert the value as a string
+		if str, ok := value.(string); ok {
+			return str
+		}
+
+		// If it's not a string, return an empty string or handle it as needed
+		return ""
+	}
+
+	// Access the list entries in the input map
+	data := input["data"].(map[string]interface{})
+	mediaList := data["MediaListCollection"].(map[string]interface{})["lists"].([]interface{})
+
+	for _, list := range mediaList {
+		entries := list.(map[string]interface{})["entries"].([]interface{})
+
+		for _, entry := range entries {
+			entryData := entry.(map[string]interface{})
+			media := entryData["media"].(map[string]interface{})
+
+			animeEntry := Entry{
+				Media: Media{
+					Duration: toInt(media["duration"]),
+					Episodes: toInt(media["episodes"]),
+					ID:       toInt(media["id"]),
+					Title: AnimeTitle{
+						English: safeString(media["title"].(map[string]interface{})["english"]),
+						Romaji:  safeString(media["title"].(map[string]interface{})["romaji"]),
+						Japanese:  safeString(media["title"].(map[string]interface{})["native"]),
+					},
+				},
+				Progress: toInt(entryData["progress"]),
+				Score:    entryData["score"].(float64),
+				Status:   safeString(entryData["status"]), // Ensure status is fetched safely
+			}
+
+			// Append entries based on their status
+			switch animeEntry.Status {
+			case "CURRENT":
+				animeList.Watching = append(animeList.Watching, animeEntry)
+			case "COMPLETED":
+				animeList.Completed = append(animeList.Completed, animeEntry) // Fix: Ensure Completed list is used
+			case "PAUSED":
+				animeList.Paused = append(animeList.Paused, animeEntry) // Fix: Append to Paused list
+			case "DROPPED":
+				animeList.Dropped = append(animeList.Dropped, animeEntry) // Fix: Append to Dropped list
+			case "PLANNING":
+				animeList.Planning = append(animeList.Planning, animeEntry) // Fix: Append to Planning list
+			}
+		}
+	}
+
+	return animeList
 }
