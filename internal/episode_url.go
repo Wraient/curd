@@ -3,7 +3,7 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -71,13 +71,13 @@ func extractLinks(provider_id string) map[string]interface{} {
 	// Send the request
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println("Error sending request:", err)
+		Log(fmt.Sprint("Error sending request:", err), logFile)
 		return videoData
 	}
 	defer resp.Body.Close()
 
 	// Read the response body
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println("Error reading response:", err)
 		return videoData
@@ -140,7 +140,7 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 					}
 				}
 			} else {
-				fmt.Println("Links field is not of the expected type []interface{}")
+				Log("Links field is not of the expected type []interface{}", logFile)
 			}
 		}
 	}
