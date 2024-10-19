@@ -1,11 +1,12 @@
 package main
 
 import (
+	// "encoding/json"
 	"fmt"
-	"math/rand"
 	"os"
 	"strconv"
 	"time"
+
 	"github.com/wraient/curd/internal"
 )
 
@@ -16,7 +17,7 @@ type AnimeTitle struct {
 }
 
 type Anime struct {
-	Tit				AnimeTitle 
+	Title				AnimeTitle 
 	Ep				Episode
 	TotalEpisodes	int
 	MalId			int
@@ -33,12 +34,17 @@ type Episode struct {
 	Tit 		AnimeTitle
 	Number	    int
 	Skip_times	SkipTimes 
-	Mode		string
 	Links 		[]string
 	Is_filler 	bool
 	Is_recap 	bool
 	Aired 		string
 	Synopsis 	string
+}
+
+type playingVideo struct {
+	url string
+	speed float64
+	playbackTime int
 }
 
 type User struct {
@@ -48,74 +54,117 @@ type User struct {
 	animeList 	internal.AnimeList
 }
 
-
 func main(){
-	internal.ClearScreen()
-	defer internal.RestoreScreen()
+	// internal.ClearScreen()
+	// defer internal.RestoreScreen()
 
-	var userQuery string
+	var anime Anime
+	var user User
+
+	configFilePath := os.ExpandEnv("$HOME/Projects/curd/.config/curd/curd_config.txt")
 	logFile := "debug.log"
-	
-	fmt.Println("Enter anime: ")
-	fmt.Scanln(&userQuery) // Scan input until a newline
-	animeList, err := internal.SearchAnime(string(userQuery), "sub")
 
-	internal.Log(userQuery, logFile)
-
+	// load curd userCurdConfig
+	userCurdConfig, err := internal.LoadConfig(configFilePath)
 	if err != nil {
-		fmt.Println("Failed to get anime list")
-		os.Exit(1)
+		fmt.Println("Error loading config:", err)
+		return
 	}
 
+	internal.Log(userCurdConfig, logFile)
+
+	// Get the token from the token file
+	user.token, err = internal.GetTokenFromFile("/home/wraient/.local/share/curd/token")
+	if err != nil {
+		internal.Log("Error reading token", logFile)
+	}
+
+	// Get user id, username and Anime list
+	user.id, user.username, err = internal.GetAnilistUserID(user.token)
+	anilistUserData, err := internal.GetUserData(user.token, user.id)
+	user.animeList = internal.ParseAnimeList(anilistUserData)
+	animeListMap := internal.GetAnimeMap(user.animeList)
+
+	// Select anime to watch (Anilist)
+	anilistSelectedOption, err := internal.DynamicSelect(animeListMap)
+	userQuery := anilistSelectedOption.Label
+	anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
+	if err != nil {
+		fmt.Println("Error converting Anilist ID:", err)
+		return
+	}
+
+	// Get Anime list (All anime)
+	animeList, err := internal.SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
+	if err != nil {
+		fmt.Println("Failed to select anime", logFile)
+		os.Exit(1)
+	}
 	if len(animeList) == 0 {
-        fmt.Println("No results found.")
-        os.Exit(0)
-    }
-
-	selectedOption, err := internal.DynamicSelect(animeList)
-
+		fmt.Println("No results found.")
+		os.Exit(0)
+	}
+	
+	// Get anime entry
+	selectedAnilistAnime, err := internal.FindAnimeByAnilistID(user.animeList, anilistSelectedOption.Key)
 	if err != nil {
-		fmt.Println("No anime Selected")
-		os.Exit(0)
+		fmt.Println("Can not find the anime in anilist animelist")
 	}
 
-	internal.Log(animeList, logFile)
-	internal.Log(selectedOption, logFile)
+	anime.Title = AnimeTitle(selectedAnilistAnime.Media.Title)
+	anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
+	anime.Ep.Number = selectedAnilistAnime.Progress
 
-	episodeList, err := internal.EpisodesList(selectedOption.Key, "sub")
+	// Get allanime id of anime
+	anime.AllanimeId, err = internal.FindKeyByValue(animeList, fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes))
+	// If unable to get id automatically get manually
+	if err != nil {
+		fmt.Println("Failed to automatically select anime")
+		selectedAllanimeAnime, err := internal.DynamicSelect(animeList)
+		if err != nil {
+			fmt.Println("No anime available")
+			os.Exit(0)
+		}
 
-	if err != nil{
-		fmt.Println("No episode list found")
-		internal.RestoreScreen()
-		os.Exit(1)
+		anime.AllanimeId = selectedAllanimeAnime.Key
 	}
 
-	if episodeList == nil { // if user selected "Add new anime option"
-		fmt.Println("Add new anime")
-		internal.RestoreScreen()
-		os.Exit(0)
+	// internal.Log(userQuery, logFile)
+
+	// os.Exit(0)
+	link, err := internal.GetEpisodeURL(userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+	if err != nil {
+		episodeList, err := internal.EpisodesList(anime.AllanimeId, userCurdConfig.SubOrDub)
+		
+		if err != nil{
+			fmt.Println("No episode list found")
+			internal.RestoreScreen()
+			os.Exit(1)
+		}
+		
+		if episodeList == nil { // if user selected "Add new anime option" 
+			fmt.Println("Add new anime") // TODO: add new anime implementaion
+			internal.RestoreScreen()
+			os.Exit(0)
+		}
+	
+		internal.Log(episodeList, logFile)
+		fmt.Printf("Enter the episode (%v episodes)\n", episodeList[len(episodeList)-1])
+		fmt.Scanln(&anime.Ep.Number)
+		link, err := internal.GetEpisodeURL(userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+		anime.Ep.Links = link
 	}
 
-	internal.Log(episodeList, logFile)
-	var episodeNumber string
-	fmt.Printf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1])
-	fmt.Scanln(&episodeNumber)
-
-	link, err := internal.GetEpisodeURL(internal.GetDefaultAllanimeConfig(), selectedOption.Key, episodeNumber)
-
+	anime.Ep.Links = link
+	
 	if err != nil {
 		fmt.Println("Failed to get episode link")
 		os.Exit(1)
 	}
+	
+	internal.Log(anime, logFile)
 
-	internal.Log(link, logFile)
-
-	// Generate a random number between 0 and 99
-	randomNumber := rand.Intn(100) // Change 100 to the desired range
-	fmt.Println("random number", randomNumber)
-	mpvSocketPath := "/tmp/mpvsocket"+strconv.Itoa(randomNumber)
-
-	err = internal.StartMpv(link[0], mpvSocketPath)
+	mpvSocketPath, err := internal.StartMpv(anime.Ep.Links[len(anime.Ep.Links)-1])
 
 	if err != nil {
 		internal.Log("Failed to start mpv", logFile)
@@ -123,6 +172,15 @@ func main(){
 	}
 
 	for { // Loop while video is playing
-	}
+		speed, err :=internal.GetMpvProperty(mpvSocketPath, "speed")
 
+		if err != nil {
+			// fmt.Println("failed to get mpv speed")
+			// internal.Log(mpvSocketPath, logFile)
+			// internal.Log(speed, logFile)
+		} else {
+			fmt.Println(speed)
+		}
+		time.Sleep(1)
+	}
 }
