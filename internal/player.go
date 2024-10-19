@@ -2,19 +2,26 @@ package internal
 
 import (
 	// "fmt"
+	"encoding/json"
 	"fmt"
-	"os/exec"
-    "encoding/json"
 	"net"
+	"os"
+	"os/exec"
+	"strconv"
 	"time"
-    "os"
+	"math/rand"
 )
 var logFile = "debug.log"
 
-// StartMpv starts the mpv player with the given video URL and IPC socket path.
-func StartMpv(videoURL, socketPath string) error {
-	cmd := exec.Command("mpv", "--input-ipc-server="+socketPath, videoURL)
-	return cmd.Start()
+// StartMpv starts the mpv player with the given video URL and return ipc socket path.
+func StartMpv(videoURL string) (string, error) {
+	// Generate a random mpvsocket path (Linux only)
+	randomNumber := rand.Intn(100) // Change 100 to the desired range
+	fmt.Println("random number", randomNumber)
+	mpvSocketPath := "/tmp/mpvsocket"+strconv.Itoa(randomNumber)
+	
+	cmd := exec.Command("mpv", "--input-ipc-server="+mpvSocketPath, videoURL)
+	return mpvSocketPath, cmd.Start()
 }
 
 // sendIpcMessage sends a JSON message to the mpv IPC socket and reads the response.
