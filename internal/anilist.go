@@ -1,0 +1,416 @@
+package internal
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"strconv"
+	"strings"
+)
+
+// AnimeTitle represents the title in different languages
+type AnimeTitle struct {
+	Romanji_title   string
+	English_title   string
+	Japanese_title  string
+}
+
+// AniListAnime is the struct for the API response
+type AniListAnime struct {
+	ID    int `json:"id"`
+	Title struct {
+		Romaji  string `json:"romaji"`
+		English string `json:"english"`
+		Native  string `json:"native"`
+	} `json:"title"`
+}
+
+// Page represents the page in AniList response
+type Page struct {
+	Media []AniListAnime `json:"media"`
+}
+
+// ResponseData represents the full response structure
+type ResponseData struct {
+	Page Page `json:"Page"`
+}
+
+// SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
+func SearchAnimeAnilist(query, token string) (map[string]string, error) {
+	url := "https://graphql.anilist.co"
+
+	queryString := `
+	query ($search: String) {
+		Page(page: 1, perPage: 10) {
+			media(search: $search, type: ANIME) {
+				id
+				title {
+					romaji
+					english
+					native
+				}
+			}
+		}
+	}`
+
+	variables := map[string]string{"search": query}
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"query":     queryString,
+		"variables": variables,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to search for anime. Status Code: %d, Response: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var responseData map[string]ResponseData
+	err = json.Unmarshal(body, &responseData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	animeList := responseData["data"].Page.Media
+	animeDict := make(map[string]string)
+
+	// Map titles to their IDs as strings
+	for _, anime := range animeList {
+		idStr := strconv.Itoa(anime.ID) // Convert ID to string
+		if anime.Title.English != "" {
+			animeDict[idStr] = anime.Title.English
+		} else {
+			animeDict[idStr] = anime.Title.Romaji
+		}
+	}
+
+	return animeDict, nil
+}
+
+// Function to get AniList user ID and username
+func GetAnilistUserID(token string) (int, string, error) {
+	url := "https://graphql.anilist.co"
+	query := `
+	query {
+		Viewer {
+			id
+			name
+		}
+	}`
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+		"Accept":        "application/json",
+	}
+
+	response, err := makePostRequest(url, query, nil, headers)
+	if err != nil {
+		return 0, "", err
+	}
+
+	data := response["data"].(map[string]interface{})["Viewer"].(map[string]interface{})
+	userID := int(data["id"].(float64))
+	userName := data["name"].(string)
+
+	return userID, userName, nil
+}
+
+// Function to add an anime to the watching list
+func AddAnimeToWatchingList(animeID int, token string) error {
+	url := "https://graphql.anilist.co"
+	mutation := `
+	mutation ($mediaId: Int) {
+		SaveMediaListEntry (mediaId: $mediaId, status: CURRENT) {
+			id
+			status
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"mediaId": animeID,
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+
+	_, err := makePostRequest(url, mutation, variables, headers)
+	if err != nil {
+		return fmt.Errorf("failed to add anime: %w", err)
+	}
+
+	fmt.Printf("Anime with ID %d has been added to your watching list.\n", animeID)
+	return nil
+}
+
+// Function to get MAL ID using AniList media ID
+func GetAnimeMalID(anilistMediaID int) (int, error) {
+	url := "https://graphql.anilist.co"
+	query := `
+	query ($id: Int) {
+		Media(id: $id) {
+			idMal
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"id": anilistMediaID,
+	}
+
+	response, err := makePostRequest(url, query, variables, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	malID := int(response["data"].(map[string]interface{})["Media"].(map[string]interface{})["idMal"].(float64))
+	return malID, nil
+}
+
+// Function to get AniList media ID and image
+func GetAnimeIDAndImage(anilistMediaID int) (int, string, error) {
+	url := "https://graphql.anilist.co"
+	query := `
+	query ($id: Int) {
+		Media(id: $id) {
+			coverImage {
+				large
+			}
+			idMal
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"id": anilistMediaID,
+	}
+
+	response, err := makePostRequest(url, query, variables, nil)
+	if err != nil {
+		return 0, "", err
+	}
+
+	data := response["data"].(map[string]interface{})["Media"].(map[string]interface{})
+	malID := int(data["idMal"].(float64))
+	imageURL := data["coverImage"].(map[string]interface{})["large"].(string)
+
+	return malID, imageURL, nil
+}
+
+// Function to get user data from AniList
+func GetUserData(token string, userID int) (map[string]interface{}, error) {
+	query := fmt.Sprintf(`
+	{
+		MediaListCollection(userId: %d, type: ANIME) {
+			lists {
+				entries {
+					media {
+						id
+						episodes
+						duration
+						title {
+							romaji
+							english
+						}
+					}
+					status
+					score
+					progress
+				}
+			}
+		}
+	}`, userID)
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+
+	response, err := makePostRequest("https://graphql.anilist.co", query, nil, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
+}
+
+// Function to load a JSON file
+func LoadJSONFile(filePath string) (map[string]interface{}, error) {
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	var jsonData map[string]interface{}
+	err = json.Unmarshal(data, &jsonData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	return jsonData, nil
+}
+
+// Function to search for an anime by title in user data
+func SearchAnimeByTitle(jsonData map[string]interface{}, searchTitle string) []map[string]interface{} {
+	results := []map[string]interface{}{}
+
+	if searchTitle == "1P" {
+		searchTitle = "ONE PIECE"
+	}
+
+	lists := jsonData["data"].(map[string]interface{})["MediaListCollection"].(map[string]interface{})["lists"].([]interface{})
+	for _, list := range lists {
+		entries := list.(map[string]interface{})["entries"].([]interface{})
+		for _, entry := range entries {
+			media := entry.(map[string]interface{})["media"].(map[string]interface{})
+			romajiTitle := media["title"].(map[string]interface{})["romaji"].(string)
+			englishTitle := media["title"].(map[string]interface{})["english"].(string)
+			episodes := int(media["episodes"].(float64))
+			duration := int(media["duration"].(float64))
+
+			if strings.Contains(strings.ToLower(romajiTitle), strings.ToLower(searchTitle)) || strings.Contains(strings.ToLower(englishTitle), strings.ToLower(searchTitle)) {
+				result := map[string]interface{}{
+					"id":           media["id"],
+					"progress":     entry.(map[string]interface{})["progress"],
+					"romaji_title": romajiTitle,
+					"english_title": englishTitle,
+					"episodes":      episodes,
+					"duration":      duration,
+				}
+				results = append(results, result)
+			}
+		}
+	}
+
+	return results
+}
+
+// Function to update anime progress
+func UpdateAnimeProgress(token string, mediaID, progress int) error {
+	url := "https://graphql.anilist.co"
+	query := `
+	mutation($mediaId: Int, $progress: Int) {
+		SaveMediaListEntry(mediaId: $mediaId, progress: $progress) {
+			id
+			progress
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"mediaId":  mediaID,
+		"progress": progress,
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+
+	_, err := makePostRequest(url, query, variables, headers)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Anime progress updated! Latest watched episode:", progress)
+	return nil
+}
+
+// Function to rate an anime on AniList
+func RateAnime(token string, mediaID int, score float64) error {
+	url := "https://graphql.anilist.co"
+	query := `
+	mutation($mediaId: Int, $score: Float) {
+		SaveMediaListEntry(mediaId: $mediaId, score: $score) {
+			id
+			mediaId
+			score
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"mediaId": mediaID,
+		"score":   score,
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+
+	_, err := makePostRequest(url, query, variables, headers)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully rated anime (mediaId: %d) with score: %.2f\n", mediaID, score)
+	return nil
+}
+
+// Helper function to make POST requests
+func makePostRequest(url, query string, variables map[string]interface{}, headers map[string]string) (map[string]interface{}, error) {
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"query":     query,
+		"variables": variables,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed with status %d: %s", resp.StatusCode, body)
+	}
+
+	var responseData map[string]interface{}
+	// Unmarshal the response into a map
+	err = json.Unmarshal(body, &responseData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return responseData, nil
+}
