@@ -11,14 +11,6 @@ import (
 	"unicode"
 )
 
-type config struct {
-	Agent        string
-	AllanimeRefr string
-	AllanimeBase string
-	AllanimeAPI  string
-	Mode         string
-	Quality      string
-}
 
 type allanimeResponse struct {
 	Data struct {
@@ -28,17 +20,6 @@ type allanimeResponse struct {
 			} `json:"sourceUrls"`
 		} `json:"episode"`
 	} `json:"data"`
-}
-
-func GetDefaultAllanimeConfig() config {
-	return config{
-		Agent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
-		AllanimeRefr: "https://allanime.to",
-		AllanimeBase: "allanime.day",
-		AllanimeAPI:  "https://api.allanime.day",
-		Mode:         "sub",
-		Quality:      "best",
-	}
 }
 
 func decodeProviderID(encoded string) string {
@@ -124,13 +105,13 @@ func extractLinks(provider_id string) map[string]interface{} {
 // Returns:
 // - []string: a list of links for specified episode.
 // - error: an error if the episode is not found or if there is an issue during the search.
-func GetEpisodeURL(config config, id, epNo string) ([]string, error) {
+func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	query := `query($showId:String!,$translationType:VaildTranslationTypeEnumType!,$episodeString:String!){episode(showId:$showId,translationType:$translationType,episodeString:$episodeString){episodeString sourceUrls}}`
 
 	variables := map[string]string{
 		"showId":          id,
-		"translationType": config.Mode,
-		"episodeString":   epNo,
+		"translationType": config.SubOrDub,
+		"episodeString":   fmt.Sprintf("%d", epNo),
 	}
 
 	variablesJSON, err := json.Marshal(variables)
@@ -142,7 +123,7 @@ func GetEpisodeURL(config config, id, epNo string) ([]string, error) {
 	values.Set("query", query)
 	values.Set("variables", string(variablesJSON))
 
-	reqURL := fmt.Sprintf("%s/api?%s", config.AllanimeAPI, values.Encode())
+	reqURL := fmt.Sprintf("%s/api?%s", "https://api.allanime.day", values.Encode())
 
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", reqURL, nil)
@@ -150,8 +131,8 @@ func GetEpisodeURL(config config, id, epNo string) ([]string, error) {
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", config.Agent)
-	req.Header.Set("Referer", config.AllanimeRefr)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0")
+	req.Header.Set("Referer", "https://allanime.to")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -196,26 +177,3 @@ func GetEpisodeURL(config config, id, epNo string) ([]string, error) {
 
 	return allinks, nil
 }
-
-// func main() {
-// 	config := getDefaultConfig()
-
-// 	id := "ReooPAxPMsHM4KPMY" // One piece
-// 	// id := "RezHft5pjutwWcE3B" // Death note
-// 	epNo := "945"
-
-// 	links, err := getEpisodeURL(config, id, epNo)
-// 	if err != nil {
-// 		fmt.Printf("Error: %v\n", err)
-// 		if strings.Contains(err.Error(), "no source URLs found") {
-// 			fmt.Println("Episode not released!")
-// 		}
-// 		os.Exit(1)
-// 	}
-
-// 	// Print all found links
-// 	// fmt.Println("links:", links)
-// 	for _, link := range links {
-// 		fmt.Println(link)
-// 	}
-// }
