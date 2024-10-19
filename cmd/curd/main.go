@@ -32,7 +32,8 @@ type Episode struct {
 	Tit Title
 	Number int
 	Skip_times SkipTimes 
-	links []string
+	Mode string
+	Links []string
 	Is_filler bool
 	Is_recap bool
 	Aired string
