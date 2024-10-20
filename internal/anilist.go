@@ -11,55 +11,6 @@ import (
 	"strings"
 )
 
-// AniListAnime is the struct for the API response
-type AniListAnime struct {
-	ID    int `json:"id"`
-	Title struct {
-		Romaji  string `json:"romaji"`
-		English string `json:"english"`
-		Native  string `json:"native"`
-	} `json:"title"`
-}
-
-// Page represents the page in AniList response
-type Page struct {
-	Media []AniListAnime `json:"media"`
-}
-
-// ResponseData represents the full response structure
-type ResponseData struct {
-	Page Page `json:"Page"`
-}
-
-// AnimeTitle represents the title in different languages
-type AnimeTitle struct {
-	Romaji    string
-	English   string
-	Japanese  string
-}
-
-type Media struct {
-	Duration int    `json:"duration"`
-	Episodes int    `json:"episodes"`
-	ID       int    `json:"id"`
-	Title    AnimeTitle  `json:"title"`
-}
-
-type Entry struct {
-	Media    Media `json:"media"`
-	Progress int   `json:"progress"`
-	Score    float64 `json:"score"`
-	Status   string `json:"status"`
-}
-
-type AnimeList struct {
-	Watching	[]Entry `json:"watching"`
-	Completed	[]Entry `json:"completed"`
-	Paused		[]Entry `json:"paused"`
-	Dropped 	[]Entry `json:"dropped"`
-	Planning 	[]Entry `json:"planning"`
-}
-
 // FindKeyByValue searches for a key associated with a given value in a map[string]string
 func FindKeyByValue(m map[string]string, value string) (string, error) {
 	for key, val := range m {
@@ -570,4 +521,14 @@ func FindAnimeByAnilistID(list AnimeList, idStr string) (*Entry, error) {
 	}
 
 	return nil, fmt.Errorf("anime with ID %d not found", id) // Return an error if not found
+}
+
+// FindAnimeByAnilistIDInAnimes searches for an anime by its AniList ID in a slice of Anime
+func FindAnimeByAnilistIDInAnimes(animes []Anime, anilistID int) (*Anime, error) {
+	for i := range animes {
+		if animes[i].AnilistId == anilistID {
+			return &animes[i], nil
+		}
+	}
+	return nil, fmt.Errorf("anime with ID %d not found", anilistID)
 }
