@@ -138,8 +138,13 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 				strconv.Itoa(existingAnime.AnilistId),
 				existingAnime.AllanimeId,
 				strconv.Itoa(existingAnime.Ep.Number),
-				strconv.Itoa(watchingTime), // Assuming you want to update the watching time too
-				existingAnime.Title.Romaji,
+				strconv.Itoa(existingAnime.Ep.Player.PlaybackTime),
+				func() string {
+					if existingAnime.Title.English != "" {
+						return existingAnime.Title.English
+					}
+					return existingAnime.Title.Romaji
+				}(), // Keep the original anime name (Romaji or English) for other entries
 			})
 		}
 	}
