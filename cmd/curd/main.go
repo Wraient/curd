@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"time"
-
+	"sync"
 	"github.com/wraient/curd/internal"
 )
 
@@ -48,8 +48,13 @@ func main() {
 
 	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
 
+	// Create a channel to signal when to exit the skip loop
+	var wg sync.WaitGroup
+	
 	// Main loop
-	// for {
+	for {
+		skipLoopDone := make(chan struct{})
+
 		// Get MalId and CoverImage (only if discord presence is enabled)
 		if userCurdConfig.DiscordPresence {
 			anime.MalId, anime.CoverImage, err = internal.GetAnimeIDAndImage(anime.AnilistId)
@@ -67,6 +72,12 @@ func main() {
 			}
 		}
 
+		// Start curd
+		mpvSocketPath := internal.StartCurd(&userCurdConfig, &anime, logFile)
+	
+		internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
+		internal.Log(mpvSocketPath, logFile)
+
 		// Get episode data
 		go func(){
 			err = internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime)
@@ -74,25 +85,33 @@ func main() {
 				internal.Log("Error getting episode data: "+err.Error(), logFile)
 			}
 			internal.Log(anime, logFile)
+
+			if anime.Ep.IsFiller {
+				internal.Log("Filler episode", logFile)
+				internal.SeekMPV(mpvSocketPath, anime.Ep.Duration)
+			}
+
 		}()
 
-		// Start curd
-		mpvSocketPath := internal.StartCurd(&userCurdConfig, &anime, logFile)
-		
-		internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
-		internal.Log(mpvSocketPath, logFile)
-
+		wg.Add(1)
 		// Thread to update Discord presence
 		go func() {
+			defer wg.Done()
 			for {
-				err = internal.DiscordPresence(discordClientId, anime)
-				if err != nil {
-					internal.Log("Error setting Discord presence: "+err.Error(), logFile)
+				select {
+				case <-skipLoopDone:
+					return
+				default:
+					err = internal.DiscordPresence(discordClientId, anime)
+					if err != nil {
+						internal.Log("Error setting Discord presence: "+err.Error(), logFile)
+					}
+					time.Sleep(1 * time.Second)
 				}
-				time.Sleep(1 * time.Second)
 			}
 		}()
 
+		// Get skip times Parallel
 		go func() {
 			err = internal.GetAndParseAniSkipData(anime.MalId, anime.Ep.Number, 1, &anime)
 			if err != nil {
@@ -101,65 +120,96 @@ func main() {
 			internal.Log(anime.Ep.SkipTimes, logFile)
 		}()
 
+		wg.Add(1)
 		// Thread to update playback time in database
 		go func() {
+			defer wg.Done()
 			for {
-				time.Sleep(1 * time.Second)
+				select {
+				case <-skipLoopDone:
+					return
+				default:
+					time.Sleep(1 * time.Second)
 
-				// Get current playback time
-				timePos, err := internal.MPVSendCommand(mpvSocketPath, []interface{}{"get_property", "time-pos"})
-				if err != nil {
-					internal.Log("Error getting playback time: "+err.Error(), logFile)
+					// Get current playback time
+					// internal.Log("Getting playback time"+mpvSocketPath, logFile)
+					timePos, err := internal.MPVSendCommand(mpvSocketPath, []interface{}{"get_property", "time-pos"})
+					if err != nil {
+						internal.Log("Error getting playback time: "+err.Error(), logFile)
 
-					// User closed the video
-					if anime.Ep.Started {
-						fmt.Println("Have a great day!")
-						os.Exit(0)
-					}
-				}
+						// User closed the video
+						if anime.Ep.Started {
 
-				// Convert timePos to integer
-				if timePos != nil {
-					if !anime.Ep.Started {
-						anime.Ep.Started = true
-					}
+							if int(*internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)) >= userCurdConfig.PercentageToMarkComplete {
+								anime.Ep.Number++
+								anime.Ep.Started = false
+								internal.Log("Completed episode, starting next.", logFile)
+								// Exit the skip loop
+								close(skipLoopDone)
+								// continue
+							} else{
+								fmt.Println("Have a great day!")
+								os.Exit(0)
+							}
 
-					// If resume is true, seek to the playback time
-					if anime.Ep.Resume {
-						internal.SeekMPV(mpvSocketPath, anime.Ep.Player.PlaybackTime)
-						anime.Ep.Resume = false
-					}
-
-					animePosition, ok := timePos.(float64)
-					if !ok {
-						internal.Log("Error: timePos is not a float64", logFile)
-						continue
+						}
 					}
 
-					anime.Ep.Player.PlaybackTime = int(animePosition + 0.5) // Round to nearest integer
-					// Update Local Database
-					internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, anime.Title.English)
+					// Convert timePos to integer
+					if timePos != nil && err == nil {
+						if !anime.Ep.Started {
+							anime.Ep.Started = true
+						}
+
+						// If resume is true, seek to the playback time
+						if anime.Ep.Resume {
+							internal.SeekMPV(mpvSocketPath, anime.Ep.Player.PlaybackTime)
+							anime.Ep.Resume = false
+						}
+
+						animePosition, ok := timePos.(float64)
+						if !ok {
+							internal.Log("Error: timePos is not a float64", logFile)
+							continue
+						}
+
+						anime.Ep.Player.PlaybackTime = int(animePosition + 0.5) // Round to nearest integer
+						// Update Local Database
+						internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, anime.Title.English)
+					}
 				}
 			}
 		}()
 
-		// Main playback loop
+		// Skip OP and ED
+		skipLoop:
 		for {
-			// Check if MPV has started
-			currentTime, err := internal.MPVSendCommand(mpvSocketPath, []interface{}{"get_property", "time-pos"})
-			if err != nil || currentTime == nil {
-			}
-			if userCurdConfig.SkipOp {
-				if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Op.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Op.Start+2 && anime.Ep.SkipTimes.Op.Start != anime.Ep.SkipTimes.Op.End {
-					internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Op.End)
-				}
-			}
-			if userCurdConfig.SkipEd {
-				if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Ed.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Ed.Start+2 && anime.Ep.SkipTimes.Ed.Start != anime.Ep.SkipTimes.Ed.End {
-					internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Ed.End)
-				}
+			select {
+				case <-skipLoopDone:
+					// Exit signal received, break out of the skipLoop
+					break skipLoop
+				default:
+					// Check if MPV has started
+					if userCurdConfig.SkipOp {
+					if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Op.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Op.Start+2 && anime.Ep.SkipTimes.Op.Start != anime.Ep.SkipTimes.Op.End {
+							internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Op.End)
+						}
+					}
+					if userCurdConfig.SkipEd {
+						if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Ed.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Ed.Start+2 && anime.Ep.SkipTimes.Ed.Start != anime.Ep.SkipTimes.Ed.End {
+							internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Ed.End)
+						}
+					}
 			}
 			time.Sleep(1 * time.Second) // Wait before checking again
 		}
 
+		// Wait for all goroutines to finish before starting the next iteration
+		wg.Wait()
+
+		// Reset the WaitGroup for the next loop
+		wg = sync.WaitGroup{}
+
+		continue
+	}
 }
