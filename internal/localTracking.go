@@ -74,6 +74,8 @@ func LocalDeleteAnime(databaseFile string, anilistID int, allanimeID string) {
 		fmt.Println("Error writing to file:", err)
 	}
 }
+
+// Function to get all anime entries from the database
 func LocalGetAllAnime(databaseFile string) []Anime {
 	animeList := []Anime{}
 	file, err := os.Open(databaseFile)
@@ -127,6 +129,7 @@ func getAnimeName(anime Anime) string {
 	}
 	return anime.Title.Romaji
 }
+
 // Function to update or add a new anime entry
 func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, playbackTime int, animeName string) {
 	// Read existing entries
