@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -54,7 +55,6 @@ func Log(data interface{}, logFile string) error {
 	return nil
 }
 
-
 // ClearScreen clears the terminal screen and saves the state
 func ClearScreen() {
     fmt.Print("\033[?1049h") // Switch to alternate screen buffer
@@ -66,3 +66,101 @@ func ClearScreen() {
 func RestoreScreen() {
     fmt.Print("\033[?1049l") // Switch back to the main screen buffer
 }
+
+func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
+	var err error
+
+	// Get user id, username and Anime list
+	user.Id, user.Username, err = GetAnilistUserID(user.Token)
+	anilistUserData, err := GetUserData(user.Token, user.Id)
+	user.AnimeList = ParseAnimeList(anilistUserData)
+	animeListMap := GetAnimeMap(user.AnimeList)
+
+	// Select anime to watch (Anilist)
+	anilistSelectedOption, err := DynamicSelect(animeListMap)
+	userQuery := anilistSelectedOption.Label
+	anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
+	if err != nil {
+		fmt.Println("Error converting Anilist ID:", err)
+	}
+
+	// Get Anime list (All anime)
+	animeList, err := SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
+	if err != nil {
+		fmt.Println("Failed to select anime", logFile)
+		os.Exit(1)
+	}
+	if len(animeList) == 0 {
+		fmt.Println("No results found.")
+		os.Exit(0)
+	}
+
+	// Get anime entry
+	selectedAnilistAnime, err := FindAnimeByAnilistID(user.AnimeList, anilistSelectedOption.Key)
+	if err != nil {
+		fmt.Println("Can not find the anime in anilist animelist")
+	}
+
+	anime.Title = selectedAnilistAnime.Media.Title
+	anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
+	anime.Ep.Number = selectedAnilistAnime.Progress+1
+	
+	// Find anime in Local history
+	animePointer := LocalFindAnime(*databaseAnimes, anime.AnilistId, "")	
+
+	// if anime not found in database, find it in animeList
+	if animePointer == nil {
+		// find anime in animeList
+		anime.AllanimeId, err = FindKeyByValue(animeList, fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes))
+	} else {
+		// if anime found in database, use it
+		anime.AllanimeId = animePointer.AllanimeId
+		anime.Ep.Player.PlaybackTime = animePointer.Ep.Player.PlaybackTime
+		anime.Ep.Resume = true
+		anime.Ep.Number = animePointer.Ep.Number
+	}
+	// If unable to get Allanime id automatically get manually
+	if anime.AllanimeId == "" {
+		fmt.Println("Failed to automatically select anime")
+		selectedAllanimeAnime, err := DynamicSelect(animeList)
+		if err != nil {
+			fmt.Println("No anime available")
+			os.Exit(0)
+		}
+		anime.AllanimeId = selectedAllanimeAnime.Key
+	}
+}
+
+func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string {
+
+	// Get episode link
+	link, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+	if err != nil {
+		// If unable to get episode link automatically get manually
+		episodeList, err := EpisodesList(anime.AllanimeId, userCurdConfig.SubOrDub)
+		if err != nil {
+			fmt.Println("No episode list found")
+			RestoreScreen()
+			os.Exit(1)
+		}
+		fmt.Printf("Enter the episode (%v episodes)\n", episodeList[len(episodeList)-1])
+		fmt.Scanln(&anime.Ep.Number)
+		link, err = GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+		if err != nil {
+			fmt.Println("Failed to get episode link")
+			os.Exit(1)
+		}
+		// anime.Ep.Links = link
+	}
+	anime.Ep.Links = link
+	Log(anime, logFile)
+	mpvSocketPath, err := StartVideo(anime.Ep.Links[len(anime.Ep.Links)-1], []string{})
+
+	if err != nil {
+		Log("Failed to start mpv", logFile)
+		os.Exit(1)
+	}
+
+	return mpvSocketPath
+}
+
