@@ -57,7 +57,7 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 	// Make the HTTP request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		fmt.Println("Error creating HTTP request:", err)
+		Log(fmt.Sprint("Error creating HTTP request:", err), logFile)
 		return animeList, err
 	}
 	req.Header.Set("User-Agent", agent)
@@ -66,14 +66,14 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println("Error making HTTP request:", err)
+		Log(fmt.Sprint("Error making HTTP request:", err), logFile)
 		return animeList, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("Error reading response body:", err)
+		Log(fmt.Sprint("Error reading response body:", err), logFile)
 		return animeList, err
 	}
 
@@ -81,7 +81,7 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 	var response response
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		fmt.Println("Error parsing JSON:", err)
+		Log(fmt.Sprint("Error parsing JSON:", err), logFile)
 		return animeList, err
 	}
 
