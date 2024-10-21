@@ -2,122 +2,148 @@ package internal
 
 import (
 	// "fmt"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"os/exec"
-	"strconv"
-	"time"
-	"math/rand"
 )
 var logFile = "debug.log"
 
-// StartMpv starts the mpv player with the given video URL and return ipc socket path.
-func StartMpv(videoURL string) (string, error) {
-	// Generate a random mpvsocket path (Linux only)
-	randomNumber := rand.Intn(100) // Change 100 to the desired range
-	fmt.Println("random number", randomNumber)
-	mpvSocketPath := "/tmp/mpvsocket"+strconv.Itoa(randomNumber)
-	
-	cmd := exec.Command("mpv", "--input-ipc-server="+mpvSocketPath, videoURL)
-	return mpvSocketPath, cmd.Start()
+func StartVideo(link string, args []string) (string, error) {
+    // Generate a random number for the socket path
+    randomBytes := make([]byte, 4)
+    _, err := rand.Read(randomBytes)
+    if err != nil {
+        Log("Failed to generate random number", logFile)
+        return "", fmt.Errorf("failed to generate random number: %w", err)
+    }
+    randomNumber := fmt.Sprintf("%x", randomBytes)
+
+    // Create the mpv socket path with the random number
+    mpvSocketPath := fmt.Sprintf("/tmp/curd/curd_mpvsocket_%s", randomNumber)
+    argsStr := ""
+    if len(args) > 0 {
+        argsStr = " " + joinArgs(args)
+    }
+
+    // Build the complete command string
+    command := fmt.Sprintf("mpv%s --no-terminal --really-quiet --input-ipc-server=%s %s", argsStr, mpvSocketPath, link)
+
+    // Execute the command using exec
+    cmd := exec.Command("bash", "-c", command)
+    cmd.Start()
+
+    return mpvSocketPath, nil
 }
 
-// sendIpcMessage sends a JSON message to the mpv IPC socket and reads the response.
-func sendIpcMessage(socketPath string, msg map[string]interface{}) (map[string]interface{}, error) {
-	// Create a Unix socket connection
-	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to IPC socket: %w", err)
-	}
-	defer conn.Close()
-
-	// Marshal the message into JSON
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal JSON message: %w", err)
-	}
-
-	// Write the message to the socket
-	_, err = conn.Write(append(data, '\n')) // Ensure newline at the end
-	if err != nil {
-		return nil, fmt.Errorf("failed to send message to IPC socket: %w", err)
-	}
-
-	// Set a read deadline to prevent blocking forever
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-
-	// Read the response from the socket
-	var response map[string]interface{}
-	decoder := json.NewDecoder(conn)
-	if err := decoder.Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return response, nil
+// Helper function to join args with a space
+func joinArgs(args []string) string {
+    result := ""
+    for i, arg := range args {
+        if i > 0 {
+            result += " "
+        }
+        result += arg
+    }
+    return result
 }
 
-// GetMpvProperty retrieves a property from mpv via IPC.
-func GetMpvProperty(socketPath, property string) (string, error) {
-	// Prepare the JSON message to request the property
-	msg := map[string]interface{}{
-		"command": []interface{}{"get_property", property},
-	}
+func MPVSendCommand(ipcSocketPath string, command []interface{}) (interface{}, error) {
+    conn, err := net.Dial("unix", ipcSocketPath)
+    if err != nil {
+        return nil, err
+    }
+    defer conn.Close()
 
-	// Send the message via IPC and get the response
-	response, err := sendIpcMessage(socketPath, msg)
-	if err != nil {
-		return "", fmt.Errorf("failed to send IPC message: %w", err)
-	}
+    commandStr, err := json.Marshal(map[string]interface{}{
+        "command": command,
+    })
+    if err != nil {
+        return nil, err
+    }
 
-	// Check the response for errors and extract the value
-	if errVal, ok := response["error"]; ok && errVal != "success" {
-		return "", fmt.Errorf("mpv returned an error: %v", errVal)
-	}
+    // Send the command
+    conn.Write(append(commandStr, '\n'))
 
-	// Retrieve the value from the response
-	if data, ok := response["data"]; ok {
-		return fmt.Sprintf("%v", data), nil
-	}
+    // Receive the response
+    buf := make([]byte, 4096)
+    n, err := conn.Read(buf)
+    if err != nil {
+        return nil, err
+    }
 
-	return "", fmt.Errorf("no data in response")
+    var response map[string]interface{}
+    if err := json.Unmarshal(buf[:n], &response); err != nil {
+        return nil, err
+    }
+
+    if data, exists := response["data"]; exists {
+        return data, nil
+    }
+
+    return nil, nil
 }
 
-
-// SendMpvCommand sends a command to mpv via IPC.
-func SendMpvCommand(socketPath, command string, args ...string) error {
-	msg := map[string]interface{}{
-		"command": append([]interface{}{command}, convertArgs(args)...),
-	}
-	return SendMpvMessage(socketPath, msg)
+func SeekMPV(ipcSocketPath string, time int) (interface{}, error) {
+    command := []interface{}{"seek", time, "absolute"}
+    return MPVSendCommand(ipcSocketPath, command)
 }
 
-// ConvertArgs converts []string to []interface{}.
-func convertArgs(args []string) []interface{} {
-	interfaceArgs := make([]interface{}, len(args))
-	for i, v := range args {
-		interfaceArgs[i] = v
-	}
-	return interfaceArgs
+func GetMPVPausedStatus(ipcSocketPath string) (bool, error) {
+    status, err := MPVSendCommand(ipcSocketPath, []interface{}{"get_property", "pause"})
+    if err != nil || status == nil {
+        return false, err
+    }
+
+    paused, ok := status.(bool)
+    if ok {
+        return paused, nil
+    }
+    return false, nil
 }
 
-// SendMpvMessage sends a JSON message to mpv via IPC.
-func SendMpvMessage(socketPath string, msg map[string]interface{}) error {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
-	}
+func GetMPVPlaybackSpeed(ipcSocketPath string) (float64, error) {
+    speed, err := MPVSendCommand(ipcSocketPath, []interface{}{"get_property", "speed"})
+    if err != nil || speed == nil {
+        fmt.Println("Failed to get playback speed.")
+        return 0, err
+    }
 
-	socket, err := os.OpenFile(socketPath, os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		return fmt.Errorf("failed to open IPC socket: %w", err)
-	}
-	defer socket.Close()
+    currentSpeed, ok := speed.(float64)
+    if ok {
+        return currentSpeed, nil
+    }
 
-	_, err = socket.Write(data)
-	if err != nil {
-		return fmt.Errorf("failed to send message to mpv: %w", err)
-	}
-	return nil
+    return 0, nil
+}
+
+func GetPercentageWatched(ipcSocketPath string) (float64, error) {
+    currentTime, err := MPVSendCommand(ipcSocketPath, []interface{}{"get_property", "time-pos"})
+    if err != nil || currentTime == nil {
+        return 0, err
+    }
+
+    duration, err := MPVSendCommand(ipcSocketPath, []interface{}{"get_property", "duration"})
+    if err != nil || duration == nil {
+        return 0, err
+    }
+
+    currTime, ok1 := currentTime.(float64)
+    dur, ok2 := duration.(float64)
+
+    if ok1 && ok2 && dur > 0 {
+        percentageWatched := (currTime / dur) * 100
+        return percentageWatched, nil
+    }
+
+    return 0, nil
+}
+
+func PercentageWatched(playbackTime int, duration int) *float64 {
+    if duration > 0 {
+        percentage := (float64(playbackTime) / float64(duration)) * 100
+        return &percentage
+    }
+    return nil
 }
