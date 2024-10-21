@@ -60,7 +60,7 @@ func extractLinks(provider_id string) map[string]interface{} {
 	req, err := http.NewRequest("GET", url, nil)
 	var videoData map[string]interface{}
 	if err != nil {
-		fmt.Println("Error creating request:", err)
+		Log(fmt.Sprint("Error creating request:", err), logFile)
 		return videoData
 	}
 
@@ -79,14 +79,14 @@ func extractLinks(provider_id string) map[string]interface{} {
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("Error reading response:", err)
+		Log(fmt.Sprint("Error reading response:", err), logFile)
 		return videoData
 	}
 
 	// Parse the JSON response
 	err = json.Unmarshal(body, &videoData)
 	if err != nil {
-		fmt.Println("Error parsing JSON:", err)
+		Log(fmt.Sprint("Error parsing JSON:", err), logFile)
 		return videoData
 	}
 
@@ -151,7 +151,7 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	var response allanimeResponse
 	err = json.Unmarshal([]byte(responseStr), &response)
 	if err != nil {
-		fmt.Println("Error parsing JSON: ", err)
+		Log(fmt.Sprint("Error parsing JSON: ", err), logFile)
 	}
 
 	var allinks []string // This will be returned
