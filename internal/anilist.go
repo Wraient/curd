@@ -197,7 +197,7 @@ func GetAnimeMalID(anilistMediaID int) (int, error) {
 	return malID, nil
 }
 
-// Function to get AniList media ID and image
+// This function retrieves the MAL ID and cover image URL for an anime from AniList
 func GetAnimeIDAndImage(anilistMediaID int) (int, string, error) {
 	url := "https://graphql.anilist.co"
 	query := `
@@ -391,6 +391,7 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	req.Header.Set("Content-Type", "application/json")  // <-- Important!
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
