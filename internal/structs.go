@@ -13,6 +13,7 @@ type Anime struct {
 	TotalEpisodes  int        `json:"total_episodes"` // If provided by the API
 	MalId         int        `json:"mal_id"`
 	AnilistId     int        `json:"anilist_id"` // Assuming you have an Anilist ID in your struct
+	Rewatching    bool
 	AllanimeId    string      // Can be populated as necessary
 }
 
