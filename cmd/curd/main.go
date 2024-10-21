@@ -21,6 +21,7 @@ func main() {
 
 	configFilePath := os.ExpandEnv("$HOME/Projects/curd/.config/curd/curd_config.txt")
 	logFile := "debug.log"
+	internal.ClearLogFile(logFile)
 
 	// load curd userCurdConfig
 	userCurdConfig, err := internal.LoadConfig(configFilePath)
@@ -71,9 +72,10 @@ func main() {
 			internal.Log(anime, logFile)
 		}()
 
+		// Start curd
 		mpvSocketPath := internal.StartCurd(&userCurdConfig, &anime, logFile)
 		
-		internal.Log(fmt.Sprint("starting from: ", anime.Ep.Player.PlaybackTime), logFile)
+		internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
 		internal.Log(mpvSocketPath, logFile)
 
 		// Thread to update Discord presence
@@ -87,10 +89,19 @@ func main() {
 			}
 		}()
 
+		go func() {
+			err = internal.GetAndParseAniSkipData(anime.MalId, anime.Ep.Number, 1, &anime)
+			if err != nil {
+				internal.Log("Error getting and parsing AniSkip data: "+err.Error(), logFile)
+			}
+			internal.Log(anime.Ep.SkipTimes, logFile)
+		}()
+
 		// Thread to update playback time in database
 		go func() {
 			for {
 				time.Sleep(1 * time.Second)
+
 				// Get current playback time
 				timePos, err := internal.MPVSendCommand(mpvSocketPath, []interface{}{"get_property", "time-pos"})
 				if err != nil {
@@ -134,6 +145,17 @@ func main() {
 			currentTime, err := internal.MPVSendCommand(mpvSocketPath, []interface{}{"get_property", "time-pos"})
 			if err != nil || currentTime == nil {
 			}
+			if userCurdConfig.SkipOp {
+				if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Op.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Op.Start+2 {
+					internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Op.End)
+				}
+			}
+			if userCurdConfig.SkipEd {
+				if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Ed.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Ed.Start+2 {
+					internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Ed.End)
+				}
+			}
 			time.Sleep(1 * time.Second) // Wait before checking again
 		}
+
 }
