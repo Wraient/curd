@@ -116,7 +116,6 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	anime.Title = selectedAnilistAnime.Media.Title
 	anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
 	anime.Ep.Number = selectedAnilistAnime.Progress+1
-	
 	// Find anime in Local history
 	animePointer := LocalFindAnime(*databaseAnimes, anime.AnilistId, "")	
 
@@ -131,6 +130,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.Ep.Resume = true
 		anime.Ep.Number = animePointer.Ep.Number
 	}
+	
 	// If unable to get Allanime id automatically get manually
 	if anime.AllanimeId == "" {
 		fmt.Println("Failed to automatically select anime")
@@ -140,6 +140,18 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			os.Exit(0)
 		}
 		anime.AllanimeId = selectedAllanimeAnime.Key
+	}
+
+	if anime.TotalEpisodes < anime.Ep.Number {
+		fmt.Printf("Would like to start the anime from beginning? (y/n)\n")
+		anime.Rewatching = true
+		var answer string
+		fmt.Scanln(&answer)
+		if answer == "y" {
+			anime.Ep.Number = 1
+		} else {
+			anime.Ep.Number = anime.TotalEpisodes
+		}
 	}
 }
 
@@ -165,6 +177,12 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 		// anime.Ep.Links = link
 	}
 	anime.Ep.Links = link
+
+	if len(anime.Ep.Links) == 0 {
+		fmt.Println("No episode links found")
+		os.Exit(1)
+	}
+
 	Log(anime, logFile)
 	mpvSocketPath, err := StartVideo(anime.Ep.Links[len(anime.Ep.Links)-1], []string{})
 
