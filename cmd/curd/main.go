@@ -1,16 +1,18 @@
 package main
 
 import (
-	// "encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"time"
-
 	"github.com/wraient/curd/internal"
 )
 
 func main() {
+
+	discordClientId := "1287457464148820089"
+
+	// Setup
+
 	// internal.ClearScreen()
 	// defer internal.RestoreScreen()
 
@@ -38,106 +40,100 @@ func main() {
 	// Load anime in database
 	databaseFile := os.ExpandEnv("$HOME/Projects/curd/.config/curd/curd_history.txt")
 	databaseAnimes := internal.LocalGetAllAnime(databaseFile)
-	
-	// os.Exit(0)
-	
-	// Get user id, username and Anime list
-	user.Id, user.Username, err = internal.GetAnilistUserID(user.Token)
-	anilistUserData, err := internal.GetUserData(user.Token, user.Id)
-	user.AnimeList = internal.ParseAnimeList(anilistUserData)
-	animeListMap := internal.GetAnimeMap(user.AnimeList)
-	
-	// Select anime to watch (Anilist)
-	anilistSelectedOption, err := internal.DynamicSelect(animeListMap)
-	userQuery := anilistSelectedOption.Label
-	anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
-	if err != nil {
-		fmt.Println("Error converting Anilist ID:", err)
-		return
-	}
-	
-	// Get Anime list (All anime)
-	animeList, err := internal.SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
-	if err != nil {
-		fmt.Println("Failed to select anime", logFile)
-		os.Exit(1)
-	}
-	if len(animeList) == 0 {
-		fmt.Println("No results found.")
-		os.Exit(0)
-	}
-	
-	// Get anime entry
-	selectedAnilistAnime, err := internal.FindAnimeByAnilistID(user.AnimeList, anilistSelectedOption.Key)
-	if err != nil {
-		fmt.Println("Can not find the anime in anilist animelist")
-	}
-	
-	anime.Title = selectedAnilistAnime.Media.Title
-	anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
-	anime.Ep.Number = selectedAnilistAnime.Progress+1
-	
-	// Find anime in Local history
-	animePointer := internal.LocalFindAnime(databaseAnimes, anime.AnilistId, "")	
 
-	// if anime not found in database, find it in animeList
-	if animePointer == nil {
-		// find anime in animeList
-		anime.AllanimeId, err = internal.FindKeyByValue(animeList, fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes))
-	} else {
-		// if anime found in database, use it
-		anime.AllanimeId = animePointer.AllanimeId
-	}
-	// If unable to get Allanime id automatically get manually
-	if anime.AllanimeId == "" {
-		fmt.Println("Failed to automatically select anime")
-		selectedAllanimeAnime, err := internal.DynamicSelect(animeList)
-		if err != nil {
-			fmt.Println("No anime available")
-			os.Exit(0)
-		}
-		
-		anime.AllanimeId = selectedAllanimeAnime.Key
-	}
+	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
 
-	// Get episode link
-	link, err := internal.GetEpisodeURL(userCurdConfig, anime.AllanimeId, anime.Ep.Number)
-	if err != nil {
-		// If unable to get episode link automatically get manually
-		episodeList, err := internal.EpisodesList(anime.AllanimeId, userCurdConfig.SubOrDub)
-		if err != nil {
-			fmt.Println("No episode list found")
-			internal.RestoreScreen()
-			os.Exit(1)
-		}
-		fmt.Printf("Enter the episode (%v episodes)\n", episodeList[len(episodeList)-1])
-		fmt.Scanln(&anime.Ep.Number)
-		link, err = internal.GetEpisodeURL(userCurdConfig, anime.AllanimeId, anime.Ep.Number)
-		if err != nil {
-			fmt.Println("Failed to get episode link")
-			os.Exit(1)
-		}
-		// anime.Ep.Links = link
-	}
-	anime.Ep.Links = link
-	internal.Log(anime, logFile)
-	mpvSocketPath, err := internal.StartMpv(anime.Ep.Links[len(anime.Ep.Links)-1])
-
-	if err != nil {
-		internal.Log("Failed to start mpv", logFile)
-		os.Exit(1)
-	}
-
-	for { // Loop while video is playing
-		speed, err := internal.GetMpvProperty(mpvSocketPath, "speed")
-		anime.Ep.Player.Speed, err = strconv.ParseFloat(speed, 64)
-		if err != nil {
-			// fmt.Println("failed to get mpv speed")
-			// internal.Log(mpvSocketPath, logFile)
-			// internal.Log(speed, logFile)
+	// Main loop
+	// for {
+		// Get MalId and CoverImage (only if discord presence is enabled)
+		if userCurdConfig.DiscordPresence {
+			anime.MalId, anime.CoverImage, err = internal.GetAnimeIDAndImage(anime.AnilistId)
+			if err != nil {
+				internal.Log("Error getting anime ID and image: "+err.Error(), logFile)
+			}
+			err = internal.DiscordPresence(discordClientId, anime)
+			if err != nil {
+				internal.Log("Error setting Discord presence: "+err.Error(), logFile)
+			}
 		} else {
-			// fmt.Println(speed)
+			anime.MalId, err = internal.GetAnimeMalID(anime.AnilistId)
+			if err != nil {
+				internal.Log("Error getting anime MAL ID: "+err.Error(), logFile)
+			}
 		}
-		time.Sleep(1)
-	}
+
+		// Get episode data
+		go func(){
+			err = internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime)
+			if err != nil {
+				internal.Log("Error getting episode data: "+err.Error(), logFile)
+			}
+			internal.Log(anime, logFile)
+		}()
+
+		mpvSocketPath := internal.StartCurd(&userCurdConfig, &anime, logFile)
+		
+		internal.Log(fmt.Sprint("starting from: ", anime.Ep.Player.PlaybackTime), logFile)
+		internal.Log(mpvSocketPath, logFile)
+
+		// Thread to update Discord presence
+		go func() {
+			for {
+				err = internal.DiscordPresence(discordClientId, anime)
+				if err != nil {
+					internal.Log("Error setting Discord presence: "+err.Error(), logFile)
+				}
+				time.Sleep(1 * time.Second)
+			}
+		}()
+
+		// Thread to update playback time in database
+		go func() {
+			for {
+				time.Sleep(1 * time.Second)
+				// Get current playback time
+				timePos, err := internal.MPVSendCommand(mpvSocketPath, []interface{}{"get_property", "time-pos"})
+				if err != nil {
+					internal.Log("Error getting playback time: "+err.Error(), logFile)
+
+					// User closed the video
+					if anime.Ep.Started {
+						fmt.Println("Have a great day!")
+						os.Exit(0)
+					}
+				}
+
+				// Convert timePos to integer
+				if timePos != nil {
+					if !anime.Ep.Started {
+						anime.Ep.Started = true
+					}
+
+					// If resume is true, seek to the playback time
+					if anime.Ep.Resume {
+						internal.SeekMPV(mpvSocketPath, anime.Ep.Player.PlaybackTime)
+						anime.Ep.Resume = false
+					}
+
+					animePosition, ok := timePos.(float64)
+					if !ok {
+						internal.Log("Error: timePos is not a float64", logFile)
+						continue
+					}
+
+					anime.Ep.Player.PlaybackTime = int(animePosition + 0.5) // Round to nearest integer
+					// Update Local Database
+					internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, anime.Title.English)
+				}
+			}
+		}()
+
+		// Main playback loop
+		for {
+			// Check if MPV has started
+			currentTime, err := internal.MPVSendCommand(mpvSocketPath, []interface{}{"get_property", "time-pos"})
+			if err != nil || currentTime == nil {
+			}
+			time.Sleep(1 * time.Second) // Wait before checking again
+		}
 }
