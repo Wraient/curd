@@ -1,41 +1,50 @@
 package internal
 
 type AnimeTitle struct {
-	Romaji		string
-	English		string
-	Japanese	string
+	Romaji   string `json:"title_romanji"`
+	English  string `json:"title"`
+	Japanese string `json:"title_japanese"`
 }
 
 type Anime struct {
-	Title			AnimeTitle 
-	Ep				Episode
-	TotalEpisodes	int
-	MalId			int
-	AnilistId		int
-	AllanimeId		string
+	Title         AnimeTitle `json:"title"`
+	Ep            Episode     `json:"ep"`
+	CoverImage    string      `json:"url"` // Assuming this field corresponds to the cover image URL
+	TotalEpisodes  int        `json:"total_episodes"` // If provided by the API
+	MalId         int        `json:"mal_id"`
+	AnilistId     int        `json:"anilist_id"` // Assuming you have an Anilist ID in your struct
+	AllanimeId    string      // Can be populated as necessary
+}
+
+type Skip struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
 }
 
 type SkipTimes struct {
-	Op	int
-	Ed	int
+	Op Skip `json:"op"`
+	Ed Skip `json:"ed"`
 }
 
 type Episode struct {
-	Tit 		AnimeTitle
-	Number	    int
-	Skip_times	SkipTimes 
-	Player		playingVideo
-	Links 		[]string
-	Is_filler 	bool
-	Is_recap 	bool
-	Aired 		string
-	Synopsis 	string
+	Title     AnimeTitle `json:"title"`
+	Number    int        `json:"number"`
+	SkipTimes SkipTimes   `json:"skip_times"`
+	Player    playingVideo `json:"player"`
+	Resume    bool       `json:"resume"`
+	Started   bool       `json:"started"`
+	Duration  int        `json:"duration"`
+	Links     []string   `json:"links"`
+	IsFiller  bool       `json:"filler"`
+	IsRecap   bool       `json:"recap"`
+	Aired     string     `json:"aired"`
+	Synopsis  string     `json:"synopsis"`
 }
 
 type playingVideo struct {
-	Url string
-	Speed float64
-	PlaybackTime int
+	Url          string
+	Speed        float64 `json:"speed"`
+	PlaybackTime int     `json:"playback_time"`
 }
 
 type User struct {
