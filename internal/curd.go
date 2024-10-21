@@ -96,33 +96,46 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		fmt.Println("Error converting Anilist ID:", err)
 	}
 
-	// Get Anime list (All anime)
-	animeList, err := SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
-	if err != nil {
-		fmt.Println("Failed to select anime", logFile)
-		os.Exit(1)
-	}
-	if len(animeList) == 0 {
-		fmt.Println("No results found.")
-		os.Exit(0)
-	}
-
+	// Find anime in Local history
+	animePointer := LocalFindAnime(*databaseAnimes, anime.AnilistId, "")	
+	
 	// Get anime entry
 	selectedAnilistAnime, err := FindAnimeByAnilistID(user.AnimeList, anilistSelectedOption.Key)
 	if err != nil {
 		fmt.Println("Can not find the anime in anilist animelist")
 	}
 
+	// Set anime entry
 	anime.Title = selectedAnilistAnime.Media.Title
 	anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
 	anime.Ep.Number = selectedAnilistAnime.Progress+1
-	// Find anime in Local history
-	animePointer := LocalFindAnime(*databaseAnimes, anime.AnilistId, "")	
 
 	// if anime not found in database, find it in animeList
 	if animePointer == nil {
+		// Get Anime list (All anime)
+		animeList, err := SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
+		if err != nil {
+			fmt.Println("Failed to select anime", logFile)
+			os.Exit(1)
+		}
+		if len(animeList) == 0 {
+			fmt.Println("No results found.")
+			os.Exit(0)
+		}
+
 		// find anime in animeList
 		anime.AllanimeId, err = FindKeyByValue(animeList, fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes))
+			
+		// If unable to get Allanime id automatically get manually
+		if anime.AllanimeId == "" {
+			fmt.Println("Failed to automatically select anime")
+			selectedAllanimeAnime, err := DynamicSelect(animeList)
+			if err != nil {
+				fmt.Println("No anime available")
+				os.Exit(0)
+			}
+			anime.AllanimeId = selectedAllanimeAnime.Key
+		}
 	} else {
 		// if anime found in database, use it
 		anime.AllanimeId = animePointer.AllanimeId
@@ -130,18 +143,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.Ep.Resume = true
 		anime.Ep.Number = animePointer.Ep.Number
 	}
-	
-	// If unable to get Allanime id automatically get manually
-	if anime.AllanimeId == "" {
-		fmt.Println("Failed to automatically select anime")
-		selectedAllanimeAnime, err := DynamicSelect(animeList)
-		if err != nil {
-			fmt.Println("No anime available")
-			os.Exit(0)
-		}
-		anime.AllanimeId = selectedAllanimeAnime.Key
-	}
 
+	// Handel weird cases
 	if anime.TotalEpisodes < anime.Ep.Number {
 		fmt.Printf("Would like to start the anime from beginning? (y/n)\n")
 		anime.Rewatching = true
