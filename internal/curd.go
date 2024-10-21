@@ -23,6 +23,18 @@ func GetTokenFromFile(filePath string) (string, error) {
 	return token, nil
 }
 
+// ClearLogFile removes all contents from the specified log file
+func ClearLogFile(logFile string) error {
+	// Open the file with truncate flag to clear its contents
+	file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_TRUNC, 0666)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer file.Close()
+
+	return nil
+}
+
 // LogData logs the input data into a specified log file with the format [LOG] time lineNumber: logData
 func Log(data interface{}, logFile string) error {
 	// Open or create the log file
