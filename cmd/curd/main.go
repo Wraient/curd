@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+
 	"github.com/wraient/curd/internal"
 )
 
@@ -11,6 +12,9 @@ func main() {
 
 	discordClientId := "1287457464148820089"
 
+	// fmt.Println(internal.LocalGetAllAnime("/home/wraient/Projects/curd/.config/curd/curd_history.txt"))
+
+	// os.Exit(0)
 	// Setup
 
 	// internal.ClearScreen()
@@ -146,12 +150,12 @@ func main() {
 			if err != nil || currentTime == nil {
 			}
 			if userCurdConfig.SkipOp {
-				if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Op.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Op.Start+2 {
+				if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Op.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Op.Start+2 && anime.Ep.SkipTimes.Op.Start != anime.Ep.SkipTimes.Op.End {
 					internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Op.End)
 				}
 			}
 			if userCurdConfig.SkipEd {
-				if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Ed.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Ed.Start+2 {
+				if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Ed.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Ed.Start+2 && anime.Ep.SkipTimes.Ed.Start != anime.Ep.SkipTimes.Ed.End {
 					internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Ed.End)
 				}
 			}
