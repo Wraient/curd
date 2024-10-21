@@ -17,21 +17,47 @@ func GetEpisodeData(animeID int, episodeNo int, anime *Anime) error {
 		return fmt.Errorf("error fetching data from Jikan (MyAnimeList) API: %w", err)
 	}
 
+	Log(response, logFile)
+
 	// Check if the 'data' field exists and is valid
 	data, ok := response["data"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("invalid response structure: missing or invalid 'data' field")
 	}
+	// Helper function to safely get string value
+	getStringValue := func(field string) string {
+		if value, ok := data[field].(string); ok {
+			return value
+		}
+		return ""
+	}
 
-	// Unmarshal the data into the Anime struct
-	anime.Ep.Title.Romaji = data["title_romanji"].(string)
-	anime.Ep.Title.English = data["title"].(string)
-	anime.Ep.Title.Japanese = data["title_japanese"].(string)
-	anime.Ep.Aired = data["aired"].(string)
-	anime.Ep.Duration = int(data["duration"].(float64))
-	anime.Ep.IsFiller = data["filler"].(bool)
-	anime.Ep.IsRecap = data["recap"].(bool)
-	anime.Ep.Synopsis = data["synopsis"].(string)
+	// Helper function to safely get int value
+	getIntValue := func(field string) int {
+		if value, ok := data[field].(float64); ok {
+			return int(value)
+		}
+		return 0
+	}
+
+	// Helper function to safely get bool value
+	getBoolValue := func(field string) bool {
+		if value, ok := data[field].(bool); ok {
+			return value
+		}
+		return false
+	}
+
+	// Safely assign values to the Anime struct
+	anime.Ep.Title.Romaji = getStringValue("title_romanji")
+	anime.Ep.Title.English = getStringValue("title")
+	anime.Ep.Title.Japanese = getStringValue("title_japanese")
+	anime.Ep.Aired = getStringValue("aired")
+	anime.Ep.Duration = getIntValue("duration")
+	anime.Ep.IsFiller = getBoolValue("filler")
+	anime.Ep.IsRecap = getBoolValue("recap")
+	anime.Ep.Synopsis = getStringValue("synopsis")
+
 	return nil
 }
 
