@@ -70,8 +70,6 @@ func main() {
 		userCurdConfig.SubOrDub = "dub"
 	}
 
-	fmt.Println(userCurdConfig)
-	os.Exit(0)
 
 	// Get the token from the token file
 	user.Token, err = internal.GetTokenFromFile(os.ExpandEnv("$HOME/.local/share/curd/token"))
@@ -195,7 +193,7 @@ func main() {
 					time.Sleep(1 * time.Second)
 
 					// Get current playback time
-					internal.Log("Getting playback time "+anime.Ep.Player.SocketPath, logFile)
+					// internal.Log("Getting playback time "+anime.Ep.Player.SocketPath, logFile)
 					timePos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
 					if err != nil {
 						internal.Log("Error getting playback time: "+err.Error(), logFile)
@@ -241,8 +239,8 @@ func main() {
 						if err != nil {
 							internal.Log("Error updating local database: "+err.Error(), logFile)
 						} else {
-							internal.Log(fmt.Sprintf("Updated database: AnilistId=%d, AllanimeId=%s, EpNumber=%d, PlaybackTime=%d",
-								anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime), logFile)
+							// internal.Log(fmt.Sprintf("Updated database: AnilistId=%d, AllanimeId=%s, EpNumber=%d, PlaybackTime=%d",
+							// anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime), logFile)
 						}
 					}
 				}
