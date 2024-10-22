@@ -40,6 +40,7 @@ type Episode struct {
 	IsRecap   bool       `json:"recap"`
 	Aired     string     `json:"aired"`
 	Synopsis  string     `json:"synopsis"`
+	ContinueLast bool
 	IsCompleted bool
 }
 

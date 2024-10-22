@@ -82,6 +82,7 @@ func RestoreScreen() {
 
 func ExitCurd() {
 	RestoreScreen()
+	fmt.Println("Have a great day!")
 	os.Exit(0)
 }
 
@@ -93,47 +94,78 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	anilistUserData, err := GetUserData(user.Token, user.Id)
 	user.AnimeList = ParseAnimeList(anilistUserData)
 	animeListMap := GetAnimeMap(user.AnimeList)
+	var anilistSelectedOption SelectionOption
+	var userQuery string
 
-	// Select anime to watch (Anilist)
-	anilistSelectedOption, err := DynamicSelect(animeListMap)
-	if anilistSelectedOption.Key == "-1" || anilistSelectedOption.Label == "quit" {
-		ExitCurd()
-	}
-	if anilistSelectedOption.Label == "add_new" { // Todo: Add new anime
-		fmt.Println("Enter the anime name:")
-		var query string
-		fmt.Scanln(&query)
-		animeMap, err := SearchAnimeAnilist(query, user.Token)
+	if anime.Ep.ContinueLast {
+		// Get the last watched anime ID from the curd_id file
+		curdIDPath := os.ExpandEnv("$HOME/Projects/curd/.local/share/curd/curd_id")
+		curdIDBytes, err := os.ReadFile(curdIDPath)
 		if err != nil {
-			fmt.Println("Failed to search anime")
+			Log(fmt.Sprintf("Error reading curd_id file: %v", err), logFile)
 			ExitCurd()
 		}
-		anilistSelectedOption, err = DynamicSelect(animeMap)
-		if err != nil {
-			fmt.Println("No anime available")
-			ExitCurd()
-		}
-		animeID, err := strconv.Atoi(anilistSelectedOption.Key)
-		if err != nil {
-			fmt.Println("Failed to convert anime ID to integer")
-			ExitCurd()
-		}
-		err = AddAnimeToWatchingList(animeID, user.Token)
-		if err != nil {
-			fmt.Println("Failed to add anime to watching list")
-			ExitCurd()
-		}
-		anilistUserData, err := GetUserData(user.Token, user.Id)
-		user.AnimeList = ParseAnimeList(anilistUserData)
-		// animeListMap := GetAnimeMap(user.AnimeList)
-	}
-	userQuery := anilistSelectedOption.Label
-	anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
-	if err != nil {
-		fmt.Println("Error converting Anilist ID:", err)
-		os.Exit(1)
-	}
 
+		lastWatchedID, err := strconv.Atoi(strings.TrimSpace(string(curdIDBytes)))
+		if err != nil {
+			Log(fmt.Sprintf("Error converting curd_id to integer: %v", err), logFile)
+			ExitCurd()
+		}
+
+		anime.AnilistId = lastWatchedID
+		anilistSelectedOption.Key = strconv.Itoa(lastWatchedID)
+	} else {
+		// Select anime to watch (Anilist)
+		var err error
+		anilistSelectedOption, err = DynamicSelect(animeListMap)
+		if err != nil {
+			Log(fmt.Sprintf("Error selecting anime: %v", err), logFile)
+			ExitCurd()
+		}
+
+		if anilistSelectedOption.Key == "-1" || anilistSelectedOption.Label == "quit" {
+			ExitCurd()
+		}
+
+		if anilistSelectedOption.Label == "add_new" {
+			fmt.Println("Enter the anime name:")
+			var query string
+			fmt.Scanln(&query)
+			animeMap, err := SearchAnimeAnilist(query, user.Token)
+			if err != nil {
+				Log(fmt.Sprintf("Failed to search anime: %v", err), logFile)
+				ExitCurd()
+			}
+			anilistSelectedOption, err = DynamicSelect(animeMap)
+			if err != nil {
+				Log(fmt.Sprintf("No anime available: %v", err), logFile)
+				ExitCurd()
+			}
+			animeID, err := strconv.Atoi(anilistSelectedOption.Key)
+			if err != nil {
+				Log(fmt.Sprintf("Failed to convert anime ID to integer: %v", err), logFile)
+				ExitCurd()
+			}
+			err = AddAnimeToWatchingList(animeID, user.Token)
+			if err != nil {
+				Log(fmt.Sprintf("Failed to add anime to watching list: %v", err), logFile)
+				ExitCurd()
+			}
+			anilistUserData, err := GetUserData(user.Token, user.Id)
+			if err != nil {
+				Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
+				ExitCurd()
+			}
+			user.AnimeList = ParseAnimeList(anilistUserData)
+		}
+
+		userQuery = anilistSelectedOption.Label
+		anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
+		if err != nil {
+			Log(fmt.Sprintf("Error converting Anilist ID: %v", err), logFile)
+			ExitCurd()
+		}
+	}
 	// Find anime in Local history
 	animePointer := LocalFindAnime(*databaseAnimes, anime.AnilistId, "")	
 	
@@ -244,6 +276,17 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 	}
 
 	Log(anime, logFile)
+
+	// Write anime.AnilistId to .local/share/curd/curd_id
+	idFilePath := filepath.Join(os.Getenv("HOME"), "Projects", "curd", ".local", "share", "curd", "curd_id")
+	if err := os.MkdirAll(filepath.Dir(idFilePath), 0755); err != nil {
+		Log(fmt.Sprintf("Failed to create directory for curd_id: %v", err), logFile)
+	} else {
+		if err := os.WriteFile(idFilePath, []byte(fmt.Sprintf("%d", anime.AnilistId)), 0644); err != nil {
+			Log(fmt.Sprintf("Failed to write AnilistId to file: %v", err), logFile)
+		}
+	}
+
 	mpvSocketPath, err := StartVideo(PrioritizeLink(anime.Ep.Links), []string{})
 
 	if err != nil {

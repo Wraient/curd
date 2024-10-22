@@ -50,10 +50,11 @@ func main() {
 	flag.BoolVar(&userCurdConfig.ScoreOnCompletion, "score-on-completion", userCurdConfig.ScoreOnCompletion, "Score on episode completion (true/false)")
 	flag.BoolVar(&userCurdConfig.SaveMpvSpeed, "save-mpv-speed", userCurdConfig.SaveMpvSpeed, "Save MPV speed setting (true/false)")
 	flag.BoolVar(&userCurdConfig.DiscordPresence, "discord-presence", userCurdConfig.DiscordPresence, "Enable Discord presence (true/false)")
-
+	continueLast := flag.Bool("c", false, "Continue last episode")
+	
 	subFlag := flag.Bool("sub", false, "Watch sub version")
 	dubFlag := flag.Bool("dub", false, "Watch dub version")
-
+	
 	// Custom help/usage function
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Curd is a CLI tool to manage anime playback with advanced features like skipping intro, outro, filler, recap, tracking progress, and integrating with Discord.\n")
@@ -62,6 +63,8 @@ func main() {
 	}
 
 	flag.Parse()
+	
+	anime.Ep.ContinueLast = *continueLast
 
 	// Set SubOrDub based on the flags
 	if *subFlag {
@@ -81,7 +84,7 @@ func main() {
 		internal.WriteTokenToFile(user.Token, os.ExpandEnv("$HOME/Projects/curd/.local/share/curd/token"))
 	}
 
-	// Load anime in database
+	// Load animes in database
 	databaseFile := os.ExpandEnv("$HOME/Projects/curd/.config/curd/curd_history.txt")
 	databaseAnimes := internal.LocalGetAllAnime(databaseFile)
 
@@ -211,7 +214,6 @@ func main() {
 								// Exit the skip loop
 								close(skipLoopDone)
 							} else if fmt.Sprintf("%v", err) != "invalid character '{' after top-level value" { // Episode is not completed
-								fmt.Println("Have a great day!")
 								internal.ExitCurd()
 							} else {
 								internal.Log("Received invalid JSON response, continuing...", logFile)
