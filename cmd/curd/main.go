@@ -1,10 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
-	"time"
 	"sync"
+	"time"
+
 	"github.com/wraient/curd/internal"
 )
 
@@ -16,8 +18,8 @@ func main() {
 
 	// Setup
 
-	internal.ClearScreen()
-	defer internal.RestoreScreen()
+	// internal.ClearScreen()
+	// defer internal.RestoreScreen()
 
 	var anime internal.Anime
 	var user internal.User
@@ -33,7 +35,29 @@ func main() {
 		return
 	}
 
-	internal.Log(userCurdConfig, logFile)
+	// Flags configured here cause userconfig needs to be changed.
+	flag.StringVar(&userCurdConfig.Player, "player", userCurdConfig.Player, "Player to use for playback (Only mpv supported currently)")
+	flag.StringVar(&userCurdConfig.HistoryFile, "history-file", userCurdConfig.HistoryFile, "Path to the history file")
+	flag.StringVar(&userCurdConfig.SubsLanguage, "subs-lang", userCurdConfig.SubsLanguage, "Subtitles language")
+	flag.IntVar(&userCurdConfig.PercentageToMarkComplete, "percentage-to-mark-complete", userCurdConfig.PercentageToMarkComplete, "Percentage to mark episode as complete")
+	flag.BoolVar(&userCurdConfig.NextEpisodePrompt, "next-episode-prompt", userCurdConfig.NextEpisodePrompt, "Prompt for every next episode")
+	flag.BoolVar(&userCurdConfig.SkipOp, "skip-op", userCurdConfig.SkipOp, "Skip anime opening")
+	flag.BoolVar(&userCurdConfig.SkipEd, "skip-ed", userCurdConfig.SkipEd, "Skip anime ending")
+	flag.BoolVar(&userCurdConfig.SkipFiller, "skip-filler", userCurdConfig.SkipFiller, "Skip filler episodes")
+	flag.BoolVar(&userCurdConfig.SkipRecap, "skip-recap", userCurdConfig.SkipRecap, "Skip recap")
+	flag.BoolVar(&userCurdConfig.ScoreOnCompletion, "score-on-completion", userCurdConfig.ScoreOnCompletion, "Score on episode completion")
+	flag.BoolVar(&userCurdConfig.SaveMpvSpeed, "save-mpv-speed", userCurdConfig.SaveMpvSpeed, "Save MPV speed setting")
+	flag.BoolVar(&userCurdConfig.DiscordPresence, "discord-presence", userCurdConfig.DiscordPresence, "Enable Discord presence")
+	subFlag := flag.Bool("sub", false, "Watch sub version")
+	dubFlag := flag.Bool("dub", false, "Watch dub version")
+	flag.Parse()
+
+	// Set SubOrDub based on the flags
+	if *subFlag {
+		userCurdConfig.SubOrDub = "sub"
+	} else if *dubFlag {
+		userCurdConfig.SubOrDub = "dub"
+	}
 
 	// Get the token from the token file
 	user.Token, err = internal.GetTokenFromFile("/home/wraient/.local/share/curd/token")
@@ -49,7 +73,7 @@ func main() {
 
 	// Create a channel to signal when to exit the skip loop
 	var wg sync.WaitGroup
-	
+
 	// Main loop
 	for {
 		skipLoopDone := make(chan struct{})
@@ -71,12 +95,11 @@ func main() {
 			}
 		}
 
-		
 		// Start curd
 		if !anime.Ep.IsFiller {
 			// fmt.Println("Not a filler episode, Starting: ", anime.Ep.Number)
 			anime.Ep.Player.SocketPath = internal.StartCurd(&userCurdConfig, &anime, logFile)
-			
+
 			internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
 			internal.Log(anime.Ep.Player.SocketPath, logFile)
 		} else {
@@ -85,14 +108,14 @@ func main() {
 
 		wg.Add(1)
 		// Get episode data
-		go func(){
+		go func() {
 			defer wg.Done()
 			err = internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime)
 			if err != nil {
 				internal.Log("Error getting episode data: "+err.Error(), logFile)
-			} else{
+			} else {
 				internal.Log(anime, logFile)
-				
+
 				// if filler episode
 				if anime.Ep.IsFiller {
 					fmt.Println("Filler Episode, starting next episode: ", anime.Ep.Number+1)
@@ -161,7 +184,7 @@ func main() {
 						// User closed the video
 						if anime.Ep.Started {
 							percentageWatched := internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
-							if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {			
+							if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 								anime.Ep.Number++
 								anime.Ep.Started = false
 								internal.Log("Completed episode, starting next.", logFile)
@@ -199,7 +222,7 @@ func main() {
 						if err != nil {
 							internal.Log("Error updating local database: "+err.Error(), logFile)
 						} else {
-							internal.Log(fmt.Sprintf("Updated database: AnilistId=%d, AllanimeId=%s, EpNumber=%d, PlaybackTime=%d", 
+							internal.Log(fmt.Sprintf("Updated database: AnilistId=%d, AllanimeId=%s, EpNumber=%d, PlaybackTime=%d",
 								anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime), logFile)
 						}
 					}
@@ -208,24 +231,24 @@ func main() {
 		}()
 
 		// Skip OP and ED
-		skipLoop:
+	skipLoop:
 		for {
 			select {
-				case <-skipLoopDone:
-					// Exit signal received, break out of the skipLoop
-					break skipLoop
-				default:
-					// Check if MPV has started
-					if userCurdConfig.SkipOp {
+			case <-skipLoopDone:
+				// Exit signal received, break out of the skipLoop
+				break skipLoop
+			default:
+				// Check if MPV has started
+				if userCurdConfig.SkipOp {
 					if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Op.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Op.Start+2 && anime.Ep.SkipTimes.Op.Start != anime.Ep.SkipTimes.Op.End {
-							internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Op.End)
-						}
+						internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Op.End)
 					}
-					if userCurdConfig.SkipEd {
-						if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Ed.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Ed.Start+2 && anime.Ep.SkipTimes.Ed.Start != anime.Ep.SkipTimes.Ed.End {
-							internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Ed.End)
-						}
+				}
+				if userCurdConfig.SkipEd {
+					if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Ed.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Ed.Start+2 && anime.Ep.SkipTimes.Ed.Start != anime.Ep.SkipTimes.Ed.End {
+						internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Ed.End)
 					}
+				}
 			}
 			time.Sleep(1 * time.Second) // Wait before checking again
 		}
