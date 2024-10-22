@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -88,12 +89,19 @@ func defaultConfigMap() map[string]string {
 }
 
 // Create a config file with default values in key=value format
+// Ensure the directory exists before creating the file
 func createDefaultConfig(path string) error {
 	defaultConfig := defaultConfigMap()
 
+	// Ensure the directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("error creating directory: %v", err)
+	}
+
 	file, err := os.Create(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating file: %v", err)
 	}
 	defer file.Close()
 
@@ -101,10 +109,13 @@ func createDefaultConfig(path string) error {
 	for key, value := range defaultConfig {
 		line := fmt.Sprintf("%s=%s\n", key, value)
 		if _, err := writer.WriteString(line); err != nil {
-			return err
+			return fmt.Errorf("error writing to file: %v", err)
 		}
 	}
-	return writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return fmt.Errorf("error flushing writer: %v", err)
+	}
+	return nil
 }
 
 // Load config file from disk into a map (key=value format)
