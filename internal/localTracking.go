@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -78,12 +79,31 @@ func LocalDeleteAnime(databaseFile string, anilistID int, allanimeID string) {
 // Function to get all anime entries from the database
 func LocalGetAllAnime(databaseFile string) []Anime {
 	animeList := []Anime{}
-	file, err := os.Open(databaseFile)
+
+	// Ensure the directory exists
+	dir := filepath.Dir(databaseFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Println("Error creating directory:", err)
+		return animeList
+	}
+
+	// Open the file, create if it doesn't exist
+	file, err := os.OpenFile(databaseFile, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
-		fmt.Println("Error opening file:", err)
+		fmt.Println("Error opening or creating file:", err)
 		return animeList
 	}
 	defer file.Close()
+
+	// If the file was just created, it will be empty, so return an empty list
+	fileInfo, err := file.Stat()
+	if err != nil {
+		fmt.Println("Error getting file info:", err)
+		return animeList
+	}
+	if fileInfo.Size() == 0 {
+		return animeList
+	}
 
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
