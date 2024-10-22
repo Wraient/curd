@@ -199,7 +199,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 	}
 
 	Log(anime, logFile)
-	mpvSocketPath, err := StartVideo(anime.Ep.Links[len(anime.Ep.Links)-1], []string{})
+	mpvSocketPath, err := StartVideo(PrioritizeLink(anime.Ep.Links), []string{})
 
 	if err != nil {
 		Log("Failed to start mpv", logFile)
