@@ -28,7 +28,12 @@ func GetAnimeMap(animeList AnimeList) map[string]string {
 	// Helper function to populate the map from a slice of entries
 	populateMap := func(entries []Entry) {
 		for _, entry := range entries {
-			animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.English
+			// Only include entries with a non-empty English title
+			if entry.Media.Title.English != "" {
+				animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.English
+			} else {
+				animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.Romaji
+			}
 		}
 	}
 
@@ -41,7 +46,6 @@ func GetAnimeMap(animeList AnimeList) map[string]string {
 
 	return animeMap
 }
-
 // SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
 func SearchAnimeAnilist(query, token string) (map[string]string, error) {
 	url := "https://graphql.anilist.co"
