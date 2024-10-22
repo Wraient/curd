@@ -51,7 +51,8 @@ func main() {
 	flag.BoolVar(&userCurdConfig.SaveMpvSpeed, "save-mpv-speed", userCurdConfig.SaveMpvSpeed, "Save MPV speed setting (true/false)")
 	flag.BoolVar(&userCurdConfig.DiscordPresence, "discord-presence", userCurdConfig.DiscordPresence, "Enable Discord presence (true/false)")
 	continueLast := flag.Bool("c", false, "Continue last episode")
-	
+	editConfig := flag.Bool("e", false, "Edit config")
+
 	subFlag := flag.Bool("sub", false, "Watch sub version")
 	dubFlag := flag.Bool("dub", false, "Watch dub version")
 	
@@ -65,6 +66,11 @@ func main() {
 	flag.Parse()
 	
 	anime.Ep.ContinueLast = *continueLast
+
+	if *editConfig {
+		internal.EditConfig(configFilePath)
+		return
+	}
 
 	// Set SubOrDub based on the flags
 	if *subFlag {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -22,6 +23,32 @@ func GetTokenFromFile(filePath string) (string, error) {
 	token := strings.TrimSpace(string(data))
 
 	return token, nil
+}
+
+func EditConfig(configFilePath string) {
+	// Get the user's preferred editor from the EDITOR environment variable
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		// If EDITOR is not set, default to "vim"
+		editor = "vim"
+	}
+
+	// Construct the command to open the config file
+	cmd := exec.Command(editor, configFilePath)
+
+	// Set the command to run in the current terminal
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Run the editor command
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("Error opening config file: %v\n", err)
+		return
+	}
+
+	fmt.Println("Config file edited successfully.")
 }
 
 // ClearLogFile removes all contents from the specified log file
