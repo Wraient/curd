@@ -289,10 +289,6 @@ func LoadJSONFile(filePath string) (map[string]interface{}, error) {
 func SearchAnimeByTitle(jsonData map[string]interface{}, searchTitle string) []map[string]interface{} {
 	results := []map[string]interface{}{}
 
-	if searchTitle == "1P" {
-		searchTitle = "ONE PIECE"
-	}
-
 	lists := jsonData["data"].(map[string]interface{})["MediaListCollection"].(map[string]interface{})["lists"].([]interface{})
 	for _, list := range lists {
 		entries := list.(map[string]interface{})["entries"].([]interface{})
