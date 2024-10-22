@@ -12,9 +12,9 @@ func DiscordPresence(clientId string, anime Anime) error {
 	}
 
 	err = client.SetActivity(client.Activity{
-		Details:    fmt.Sprintf("%s", anime.Title.English), // Large text
+		Details:    fmt.Sprintf("%s", GetAnimeName(anime)), // Large text
 		LargeImage: anime.CoverImage,
-		LargeText:  anime.Title.Romaji, // Would display while hovering over the large image
+		LargeText:  GetAnimeName(anime), // Would display while hovering over the large image
 		State:      fmt.Sprintf("\nEpisode %d - %d:%02d / %d:%02d", 
 			anime.Ep.Number, 
 			convertSecondsToMinutes(anime.Ep.Player.PlaybackTime), 
