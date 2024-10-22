@@ -11,14 +11,13 @@ import (
 func main() {
 
 	discordClientId := "1287457464148820089"
-
 	// fmt.Println(internal.LocalGetAllAnime("/home/wraient/Projects/curd/.config/curd/curd_history.txt"))
-
 	// os.Exit(0)
+
 	// Setup
 
-	// internal.ClearScreen()
-	// defer internal.RestoreScreen()
+	internal.ClearScreen()
+	defer internal.RestoreScreen()
 
 	var anime internal.Anime
 	var user internal.User
@@ -161,7 +160,8 @@ func main() {
 
 						// User closed the video
 						if anime.Ep.Started {
-							if int(*internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)) >= userCurdConfig.PercentageToMarkComplete {
+							percentageWatched := internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
+							if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {			
 								anime.Ep.Number++
 								anime.Ep.Started = false
 								internal.Log("Completed episode, starting next.", logFile)
