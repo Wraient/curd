@@ -291,7 +291,7 @@ func main() {
 
 		// Update Anilist progress
 		fmt.Println("Starting next episode: "+fmt.Sprint(anime.Ep.Number))
-		if anime.Ep.IsCompleted {
+		if anime.Ep.IsCompleted && !anime.Rewatching {
 			go internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
 			anime.Ep.IsCompleted = false
 		}
