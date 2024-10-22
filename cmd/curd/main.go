@@ -72,25 +72,47 @@ func main() {
 			}
 		}
 
+		
 		// Start curd
-		mpvSocketPath := internal.StartCurd(&userCurdConfig, &anime, logFile)
-	
-		internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
-		internal.Log(mpvSocketPath, logFile)
+		if !anime.Ep.IsFiller {
+			fmt.Println("Not a filler episode, Starting: ", anime.Ep.Number)
+			anime.Ep.Player.SocketPath = internal.StartCurd(&userCurdConfig, &anime, logFile)
+			
+			internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
+			internal.Log(anime.Ep.Player.SocketPath, logFile)
+		} else {
+			fmt.Println("Filler episode, skipping: ", anime.Ep.Number)
+		}
 
+		wg.Add(1)
 		// Get episode data
 		go func(){
+			defer wg.Done()
 			err = internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime)
 			if err != nil {
 				internal.Log("Error getting episode data: "+err.Error(), logFile)
+			} else{
+				internal.Log(anime, logFile)
+				
+				// if filler episode
+				if anime.Ep.IsFiller {
+					fmt.Println("Filler Episode, starting next episode: ", anime.Ep.Number+1)
+					internal.Log("Filler episode detected", logFile)
+					anime.Ep.Number++
+					anime.Ep.Started = false
+					internal.Log("Skipping filler episode, starting next.", logFile)
+					internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, anime.Title.English)
+					// Send command to close MPV
+					_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
+					if err != nil {
+						internal.Log("Error closing MPV: "+err.Error(), logFile)
+					}
+					// Exit the skip loop
+					close(skipLoopDone)
+				} else {
+					// fmt.Println("Not a filler episode, Starting: ", anime.Ep.Number)
+				}
 			}
-			internal.Log(anime, logFile)
-
-			if anime.Ep.IsFiller {
-				internal.Log("Filler episode", logFile)
-				internal.SeekMPV(mpvSocketPath, anime.Ep.Duration)
-			}
-
 		}()
 
 		wg.Add(1)
@@ -132,8 +154,8 @@ func main() {
 					time.Sleep(1 * time.Second)
 
 					// Get current playback time
-					// internal.Log("Getting playback time"+mpvSocketPath, logFile)
-					timePos, err := internal.MPVSendCommand(mpvSocketPath, []interface{}{"get_property", "time-pos"})
+					internal.Log("Getting playback time"+anime.Ep.Player.SocketPath, logFile)
+					timePos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
 					if err != nil {
 						internal.Log("Error getting playback time: "+err.Error(), logFile)
 
@@ -163,7 +185,7 @@ func main() {
 
 						// If resume is true, seek to the playback time
 						if anime.Ep.Resume {
-							internal.SeekMPV(mpvSocketPath, anime.Ep.Player.PlaybackTime)
+							internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.Player.PlaybackTime)
 							anime.Ep.Resume = false
 						}
 
@@ -192,12 +214,12 @@ func main() {
 					// Check if MPV has started
 					if userCurdConfig.SkipOp {
 					if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Op.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Op.Start+2 && anime.Ep.SkipTimes.Op.Start != anime.Ep.SkipTimes.Op.End {
-							internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Op.End)
+							internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Op.End)
 						}
 					}
 					if userCurdConfig.SkipEd {
 						if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Ed.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Ed.Start+2 && anime.Ep.SkipTimes.Ed.Start != anime.Ep.SkipTimes.Ed.End {
-							internal.SeekMPV(mpvSocketPath, anime.Ep.SkipTimes.Ed.End)
+							internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Ed.End)
 						}
 					}
 			}
