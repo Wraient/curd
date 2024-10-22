@@ -75,7 +75,7 @@ func main() {
 		
 		// Start curd
 		if !anime.Ep.IsFiller {
-			fmt.Println("Not a filler episode, Starting: ", anime.Ep.Number)
+			// fmt.Println("Not a filler episode, Starting: ", anime.Ep.Number)
 			anime.Ep.Player.SocketPath = internal.StartCurd(&userCurdConfig, &anime, logFile)
 			
 			internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
@@ -101,7 +101,7 @@ func main() {
 					anime.Ep.Number++
 					anime.Ep.Started = false
 					internal.Log("Skipping filler episode, starting next.", logFile)
-					internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, anime.Title.English)
+					internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.GetAnimeName(anime))
 					// Send command to close MPV
 					_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
 					if err != nil {
@@ -195,7 +195,7 @@ func main() {
 
 						anime.Ep.Player.PlaybackTime = int(animePosition + 0.5) // Round to nearest integer
 						// Update Local Database
-						err = internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, anime.Title.English)
+						err = internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.GetAnimeName(anime))
 						if err != nil {
 							internal.Log("Error updating local database: "+err.Error(), logFile)
 						} else {
