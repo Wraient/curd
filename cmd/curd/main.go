@@ -154,31 +154,29 @@ func main() {
 					time.Sleep(1 * time.Second)
 
 					// Get current playback time
-					internal.Log("Getting playback time"+anime.Ep.Player.SocketPath, logFile)
+					internal.Log("Getting playback time "+anime.Ep.Player.SocketPath, logFile)
 					timePos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
 					if err != nil {
 						internal.Log("Error getting playback time: "+err.Error(), logFile)
 
 						// User closed the video
 						if anime.Ep.Started {
-
 							if int(*internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)) >= userCurdConfig.PercentageToMarkComplete {
 								anime.Ep.Number++
 								anime.Ep.Started = false
 								internal.Log("Completed episode, starting next.", logFile)
 								// Exit the skip loop
 								close(skipLoopDone)
-								// continue
-							} else{
+							} else {
 								fmt.Println("Have a great day!")
 								os.Exit(0)
 							}
-
 						}
+						continue
 					}
 
 					// Convert timePos to integer
-					if timePos != nil && err == nil {
+					if timePos != nil {
 						if !anime.Ep.Started {
 							anime.Ep.Started = true
 						}
@@ -197,7 +195,13 @@ func main() {
 
 						anime.Ep.Player.PlaybackTime = int(animePosition + 0.5) // Round to nearest integer
 						// Update Local Database
-						internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, anime.Title.English)
+						err = internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, anime.Title.English)
+						if err != nil {
+							internal.Log("Error updating local database: "+err.Error(), logFile)
+						} else {
+							internal.Log(fmt.Sprintf("Updated database: AnilistId=%d, AllanimeId=%s, EpNumber=%d, PlaybackTime=%d", 
+								anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime), logFile)
+						}
 					}
 				}
 			}
