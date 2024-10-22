@@ -451,6 +451,12 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 	}
 
 	// Access the list entries in the input map
+	if input["data"] == nil {
+		Log("Anilist request failed", logFile)
+		fmt.Println("Anilist request failed")
+		os.Exit(0)
+		return animeList
+	}
 	data := input["data"].(map[string]interface{})
 	mediaList := data["MediaListCollection"].(map[string]interface{})["lists"].([]interface{})
 
