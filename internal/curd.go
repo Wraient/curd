@@ -90,6 +90,12 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 	// Select anime to watch (Anilist)
 	anilistSelectedOption, err := DynamicSelect(animeListMap)
+	if anilistSelectedOption.Key == "-1" || anilistSelectedOption.Label == "quit" {
+		os.Exit(0)
+	}
+	if anilistSelectedOption.Label == "add_new" { // Todo: Add new anime
+		os.Exit(0)
+	}
 	userQuery := anilistSelectedOption.Label
 	anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
 	if err != nil {
