@@ -93,33 +93,54 @@ func LocalGetAllAnime(databaseFile string) []Anime {
 	}
 
 	for _, row := range records {
-		if len(row) != 5 {
-			fmt.Printf("Invalid row format: %v\n", row)
-			continue
+		anime := parseAnimeRow(row)
+		if anime != nil {
+			animeList = append(animeList, *anime)
 		}
-
-		anilistID, _ := strconv.Atoi(row[0])
-		watchingEpisode, _ := strconv.Atoi(row[2])
-		playbackTime, _ := strconv.Atoi(row[3])
-
-		anime := Anime{
-			AnilistId:  anilistID,
-			AllanimeId: row[1],
-			Ep: Episode{
-				Number: watchingEpisode,
-				Player: playingVideo{
-					PlaybackTime: playbackTime,
-				},
-			},
-			Title: AnimeTitle{
-				English: row[4],
-				Romaji:  row[4],
-			},
-		}
-		animeList = append(animeList, anime)
 	}
 
 	return animeList
+}
+
+// Function to parse a single row of anime data
+func parseAnimeRow(row []string) *Anime {
+	if len(row) < 5 {
+		fmt.Printf("Invalid row format: %v\n", row)
+		return nil
+	}
+
+	anilistID, _ := strconv.Atoi(row[0])
+	watchingEpisode, _ := strconv.Atoi(row[2])
+	playbackTime, _ := strconv.Atoi(row[3])
+
+	anime := &Anime{
+		AnilistId:  anilistID,
+		AllanimeId: row[1],
+		Ep: Episode{
+			Number: watchingEpisode,
+			Player: playingVideo{
+				PlaybackTime: playbackTime,
+			},
+		},
+		Title: AnimeTitle{
+			English: row[4],
+			Romaji:  row[4],
+		},
+	}
+
+	// Check if there's an extra field for total episodes
+	if len(row) == 6 {
+		totalEpisodes, _ := strconv.Atoi(row[5])
+		if watchingEpisode == totalEpisodes {
+			// If watching episode equals total episodes, don't include the total episodes field
+			return anime
+		}
+		// If not equal, you might want to store this information somewhere
+		// For now, we'll just print it
+		// fmt.Printf("Anime %s has %d total episodes\n", anime.Title.English, totalEpisodes)
+	}
+
+	return anime
 }
 
 // Function to get the anime name (English or Romaji) from an Anime struct
@@ -131,7 +152,7 @@ func getAnimeName(anime Anime) string {
 }
 
 // Function to update or add a new anime entry
-func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, playbackTime int, animeName string) {
+func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, playbackTime int, animeName string) error {
 	// Read existing entries
 	animeList := LocalGetAllAnime(databaseFile)
 
@@ -170,7 +191,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 	file, err := os.Create(databaseFile)
 	if err != nil {
 		fmt.Println("Error creating file:", err)
-		return
+		return err
 	}
 	defer file.Close()
 
@@ -189,6 +210,8 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 			fmt.Println("Error writing record:", err)
 		}
 	}
+	
+	return nil
 }
 
 // Function to find an anime by either Anilist ID or Allanime ID
