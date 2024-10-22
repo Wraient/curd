@@ -144,7 +144,7 @@ func parseAnimeRow(row []string) *Anime {
 }
 
 // Function to get the anime name (English or Romaji) from an Anime struct
-func getAnimeName(anime Anime) string {
+func GetAnimeName(anime Anime) string {
 	if anime.Title.English != "" {
 		return anime.Title.English
 	}
@@ -204,7 +204,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 			anime.AllanimeId,
 			strconv.Itoa(anime.Ep.Number),
 			strconv.Itoa(anime.Ep.Player.PlaybackTime),
-			getAnimeName(anime),
+			GetAnimeName(anime),
 		}
 		if err := writer.Write(record); err != nil {
 			fmt.Println("Error writing record:", err)
