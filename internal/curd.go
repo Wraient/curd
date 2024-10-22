@@ -241,10 +241,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.Ep.Number = animePointer.Ep.Number
 	}
 
+
 	// Handel weird cases
 	if anime.TotalEpisodes < anime.Ep.Number {
 		fmt.Printf("Would like to start the anime from beginning? (y/n)\n")
-		anime.Rewatching = true
 		var answer string
 		fmt.Scanln(&answer)
 		if answer == "y" {

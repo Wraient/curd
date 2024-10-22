@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -95,6 +96,16 @@ func main() {
 	databaseAnimes := internal.LocalGetAllAnime(databaseFile)
 
 	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
+
+	temp_anime, err := internal.FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId))
+	if err != nil {
+		internal.Log("Error finding anime by Anilist ID: "+err.Error(), logFile)
+	}
+
+	if anime.TotalEpisodes == temp_anime.Media.Episodes {
+		internal.Log("Rewatching anime: "+internal.GetAnimeName(anime), logFile)
+		anime.Rewatching = true
+	}
 
 	// Create a channel to signal when to exit the skip loop
 	var wg sync.WaitGroup
