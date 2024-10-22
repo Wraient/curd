@@ -140,10 +140,10 @@ func GetPercentageWatched(ipcSocketPath string) (float64, error) {
     return 0, nil
 }
 
-func PercentageWatched(playbackTime int, duration int) *float64 {
+func PercentageWatched(playbackTime int, duration int) float64 {
     if duration > 0 {
         percentage := (float64(playbackTime) / float64(duration)) * 100
-        return &percentage
+        return percentage
     }
-    return nil
+    return float64(0)
 }
