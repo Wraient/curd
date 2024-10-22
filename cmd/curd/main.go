@@ -12,7 +12,7 @@ func main() {
 
 	discordClientId := "1287457464148820089"
 	// fmt.Println(internal.LocalGetAllAnime("/home/wraient/Projects/curd/.config/curd/curd_history.txt"))
-	// os.Exit(0)
+	// internal.ExitCurd()
 
 	// Setup
 
@@ -169,7 +169,7 @@ func main() {
 								close(skipLoopDone)
 							} else {
 								fmt.Println("Have a great day!")
-								os.Exit(0)
+								internal.ExitCurd()
 							}
 						}
 						continue

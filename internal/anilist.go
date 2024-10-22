@@ -458,7 +458,7 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 	if input["data"] == nil {
 		Log("Anilist request failed", logFile)
 		fmt.Println("Anilist request failed")
-		os.Exit(0)
+		ExitCurd()
 		return animeList
 	}
 	data := input["data"].(map[string]interface{})
