@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -99,7 +100,32 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		ExitCurd()
 	}
 	if anilistSelectedOption.Label == "add_new" { // Todo: Add new anime
-		ExitCurd()
+		fmt.Println("Enter the anime name:")
+		var query string
+		fmt.Scanln(&query)
+		animeMap, err := SearchAnimeAnilist(query, user.Token)
+		if err != nil {
+			fmt.Println("Failed to search anime")
+			ExitCurd()
+		}
+		anilistSelectedOption, err = DynamicSelect(animeMap)
+		if err != nil {
+			fmt.Println("No anime available")
+			ExitCurd()
+		}
+		animeID, err := strconv.Atoi(anilistSelectedOption.Key)
+		if err != nil {
+			fmt.Println("Failed to convert anime ID to integer")
+			ExitCurd()
+		}
+		err = AddAnimeToWatchingList(animeID, user.Token)
+		if err != nil {
+			fmt.Println("Failed to add anime to watching list")
+			ExitCurd()
+		}
+		anilistUserData, err := GetUserData(user.Token, user.Id)
+		user.AnimeList = ParseAnimeList(anilistUserData)
+		// animeListMap := GetAnimeMap(user.AnimeList)
 	}
 	userQuery := anilistSelectedOption.Label
 	anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
