@@ -94,6 +94,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
 	if err != nil {
 		fmt.Println("Error converting Anilist ID:", err)
+		os.Exit(1)
 	}
 
 	// Find anime in Local history
