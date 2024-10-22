@@ -70,16 +70,15 @@ func main() {
 		userCurdConfig.SubOrDub = "dub"
 	}
 
-
 	// Get the token from the token file
-	user.Token, err = internal.GetTokenFromFile(os.ExpandEnv("$HOME/.local/share/curd/token"))
+	user.Token, err = internal.GetTokenFromFile(os.ExpandEnv("$HOME/Projects/curd/.local/share/curd/token"))
 	if err != nil {
 		internal.Log("Error reading token", logFile)
 	}
 	if user.Token == "" {
 		fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
 		fmt.Scanln(&user.Token)
-		internal.WriteTokenToFile(user.Token, os.ExpandEnv("$HOME/.local/share/curd/token"))
+		internal.WriteTokenToFile(user.Token, os.ExpandEnv("$HOME/Projects/curd/.local/share/curd/token"))
 	}
 
 	// Load anime in database
@@ -139,6 +138,7 @@ func main() {
 					internal.Log("Filler episode detected", logFile)
 					anime.Ep.Number++
 					anime.Ep.Started = false
+					anime.Ep.IsCompleted = true
 					internal.Log("Skipping filler episode, starting next.", logFile)
 					internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.GetAnimeName(anime))
 					// Send command to close MPV
@@ -198,18 +198,23 @@ func main() {
 					if err != nil {
 						internal.Log("Error getting playback time: "+err.Error(), logFile)
 
+						// Check if the error is due to invalid JSON
 						// User closed the video
 						if anime.Ep.Started {
 							percentageWatched := internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
+							// Episode is completed
 							if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 								anime.Ep.Number++
 								anime.Ep.Started = false
 								internal.Log("Completed episode, starting next.", logFile)
+								anime.Ep.IsCompleted = true
 								// Exit the skip loop
 								close(skipLoopDone)
-							} else {
+							} else if fmt.Sprintf("%v", err) != "invalid character '{' after top-level value" { // Episode is not completed
 								fmt.Println("Have a great day!")
 								internal.ExitCurd()
+							} else {
+								internal.Log("Received invalid JSON response, continuing...", logFile)
 							}
 						}
 						continue
@@ -248,7 +253,7 @@ func main() {
 		}()
 
 		// Skip OP and ED
-	skipLoop:
+		skipLoop:
 		for {
 			select {
 			case <-skipLoopDone:
@@ -275,6 +280,13 @@ func main() {
 
 		// Reset the WaitGroup for the next loop
 		wg = sync.WaitGroup{}
+
+		// Update Anilist progress
+		fmt.Println("Starting next episode: "+fmt.Sprint(anime.Ep.Number))
+		if anime.Ep.IsCompleted {
+			go internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+			anime.Ep.IsCompleted = false
+		}
 
 		continue
 	}
