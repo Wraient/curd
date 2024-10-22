@@ -74,9 +74,14 @@ func main() {
 	os.Exit(0)
 
 	// Get the token from the token file
-	user.Token, err = internal.GetTokenFromFile("/home/wraient/.local/share/curd/token")
+	user.Token, err = internal.GetTokenFromFile(os.ExpandEnv("$HOME/.local/share/curd/token"))
 	if err != nil {
 		internal.Log("Error reading token", logFile)
+	}
+	if user.Token == "" {
+		fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
+		fmt.Scanln(&user.Token)
+		internal.WriteTokenToFile(user.Token, os.ExpandEnv("$HOME/.local/share/curd/token"))
 	}
 
 	// Load anime in database

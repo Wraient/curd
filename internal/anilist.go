@@ -46,6 +46,7 @@ func GetAnimeMap(animeList AnimeList) map[string]string {
 
 	return animeMap
 }
+
 // SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
 func SearchAnimeAnilist(query, token string) (map[string]string, error) {
 	url := "https://graphql.anilist.co"

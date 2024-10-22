@@ -170,6 +170,25 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	}
 }
 
+// CreateOrWriteTokenFile creates the token file if it doesn't exist and writes the token to it
+func WriteTokenToFile(token string, filePath string) error {
+    // Extract the directory path
+    dir := filepath.Dir(filePath)
+
+    // Create all necessary parent directories
+    if err := os.MkdirAll(dir, 0755); err != nil {
+        return fmt.Errorf("failed to create directories: %v", err)
+    }
+
+    // Write the token to the file, creating it if it doesn't exist
+    err := os.WriteFile(filePath, []byte(token), 0644)
+    if err != nil {
+        return fmt.Errorf("failed to write token to file: %v", err)
+    }
+
+    return nil
+}
+
 func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string {
 
 	// Get episode link
