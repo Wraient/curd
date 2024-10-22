@@ -16,13 +16,13 @@ type SelectionOption struct {
 
 // Model represents the application state for the selection prompt
 type Model struct {
-	options       map[string]string
-	filter        string
-	filteredKeys  []SelectionOption
-	selected      int
-	terminalWidth int
+	options        map[string]string
+	filter         string
+	filteredKeys   []SelectionOption
+	selected       int
+	terminalWidth  int
 	terminalHeight int
-	scrollOffset  int // Track the topmost visible item
+	scrollOffset   int // Track the topmost visible item
 }
 
 // Init initializes the model
@@ -44,7 +44,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
-			return m, tea.Quit
+			// Return quit selection option instead of quitting the program
+			m.filteredKeys[m.selected] = SelectionOption{"quit", "-1"}
+			return m, tea.Quit // Properly exit the program
 		case "backspace":
 			if len(m.filter) > 0 {
 				m.filter = m.filter[:len(m.filter)-1]
@@ -73,6 +75,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.filteredKeys[m.selected].Key == "add_new" {
 				fmt.Println("Adding a new anime...")
+				m.filteredKeys[m.selected] = SelectionOption{"add_new", "0"}
 				return m, tea.Quit
 			}
 			return m, tea.Quit
@@ -86,7 +89,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if updateFilter {
 		m.filterOptions()
-		m.selected = 0    // Reset selection to the first item after filtering
+		m.selected = 0     // Reset selection to the first item after filtering
 		m.scrollOffset = 0 // Reset scrolling
 	}
 
