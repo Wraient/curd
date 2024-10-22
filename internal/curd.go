@@ -79,6 +79,11 @@ func RestoreScreen() {
     fmt.Print("\033[?1049l") // Switch back to the main screen buffer
 }
 
+func ExitCurd() {
+	RestoreScreen()
+	os.Exit(0)
+}
+
 func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
 	var err error
 
@@ -91,10 +96,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	// Select anime to watch (Anilist)
 	anilistSelectedOption, err := DynamicSelect(animeListMap)
 	if anilistSelectedOption.Key == "-1" || anilistSelectedOption.Label == "quit" {
-		os.Exit(0)
+		ExitCurd()
 	}
 	if anilistSelectedOption.Label == "add_new" { // Todo: Add new anime
-		os.Exit(0)
+		ExitCurd()
 	}
 	userQuery := anilistSelectedOption.Label
 	anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
@@ -127,7 +132,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		}
 		if len(animeList) == 0 {
 			fmt.Println("No results found.")
-			os.Exit(0)
+			ExitCurd()
 		}
 
 		// find anime in animeList
@@ -139,7 +144,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			selectedAllanimeAnime, err := DynamicSelect(animeList)
 			if err != nil {
 				fmt.Println("No anime available")
-				os.Exit(0)
+				ExitCurd()
 			}
 			anime.AllanimeId = selectedAllanimeAnime.Key
 		}
