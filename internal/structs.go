@@ -46,6 +46,7 @@ type playingVideo struct {
 	Url          string
 	Speed        float64 `json:"speed"`
 	PlaybackTime int     `json:"playback_time"`
+	SocketPath	 string
 }
 
 type User struct {
