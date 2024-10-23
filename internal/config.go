@@ -77,7 +77,7 @@ func defaultConfigMap() map[string]string {
 		"SubsLanguage":            "english",
 		"SubOrDub":                "sub",
 		"PercentageToMarkComplete": "85",
-		"NextEpisodePrompt":       "true",
+		"NextEpisodePrompt":       "false",
 		"SkipOp":                  "true",
 		"SkipEd":                  "true",
 		"SkipFiller":              "true",
