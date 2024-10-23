@@ -16,16 +16,13 @@ func main() {
 	discordClientId := "1287457464148820089"
 
 	// Setup
-
-	// internal.ClearScreen()
-	// defer internal.RestoreScreen()
+	internal.ClearScreen()
+	defer internal.RestoreScreen()
 
 	var anime internal.Anime
 	var user internal.User
 
 	configFilePath := os.ExpandEnv("$HOME/.config/curd/curd.conf")
-	logFile := "debug.log"
-	internal.ClearLogFile(logFile)
 
 	// load curd userCurdConfig
 	userCurdConfig, err := internal.LoadConfig(configFilePath)
@@ -33,6 +30,9 @@ func main() {
 		fmt.Println("Error loading config:", err)
 		return
 	}
+
+	logFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "debug.log")
+	internal.ClearLogFile(logFile)
 
 	// Flags configured here cause userconfig needs to be changed.
 	flag.StringVar(&userCurdConfig.Player, "player", userCurdConfig.Player, "Player to use for playback (Only mpv supported currently)")
