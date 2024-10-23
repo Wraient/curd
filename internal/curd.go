@@ -167,11 +167,8 @@ func UpdateCurd(repo, fileName string) error {
 		return fmt.Errorf("failed to set permissions on the new file: %v", err)
 	}
 
-	fmt.Println("Program Updated!")
-
 	return nil
 }
-
 
 func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
 	var err error
