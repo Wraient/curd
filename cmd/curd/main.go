@@ -155,10 +155,15 @@ func main() {
 			} else {
 				internal.Log(anime, logFile)
 
-				// if filler episode
-				if anime.Ep.IsFiller {
-					fmt.Println("Filler Episode, starting next episode: ", anime.Ep.Number+1)
-					internal.Log("Filler episode detected", logFile)
+				// if filler episode or recap episode and skip is enabled
+				if (userCurdConfig.SkipFiller || userCurdConfig.SkipRecap) && (anime.Ep.IsFiller || anime.Ep.IsRecap) {
+					if anime.Ep.IsFiller && userCurdConfig.SkipFiller {
+						fmt.Println("Filler Episode, starting next episode: ", anime.Ep.Number+1)
+						internal.Log("Filler episode detected", logFile)
+					} else if anime.Ep.IsRecap && userCurdConfig.SkipRecap {
+						fmt.Println("Recap Episode, starting next episode: ", anime.Ep.Number+1)
+						internal.Log("Recap episode detected", logFile)
+					} 
 					anime.Ep.Number++
 					anime.Ep.Started = false
 					anime.Ep.IsCompleted = true
@@ -171,9 +176,7 @@ func main() {
 					}
 					// Exit the skip loop
 					close(skipLoopDone)
-				} else {
-					// fmt.Println("Not a filler episode, Starting: ", anime.Ep.Number)
-				}
+				} 
 			}
 		}()
 
