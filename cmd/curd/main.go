@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
 	"github.com/wraient/curd/internal"
 )
 
@@ -18,13 +17,14 @@ func main() {
 
 	// Setup
 
-	internal.ClearScreen()
+	// internal.ClearScreen()
 	// defer internal.RestoreScreen()
 
 	var anime internal.Anime
 	var user internal.User
 
-	configFilePath := os.ExpandEnv("$HOME/Projects/curd/.config/curd/curd_config.txt")
+	configFilePath := os.ExpandEnv("$HOME/.config/curd/curd.conf")
+	fmt.Println(configFilePath)
 	logFile := "debug.log"
 	internal.ClearLogFile(logFile)
 
