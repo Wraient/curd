@@ -50,9 +50,9 @@ func main() {
 	flag.BoolVar(&userCurdConfig.SaveMpvSpeed, "save-mpv-speed", userCurdConfig.SaveMpvSpeed, "Save MPV speed setting (true/false)")
 	flag.BoolVar(&userCurdConfig.DiscordPresence, "discord-presence", userCurdConfig.DiscordPresence, "Enable Discord presence (true/false)")
 	continueLast := flag.Bool("c", false, "Continue last episode")
+	addNewAnime := flag.Bool("new", false, "Add new anime")
 	updateScript := flag.Bool("u", false, "Update the script")
 	editConfig := flag.Bool("e", false, "Edit config")
-
 	subFlag := flag.Bool("sub", false, "Watch sub version")
 	dubFlag := flag.Bool("dub", false, "Watch dub version")
 	
@@ -67,53 +67,60 @@ func main() {
 	
 	anime.Ep.ContinueLast = *continueLast
 
+
+	
 	if *updateScript{
 		repo := "wraient/curd"
 		fileName := "curd"
-	
+		
 		if err := internal.UpdateCurd(repo, fileName); err != nil {
 			fmt.Printf("Error updating executable: %v\n", err)
 			os.Exit(1)
-		} else {
-			fmt.Println("Program Updated!")
-			internal.ExitCurd()
+			} else {
+				fmt.Println("Program Updated!")
+				internal.ExitCurd()
+			}
 		}
-	}
-
-	if *editConfig {
-		internal.EditConfig(configFilePath)
-		return
-	}
-
+		
+		if *editConfig {
+			internal.EditConfig(configFilePath)
+			return
+		}
+		
 	// Set SubOrDub based on the flags
 	if *subFlag {
 		userCurdConfig.SubOrDub = "sub"
-	} else if *dubFlag {
-		userCurdConfig.SubOrDub = "dub"
-	}
+		} else if *dubFlag {
+			userCurdConfig.SubOrDub = "dub"
+		}
+		
+		// Get the token from the token file
+		user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
+		if err != nil {
+			internal.Log("Error reading token", logFile)
+		}
+		if user.Token == "" {
+			fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
+			fmt.Scanln(&user.Token)
+			internal.WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
+		}
+		
+		// Load animes in database
+		databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
+		databaseAnimes := internal.LocalGetAllAnime(databaseFile)
+		
+		if *addNewAnime {
+			internal.AddNewAnime(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
+			internal.ExitCurd()
+		}
 
-	// Get the token from the token file
-	user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
-	if err != nil {
-		internal.Log("Error reading token", logFile)
-	}
-	if user.Token == "" {
-		fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
-		fmt.Scanln(&user.Token)
-		internal.WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
-	}
-
-	// Load animes in database
-	databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
-	databaseAnimes := internal.LocalGetAllAnime(databaseFile)
-
-	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
-
-	temp_anime, err := internal.FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId))
+		internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
+		
+		temp_anime, err := internal.FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId))
 	if err != nil {
 		internal.Log("Error finding anime by Anilist ID: "+err.Error(), logFile)
 	}
-
+	
 	if anime.TotalEpisodes == temp_anime.Progress {
 		internal.Log(temp_anime.Progress, logFile)
 		internal.Log(anime.TotalEpisodes, logFile)

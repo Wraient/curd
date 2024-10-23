@@ -119,6 +119,7 @@ yay -R curd
 
 |Description            | Command          |
 ------------------------|------------------
+|*Watching new anime*   | `curd -new`      |
 |*Watch dub*            | `curd -dub`      |
 |*Watch sub*            | `curd -sub`      |
 |*Update the script*    | `curd -u`        |

@@ -170,6 +170,38 @@ func UpdateCurd(repo, fileName string) error {
 	return nil
 }
 
+func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
+	fmt.Println("Enter the anime name:")
+	var query string
+	fmt.Scanln(&query)
+	animeMap, err := SearchAnimeAnilist(query, user.Token)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to search anime: %v", err), logFile)
+		ExitCurd()
+	}
+	anilistSelectedOption, err := DynamicSelect(animeMap)
+	if err != nil {
+		Log(fmt.Sprintf("No anime available: %v", err), logFile)
+		ExitCurd()
+	}
+	animeID, err := strconv.Atoi(anilistSelectedOption.Key)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to convert anime ID to integer: %v", err), logFile)
+		ExitCurd()
+	}
+	err = AddAnimeToWatchingList(animeID, user.Token)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to add anime to watching list: %v", err), logFile)
+		ExitCurd()
+	}
+	anilistUserData, err := GetUserData(user.Token, user.Id)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
+		ExitCurd()
+	}
+	user.AnimeList = ParseAnimeList(anilistUserData)
+}
+
 func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
 	var err error
 
@@ -213,35 +245,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		}
 
 		if anilistSelectedOption.Label == "add_new" {
-			fmt.Println("Enter the anime name:")
-			var query string
-			fmt.Scanln(&query)
-			animeMap, err := SearchAnimeAnilist(query, user.Token)
-			if err != nil {
-				Log(fmt.Sprintf("Failed to search anime: %v", err), logFile)
-				ExitCurd()
-			}
-			anilistSelectedOption, err = DynamicSelect(animeMap)
-			if err != nil {
-				Log(fmt.Sprintf("No anime available: %v", err), logFile)
-				ExitCurd()
-			}
-			animeID, err := strconv.Atoi(anilistSelectedOption.Key)
-			if err != nil {
-				Log(fmt.Sprintf("Failed to convert anime ID to integer: %v", err), logFile)
-				ExitCurd()
-			}
-			err = AddAnimeToWatchingList(animeID, user.Token)
-			if err != nil {
-				Log(fmt.Sprintf("Failed to add anime to watching list: %v", err), logFile)
-				ExitCurd()
-			}
-			anilistUserData, err := GetUserData(user.Token, user.Id)
-			if err != nil {
-				Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
-				ExitCurd()
-			}
-			user.AnimeList = ParseAnimeList(anilistUserData)
+			AddNewAnime(userCurdConfig, anime, user, databaseAnimes, logFile)
 		}
 
 		userQuery = anilistSelectedOption.Label
