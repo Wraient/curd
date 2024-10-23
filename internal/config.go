@@ -13,9 +13,9 @@ import (
 // CurdConfig struct with field names that match the config keys
 type CurdConfig struct {
 	Player                  string `config:"Player"`
-	HistoryFile             string `config:"HistoryFile"`
 	SubsLanguage            string `config:"SubsLanguage"`
 	SubOrDub                string `config:"SubOrDub"`
+	StoragePath             string `config:"StoragePath"`
 	PercentageToMarkComplete int    `config:"PercentageToMarkComplete"`
 	NextEpisodePrompt       bool   `config:"NextEpisodePrompt"`
 	SkipOp                  bool   `config:"SkipOp"`
@@ -73,7 +73,7 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 func defaultConfigMap() map[string]string {
 	return map[string]string{
 		"Player":                  "mpv",
-		"HistoryFile":             "$HOME/.local/share/curd/curd_history.txt",
+		"StoragePath":             "$HOME/.local/share/curd",
 		"SubsLanguage":            "english",
 		"SubOrDub":                "sub",
 		"PercentageToMarkComplete": "90",

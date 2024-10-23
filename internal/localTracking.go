@@ -121,7 +121,6 @@ func LocalGetAllAnime(databaseFile string) []Anime {
 
 	return animeList
 }
-
 // Function to parse a single row of anime data
 func parseAnimeRow(row []string) *Anime {
 	if len(row) < 5 {
@@ -142,27 +141,22 @@ func parseAnimeRow(row []string) *Anime {
 				PlaybackTime: playbackTime,
 			},
 		},
-		Title: AnimeTitle{
-			English: row[4],
-			Romaji:  row[4],
-		},
 	}
 
-	// Check if there's an extra field for total episodes
 	if len(row) == 6 {
-		totalEpisodes, _ := strconv.Atoi(row[5])
-		if watchingEpisode == totalEpisodes {
-			// If watching episode equals total episodes, don't include the total episodes field
-			return anime
+		anime.Title = AnimeTitle{
+			English: row[5],
+			Romaji:  row[5],
 		}
-		// If not equal, you might want to store this information somewhere
-		// For now, we'll just print it
-		// fmt.Printf("Anime %s has %d total episodes\n", anime.Title.English, totalEpisodes)
+	} else if len(row) == 5 {
+		anime.Title = AnimeTitle{
+			English: row[4],
+			Romaji:  row[4],
+		}
 	}
 
 	return anime
 }
-
 // Function to get the anime name (English or Romaji) from an Anime struct
 func GetAnimeName(anime Anime) string {
 	if anime.Title.English != "" {

@@ -108,7 +108,7 @@ func RestoreScreen() {
 }
 
 func ExitCurd() {
-	RestoreScreen()
+	// RestoreScreen()
 	fmt.Println("Have a great day!")
 	os.Exit(0)
 }
@@ -126,7 +126,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 	if anime.Ep.ContinueLast {
 		// Get the last watched anime ID from the curd_id file
-		curdIDPath := os.ExpandEnv("$HOME/Projects/curd/.local/share/curd/curd_id")
+		curdIDPath := filepath.Join(os.Getenv(userCurdConfig.StoragePath), "curd_id")
 		curdIDBytes, err := os.ReadFile(curdIDPath)
 		if err != nil {
 			Log(fmt.Sprintf("Error reading curd_id file: %v", err), logFile)
@@ -244,6 +244,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 	// Handel weird cases
 	if anime.TotalEpisodes < anime.Ep.Number {
+		if anime.TotalEpisodes == 0 {
+			time.Sleep(2 * time.Second)
+		}
+		Log(fmt.Sprintf("Weird case: anime.TotalEpisodes < anime.Ep.Number: %v < %v", anime.TotalEpisodes, anime.Ep.Number), logFile)
 		fmt.Printf("Would like to start the anime from beginning? (y/n)\n")
 		var answer string
 		fmt.Scanln(&answer)
@@ -305,7 +309,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 	Log(anime, logFile)
 
 	// Write anime.AnilistId to .local/share/curd/curd_id
-	idFilePath := filepath.Join(os.Getenv("HOME"), "Projects", "curd", ".local", "share", "curd", "curd_id")
+	idFilePath := filepath.Join(os.Getenv(userCurdConfig.StoragePath), "curd_id")
 	if err := os.MkdirAll(filepath.Dir(idFilePath), 0755); err != nil {
 		Log(fmt.Sprintf("Failed to create directory for curd_id: %v", err), logFile)
 	} else {

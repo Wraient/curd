@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -14,12 +15,10 @@ import (
 func main() {
 
 	discordClientId := "1287457464148820089"
-	// fmt.Println(internal.LocalGetAllAnime("/home/wraient/Projects/curd/.config/curd/curd_history.txt"))
-	// internal.ExitCurd()
 
 	// Setup
 
-	// internal.ClearScreen()
+	internal.ClearScreen()
 	// defer internal.RestoreScreen()
 
 	var anime internal.Anime
@@ -38,7 +37,7 @@ func main() {
 
 	// Flags configured here cause userconfig needs to be changed.
 	flag.StringVar(&userCurdConfig.Player, "player", userCurdConfig.Player, "Player to use for playback (Only mpv supported currently)")
-	flag.StringVar(&userCurdConfig.HistoryFile, "history-file", userCurdConfig.HistoryFile, "Path to the history file")
+	flag.StringVar(&userCurdConfig.StoragePath, "storage-path", userCurdConfig.StoragePath, "Path to the storage directory")
 	flag.StringVar(&userCurdConfig.SubsLanguage, "subs-lang", userCurdConfig.SubsLanguage, "Subtitles language")
 	flag.IntVar(&userCurdConfig.PercentageToMarkComplete, "percentage-to-mark-complete", userCurdConfig.PercentageToMarkComplete, "Percentage to mark episode as complete")
 
@@ -81,18 +80,18 @@ func main() {
 	}
 
 	// Get the token from the token file
-	user.Token, err = internal.GetTokenFromFile(os.ExpandEnv("$HOME/Projects/curd/.local/share/curd/token"))
+	user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
 	if err != nil {
 		internal.Log("Error reading token", logFile)
 	}
 	if user.Token == "" {
 		fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
 		fmt.Scanln(&user.Token)
-		internal.WriteTokenToFile(user.Token, os.ExpandEnv("$HOME/Projects/curd/.local/share/curd/token"))
+		internal.WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
 	}
 
 	// Load animes in database
-	databaseFile := os.ExpandEnv("$HOME/Projects/curd/.config/curd/curd_history.txt")
+	databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
 	databaseAnimes := internal.LocalGetAllAnime(databaseFile)
 
 	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
@@ -102,16 +101,18 @@ func main() {
 		internal.Log("Error finding anime by Anilist ID: "+err.Error(), logFile)
 	}
 
-	if anime.TotalEpisodes == temp_anime.Media.Episodes {
+	if anime.TotalEpisodes == temp_anime.Progress {
+		internal.Log(temp_anime.Progress, logFile)
+		internal.Log(anime.TotalEpisodes, logFile)
+		internal.Log(user.AnimeList, logFile)
 		internal.Log("Rewatching anime: "+internal.GetAnimeName(anime), logFile)
-		anime.Rewatching = true
+		anime.Rewatching = true	
 	}
-
-	// Create a channel to signal when to exit the skip loop
-	var wg sync.WaitGroup
-
+	
 	// Main loop
 	for {
+		// Create a channel to signal when to exit the skip loop
+		var wg sync.WaitGroup
 		skipLoopDone := make(chan struct{})
 
 		// Get MalId and CoverImage (only if discord presence is enabled)
@@ -236,7 +237,6 @@ func main() {
 								internal.Log("Received invalid JSON response, continuing...", logFile)
 							}
 						}
-						continue
 					}
 
 					// Convert timePos to integer
@@ -302,11 +302,27 @@ func main() {
 
 		// Update Anilist progress
 		fmt.Println("Starting next episode: "+fmt.Sprint(anime.Ep.Number))
-		if anime.Ep.IsCompleted && !anime.Rewatching {
-			go internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
-			anime.Ep.IsCompleted = false
-		}
 
-		continue
+		if anime.Ep.IsCompleted && !anime.Rewatching {
+			go func(){
+				err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+				if err != nil {
+					internal.Log("Error updating Anilist progress: "+err.Error(), logFile)
+				}
+			}()
+
+			anime.Ep.IsCompleted = false
+			// fmt.Println(anime.Ep.Number, anime.TotalEpisodes)
+			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion {
+				anime.Ep.Number = anime.Ep.Number - 1
+				var userScore float64
+				fmt.Println("Completed anime.")
+				fmt.Println("Rate this anime: ")
+				fmt.Scanln(&userScore)
+				internal.RateAnime(user.Token, anime.AnilistId, userScore)
+				internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
+				internal.ExitCurd()
+			}
+		}
 	}
 }

@@ -41,7 +41,7 @@ type Episode struct {
 	Aired     string     `json:"aired"`
 	Synopsis  string     `json:"synopsis"`
 	ContinueLast bool
-	IsCompleted bool
+	IsCompleted bool 
 }
 
 type playingVideo struct {
