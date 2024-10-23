@@ -9,7 +9,7 @@ import (
 )
 
 // Function to add an anime entry
-func LocalAddAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, watchingTime int, animeName string) {
+func LocalAddAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, watchingTime int, animeDuration int, animeName string) {
 	file, err := os.OpenFile(databaseFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		fmt.Println("Error opening file:", err)
@@ -25,6 +25,7 @@ func LocalAddAnime(databaseFile string, anilistID int, allanimeID string, watchi
 		allanimeID,
 		strconv.Itoa(watchingEpisode),
 		strconv.Itoa(watchingTime),
+		strconv.Itoa(animeDuration),
 		animeName,
 	})
 	if err != nil {
@@ -121,6 +122,7 @@ func LocalGetAllAnime(databaseFile string) []Anime {
 
 	return animeList
 }
+
 // Function to parse a single row of anime data
 func parseAnimeRow(row []string) *Anime {
 	if len(row) < 5 {
@@ -131,6 +133,7 @@ func parseAnimeRow(row []string) *Anime {
 	anilistID, _ := strconv.Atoi(row[0])
 	watchingEpisode, _ := strconv.Atoi(row[2])
 	playbackTime, _ := strconv.Atoi(row[3])
+	animeDuration, _ := strconv.Atoi(row[4])
 
 	anime := &Anime{
 		AnilistId:  anilistID,
@@ -140,6 +143,7 @@ func parseAnimeRow(row []string) *Anime {
 			Player: playingVideo{
 				PlaybackTime: playbackTime,
 			},
+			Duration: animeDuration,
 		},
 	}
 
@@ -157,6 +161,7 @@ func parseAnimeRow(row []string) *Anime {
 
 	return anime
 }
+
 // Function to get the anime name (English or Romaji) from an Anime struct
 func GetAnimeName(anime Anime) string {
 	if anime.Title.English != "" {
@@ -166,7 +171,7 @@ func GetAnimeName(anime Anime) string {
 }
 
 // Function to update or add a new anime entry
-func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, playbackTime int, animeName string) error {
+func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, playbackTime int, animeDuration int, animeName string) error {
 	// Read existing entries
 	animeList := LocalGetAllAnime(databaseFile)
 
@@ -176,6 +181,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 		if anime.AnilistId == anilistID && anime.AllanimeId == allanimeID {
 			animeList[i].Ep.Number = watchingEpisode
 			animeList[i].Ep.Player.PlaybackTime = playbackTime
+			animeList[i].Ep.Duration = animeDuration
 			animeList[i].Title.English = animeName
 			animeList[i].Title.Romaji = animeName
 			updated = true
@@ -192,6 +198,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 				Player: playingVideo{
 					PlaybackTime: playbackTime,
 				},
+				Duration: animeDuration,
 			},
 			Title: AnimeTitle{
 				English: animeName,
@@ -218,6 +225,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 			anime.AllanimeId,
 			strconv.Itoa(anime.Ep.Number),
 			strconv.Itoa(anime.Ep.Player.PlaybackTime),
+			strconv.Itoa(anime.Ep.Duration),
 			GetAnimeName(anime),
 		}
 		if err := writer.Write(record); err != nil {

@@ -163,7 +163,7 @@ func main() {
 					anime.Ep.Started = false
 					anime.Ep.IsCompleted = true
 					internal.Log("Skipping filler episode, starting next.", logFile)
-					internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.GetAnimeName(anime))
+					internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
 					// Send command to close MPV
 					_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
 					if err != nil {
@@ -188,7 +188,7 @@ func main() {
 				default:
 					err = internal.DiscordPresence(discordClientId, anime)
 					if err != nil {
-						internal.Log("Error setting Discord presence: "+err.Error(), logFile)
+						// internal.Log("Error setting Discord presence: "+err.Error(), logFile)
 					}
 					time.Sleep(1 * time.Second)
 				}
@@ -204,9 +204,9 @@ func main() {
 			internal.Log(anime.Ep.SkipTimes, logFile)
 		}()
 
+		// Get video duration
 		go func() {
 			for {
-
 				if anime.Ep.Started {
 					if anime.Ep.Duration == 0 {
 						// Get video duration
@@ -224,6 +224,7 @@ func main() {
 						break	
 					}
 				}
+				time.Sleep(1 * time.Second)
 			}
 		}()
 
@@ -295,7 +296,7 @@ func main() {
 
 						anime.Ep.Player.PlaybackTime = int(animePosition + 0.5) // Round to nearest integer
 						// Update Local Database
-						err = internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.GetAnimeName(anime))
+						err = internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
 						if err != nil {
 							internal.Log("Error updating local database: "+err.Error(), logFile)
 						} else {
@@ -365,6 +366,12 @@ func main() {
 				internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 				internal.ExitCurd()
 			}
+		}
+		if anime.Rewatching && anime.Ep.IsCompleted && anime.Ep.Number-1 == anime.TotalEpisodes {
+			anime.Ep.Number = anime.Ep.Number - 1
+			fmt.Println("Completed anime. (Rewatching so no scoring)")
+			internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
+			internal.ExitCurd()
 		}
 	}
 }

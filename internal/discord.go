@@ -17,9 +17,9 @@ func DiscordPresence(clientId string, anime Anime) error {
 		LargeText:  GetAnimeName(anime), // Would display while hovering over the large image
 		State:      fmt.Sprintf("\nEpisode %d - %d:%02d / %d:%02d", 
 			anime.Ep.Number, 
-			convertSecondsToMinutes(anime.Ep.Player.PlaybackTime), 
+			ConvertSecondsToMinutes(anime.Ep.Player.PlaybackTime), 
 			anime.Ep.Player.PlaybackTime % 60,
-			convertSecondsToMinutes(anime.Ep.Duration),
+			ConvertSecondsToMinutes(anime.Ep.Duration),
 			anime.Ep.Duration % 60),
 		// SmallImage: anime.CoverImage, // Image would appear in the bottom left corner
 		// SmallText:  fmt.Sprintf("%s", anime.Ep.Title.English), // Would display while hovering over the small image
@@ -40,6 +40,6 @@ func DiscordPresence(clientId string, anime Anime) error {
 	return nil
 }
 
-func convertSecondsToMinutes(seconds int) int {
+func ConvertSecondsToMinutes(seconds int) int {
 	return seconds / 60
 }

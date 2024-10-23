@@ -243,6 +243,15 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.Ep.Number = animePointer.Ep.Number
 	}
 
+	// If upstream is ahead, update the episode number
+	if temp_anime, err := FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId)); err == nil {
+		if temp_anime.Progress > anime.Ep.Number {
+			anime.Ep.Number = temp_anime.Progress
+			anime.Ep.Player.PlaybackTime = 0
+			anime.Ep.Resume = false
+		}
+	}
+
 	if anime.TotalEpisodes == 0 {
 		// Get updated anime data
 		Log(selectedAllanimeAnime, logFile)
