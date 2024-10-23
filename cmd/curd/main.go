@@ -24,7 +24,6 @@ func main() {
 	var user internal.User
 
 	configFilePath := os.ExpandEnv("$HOME/.config/curd/curd.conf")
-	fmt.Println(configFilePath)
 	logFile := "debug.log"
 	internal.ClearLogFile(logFile)
 
