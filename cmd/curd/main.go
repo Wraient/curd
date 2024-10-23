@@ -100,29 +100,29 @@ func main() {
 			userCurdConfig.SubOrDub = "dub"
 		}
 		
-		// Get the token from the token file
-		user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
-		if err != nil {
-			internal.Log("Error reading token", logFile)
-		}
-		if user.Token == "" {
-			fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
-			fmt.Scanln(&user.Token)
-			internal.WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
-		}
-		
-		// Load animes in database
-		databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
-		databaseAnimes := internal.LocalGetAllAnime(databaseFile)
-		
-		if *addNewAnime {
-			internal.AddNewAnime(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
-			internal.ExitCurd()
-		}
+	// Get the token from the token file
+	user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
+	if err != nil {
+		internal.Log("Error reading token", logFile)
+	}
+	if user.Token == "" {
+		fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
+		fmt.Scanln(&user.Token)
+		internal.WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
+	}
+	
+	// Load animes in database
+	databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
+	databaseAnimes := internal.LocalGetAllAnime(databaseFile)
+	
+	if *addNewAnime {
+		internal.AddNewAnime(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
+		internal.ExitCurd()
+	}
 
-		internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
-		
-		temp_anime, err := internal.FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId))
+	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
+	
+	temp_anime, err := internal.FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId))
 	if err != nil {
 		internal.Log("Error finding anime by Anilist ID: "+err.Error(), logFile)
 	}
