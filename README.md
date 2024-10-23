@@ -1,7 +1,7 @@
 
 # Curd
 
-A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC.
+A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC written in golang.
 
 Note: This currently only works for linux.
 
@@ -20,29 +20,97 @@ https://github.com/user-attachments/assets/3b9578aa-396a-4313-8254-d0954041d6ba
 
 ## Installing and Setup
 ### Linux
-<details><summary>Debian</summary>
-  
+<details>
+<summary>Arch Linux / Manjaro (AUR-based systems)</summary>
 
-```
-    sudo apt-get install socat
-    pip3 install pypresence requests
-    git clone https://github.com/wraient/curd --depth=1
-    python3 ./curd/curd.py
-```
 
-</details>
+Using Yay
 
-<details><summary>Arch Linux</summary>
-  
-```
-paru -Sy curd
-```
-or
 ```
 yay -Sy curd
 ```
 
+or using Paru:
+
+```
+paru -Sy curd
+```
+
+Or manually:
+
+```
+git clone https://aur.archlinux.org/curd.git
+cd curd
+makepkg -si
+```
 </details>
+
+<details>
+<summary>Debian / Ubuntu (and derivatives)</summary>
+
+```
+sudo apt update
+sudo apt install mpv curl
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
+chmod +x curd
+sudo mv curd /usr/local/bin/
+curd
+```
+</details>
+
+<details>
+<summary>Fedora</summary>
+
+```
+sudo dnf update
+sudo dnf install mpv curl
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
+chmod +x curd
+sudo mv curd /usr/local/bin/
+curd
+```
+</details>
+
+<details>
+<summary>openSUSE</summary>
+
+```
+sudo zypper refresh
+sudo zypper install mpv curl
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
+chmod +x curd
+sudo mv curd /usr/local/bin/
+curd
+```
+</details>
+
+<details>
+<summary>Other Linux Distributions (Generic Instructions)</summary>
+
+```
+# Install mpv and curl
+
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
+chmod +x curd
+sudo mv curd /usr/local/bin/
+curd
+```
+</details>
+
+<details>
+<summary>Uninstallation</summary>
+
+```
+sudo rm /usr/local/bin/curd
+```
+
+For AUR-based distributions:
+
+```
+yay -R curd
+```
+</details>
+
 
 
 ## Usage
