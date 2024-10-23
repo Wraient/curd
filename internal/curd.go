@@ -356,8 +356,9 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 
 	Log(anime, logFile)
 
-	// Write anime.AnilistId to .local/share/curd/curd_id
-	idFilePath := filepath.Join(os.Getenv(userCurdConfig.StoragePath), "curd_id")
+	// Write anime.AnilistId to curd_id in the storage path
+	idFilePath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_id")
+	Log(fmt.Sprintf("idFilePath: %v", idFilePath), logFile)
 	if err := os.MkdirAll(filepath.Dir(idFilePath), 0755); err != nil {
 		Log(fmt.Sprintf("Failed to create directory for curd_id: %v", err), logFile)
 	} else {
