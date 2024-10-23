@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -122,6 +123,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	user.AnimeList = ParseAnimeList(anilistUserData)
 	animeListMap := GetAnimeMap(user.AnimeList)
 	var anilistSelectedOption SelectionOption
+	var selectedAllanimeAnime SelectionOption
 	var userQuery string
 
 	if anime.Ep.ContinueLast {
@@ -241,12 +243,48 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.Ep.Number = animePointer.Ep.Number
 	}
 
-
-	// Handel weird cases
-	if anime.TotalEpisodes < anime.Ep.Number {
-		if anime.TotalEpisodes == 0 {
-			time.Sleep(2 * time.Second)
+	if anime.TotalEpisodes == 0 {
+		// Get updated anime data
+		Log(selectedAllanimeAnime, logFile)
+		updatedAnime, err := GetAnimeDataByID(anime.AnilistId, user.Token)
+		Log(updatedAnime, logFile)
+		if err != nil {
+			Log(fmt.Sprintf("Error getting updated anime data: %v", err), logFile)
+		} else {
+			anime.TotalEpisodes = updatedAnime.TotalEpisodes
+			Log(fmt.Sprintf("Updated total episodes: %d", anime.TotalEpisodes), logFile)
 		}
+	}
+
+	if anime.TotalEpisodes == 0 { // If failed to get anime data
+		fmt.Println("Failed to get anime data. Attempting to retrieve from anime list.")
+		animeList, err := SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
+		if err != nil {
+			fmt.Println("Failed to retrieve anime list:", err)
+		} else {
+			for allanimeId, label := range animeList {
+				if allanimeId == anime.AllanimeId {
+					// Extract total episodes from the label
+					if matches := regexp.MustCompile(`\((\d+) episodes\)`).FindStringSubmatch(label); len(matches) > 1 {
+						anime.TotalEpisodes, _ = strconv.Atoi(matches[1])
+						fmt.Printf("Retrieved total episodes: %d\n", anime.TotalEpisodes)
+						break
+					}
+				}
+			}
+		}
+		
+		if anime.TotalEpisodes == 0 {
+			fmt.Println("Still unable to determine total episodes.")
+			fmt.Println("Your AniList progress:", selectedAnilistAnime.Progress)
+			fmt.Print("Enter the episode you want to start from: ")
+			var episodeNumber int
+			fmt.Scanln(&episodeNumber)
+			anime.Ep.Number = episodeNumber
+		} else {
+			anime.Ep.Number = selectedAnilistAnime.Progress + 1
+		}
+	} else if anime.TotalEpisodes < anime.Ep.Number { // Handle weird cases
 		Log(fmt.Sprintf("Weird case: anime.TotalEpisodes < anime.Ep.Number: %v < %v", anime.TotalEpisodes, anime.Ep.Number), logFile)
 		fmt.Printf("Would like to start the anime from beginning? (y/n)\n")
 		var answer string
@@ -257,6 +295,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			anime.Ep.Number = anime.TotalEpisodes
 		}
 	}
+
 }
 
 // CreateOrWriteTokenFile creates the token file if it doesn't exist and writes the token to it

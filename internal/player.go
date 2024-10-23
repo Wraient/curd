@@ -106,7 +106,7 @@ func GetMPVPausedStatus(ipcSocketPath string) (bool, error) {
 func GetMPVPlaybackSpeed(ipcSocketPath string) (float64, error) {
     speed, err := MPVSendCommand(ipcSocketPath, []interface{}{"get_property", "speed"})
     if err != nil || speed == nil {
-        fmt.Println("Failed to get playback speed.")
+        Log("Failed to get playback speed.", logFile)
         return 0, err
     }
 

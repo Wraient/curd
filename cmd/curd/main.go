@@ -108,7 +108,9 @@ func main() {
 		internal.Log("Rewatching anime: "+internal.GetAnimeName(anime), logFile)
 		anime.Rewatching = true	
 	}
-	
+
+	anime.Ep.Player.Speed = 1.0
+
 	// Main loop
 	for {
 		// Create a channel to signal when to exit the skip loop
@@ -202,6 +204,29 @@ func main() {
 			internal.Log(anime.Ep.SkipTimes, logFile)
 		}()
 
+		go func() {
+			for {
+
+				if anime.Ep.Started {
+					if anime.Ep.Duration == 0 {
+						// Get video duration
+						durationPos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "duration"})
+						if err != nil {
+							internal.Log("Error getting video duration: "+err.Error(), logFile)
+							} else if durationPos != nil {
+								if duration, ok := durationPos.(float64); ok {
+									anime.Ep.Duration = int(duration + 0.5) // Round to nearest integer
+									internal.Log(fmt.Sprintf("Video duration: %d seconds", anime.Ep.Duration), logFile)
+									} else {
+								internal.Log("Error: duration is not a float64", logFile)
+							}
+						}
+						break	
+					}
+				}
+			}
+		}()
+
 		wg.Add(1)
 		// Thread to update playback time in database
 		go func() {
@@ -224,6 +249,10 @@ func main() {
 						if anime.Ep.Started {
 							percentageWatched := internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
 							// Episode is completed
+							internal.Log(fmt.Sprint(percentageWatched), logFile)
+							internal.Log(fmt.Sprint(anime.Ep.Player.PlaybackTime), logFile)
+							internal.Log(fmt.Sprint(anime.Ep.Duration), logFile)
+							internal.Log(fmt.Sprint(userCurdConfig.PercentageToMarkComplete), logFile)
 							if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 								anime.Ep.Number++
 								anime.Ep.Started = false
@@ -231,10 +260,11 @@ func main() {
 								anime.Ep.IsCompleted = true
 								// Exit the skip loop
 								close(skipLoopDone)
-							} else if fmt.Sprintf("%v", err) != "invalid character '{' after top-level value" { // Episode is not completed
-								internal.ExitCurd()
-							} else {
+							} else if fmt.Sprintf("%v", err) == "invalid character '{' after top-level value" { // Episode is not completed
 								internal.Log("Received invalid JSON response, continuing...", logFile)
+							} else {
+								internal.Log("Episode is not completed, exiting", logFile)
+								internal.ExitCurd()
 							}
 						}
 					}
@@ -243,6 +273,12 @@ func main() {
 					if timePos != nil {
 						if !anime.Ep.Started {
 							anime.Ep.Started = true
+							// Set the playback speed
+							speedCmd := []interface{}{"set_property", "speed", anime.Ep.Player.Speed}
+							_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, speedCmd)
+							if err != nil {
+								internal.Log("Error setting playback speed: "+err.Error(), logFile)
+							}
 						}
 
 						// If resume is true, seek to the playback time
@@ -271,7 +307,7 @@ func main() {
 			}
 		}()
 
-		// Skip OP and ED
+		// Skip OP and ED and Save MPV Speed
 		skipLoop:
 		for {
 			select {
@@ -279,7 +315,6 @@ func main() {
 				// Exit signal received, break out of the skipLoop
 				break skipLoop
 			default:
-				// Check if MPV has started
 				if userCurdConfig.SkipOp {
 					if anime.Ep.Player.PlaybackTime > anime.Ep.SkipTimes.Op.Start && anime.Ep.Player.PlaybackTime < anime.Ep.SkipTimes.Op.Start+2 && anime.Ep.SkipTimes.Op.Start != anime.Ep.SkipTimes.Op.End {
 						internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Op.End)
@@ -290,7 +325,13 @@ func main() {
 						internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Ed.End)
 					}
 				}
+				anime.Ep.Player.Speed, err = internal.GetMPVPlaybackSpeed(anime.Ep.Player.SocketPath)
+				if err != nil {
+					internal.Log("Failed to mpv speed"+err.Error(), logFile)
+				}
+
 			}
+
 			time.Sleep(1 * time.Second) // Wait before checking again
 		}
 
@@ -302,6 +343,7 @@ func main() {
 
 		// Update Anilist progress
 		fmt.Println("Starting next episode: "+fmt.Sprint(anime.Ep.Number))
+		anime.Ep.Started = false
 
 		if anime.Ep.IsCompleted && !anime.Rewatching {
 			go func(){
