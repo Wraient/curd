@@ -6,11 +6,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+    "github.com/Microsoft/go-winio"
 )
 var logFile = "debug.log"
 
+func getMPVPath() (string, error) {
+    exePath, err := os.Executable()
+    if err != nil {
+        return "", err
+    }
+    exeDir := filepath.Dir(exePath)
+    mpvPath := filepath.Join(exeDir, "bin", "mpv.exe") // Adjust the relative path
+    return mpvPath, nil
+}
+
 func StartVideo(link string, args []string) (string, error) {
+    var command *exec.Cmd
+
     // Generate a random number for the socket path
     randomBytes := make([]byte, 4)
     _, err := rand.Read(randomBytes)
@@ -18,22 +34,46 @@ func StartVideo(link string, args []string) (string, error) {
         Log("Failed to generate random number", logFile)
         return "", fmt.Errorf("failed to generate random number: %w", err)
     }
+
     randomNumber := fmt.Sprintf("%x", randomBytes)
 
     // Create the mpv socket path with the random number
-    mpvSocketPath := fmt.Sprintf("/tmp/curd/curd_mpvsocket_%s", randomNumber)
-    argsStr := ""
-    if len(args) > 0 {
-        argsStr = " " + joinArgs(args)
+    var mpvSocketPath string
+    if runtime.GOOS == "windows" {
+        mpvSocketPath = fmt.Sprintf(`\\.\pipe\curd_mpvsocket_%s`, randomNumber)
+    } else {
+        mpvSocketPath = fmt.Sprintf("/tmp/curd/curd_mpvsocket_%s", randomNumber)
     }
 
-    // Build the complete command string
-    command := fmt.Sprintf("mpv%s --no-terminal --really-quiet --input-ipc-server=%s %s", argsStr, mpvSocketPath, link)
+    // Prepare arguments for mpv
+    var mpvArgs []string
+    mpvArgs = append(mpvArgs, "--no-terminal", "--really-quiet", fmt.Sprintf("--input-ipc-server=%s", mpvSocketPath), link)
+    // Add any additional arguments passed
+    if len(args) > 0 {
+        mpvArgs = append(mpvArgs, args...)    }
 
-    // Execute the command using exec
-    cmd := exec.Command("bash", "-c", command)
-    cmd.Start()
+    if runtime.GOOS == "windows" {
+        // Get the path to mpv.exe for Windows
+        mpvPath, err := getMPVPath()
+        if err != nil {
+            fmt.Println("Error: Failed to get MPV path")
+            Log("Failed to get mpv path.", logFile)
+            return "", err
+        }
 
+        // Create command for Windows
+        command = exec.Command(mpvPath, mpvArgs...)
+    } else {
+        // Create command for Unix-like systems
+        command = exec.Command("mpv", mpvArgs...)
+    }
+
+    // Start the mpv process
+    err = command.Start()
+    if err != nil {
+        fmt.Println("Error: Failed to start mpv process")
+        return "", fmt.Errorf("failed to start mpv: %w", err)
+    }
     return mpvSocketPath, nil
 }
 
@@ -50,7 +90,15 @@ func joinArgs(args []string) string {
 }
 
 func MPVSendCommand(ipcSocketPath string, command []interface{}) (interface{}, error) {
-    conn, err := net.Dial("unix", ipcSocketPath)
+    var conn net.Conn
+    var err error
+
+    if runtime.GOOS == "windows" {
+        // Use named pipe for Windows
+        conn, err = winio.DialPipe(ipcSocketPath, nil)
+    } else {
+        conn, err = net.Dial("unix", ipcSocketPath)
+    }
     if err != nil {
         return nil, err
     }
@@ -64,7 +112,10 @@ func MPVSendCommand(ipcSocketPath string, command []interface{}) (interface{}, e
     }
 
     // Send the command
-    conn.Write(append(commandStr, '\n'))
+    _, err = conn.Write(append(commandStr, '\n'))
+    if err != nil {
+        return nil, err
+    }
 
     // Receive the response
     buf := make([]byte, 4096)

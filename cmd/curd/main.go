@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"runtime"
 	"sync"
 	"time"
 	"github.com/wraient/curd/internal"
@@ -22,7 +23,14 @@ func main() {
 	var anime internal.Anime
 	var user internal.User
 
-	configFilePath := os.ExpandEnv("$HOME/.config/curd/curd.conf")
+    var homeDir string
+    if runtime.GOOS == "windows" {
+        homeDir = os.Getenv("USERPROFILE")
+    } else {
+        homeDir = os.Getenv("HOME")
+    }
+
+    configFilePath := filepath.Join(homeDir, ".config", "curd", "curd.conf")
 
 	// load curd userCurdConfig
 	userCurdConfig, err := internal.LoadConfig(configFilePath)
@@ -67,8 +75,6 @@ func main() {
 	
 	anime.Ep.ContinueLast = *continueLast
 
-
-	
 	if *updateScript{
 		repo := "wraient/curd"
 		fileName := "curd"

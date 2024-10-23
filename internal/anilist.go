@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -19,7 +20,7 @@ func FindKeyByValue(m map[string]string, value string) (string, error) {
 			return key, nil // Return the key and true if the value is found
 		}
 	}
-	return "", fmt.Errorf("No key with value %v", value) // Return empty string and false if the value is not found
+	return "", fmt.Errorf("no key with value %v", value) // Return empty string and false if the value is not found
 }
 
 // GetAnimeMap takes an AnimeList and returns a map with media.id as key and media.title.english as value.
@@ -272,7 +273,7 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 
 // Function to load a JSON file
 func LoadJSONFile(filePath string) (map[string]interface{}, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filepath.Clean(filePath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
