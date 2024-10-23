@@ -302,7 +302,6 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.AllanimeId, err = FindKeyByValue(animeList, fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes))
 		if err != nil {
 			Log(fmt.Sprintf("Failed to find anime in animeList: %v", err), logFile)
-			ExitCurd()
 		}
 			
 		// If unable to get Allanime id automatically get manually
