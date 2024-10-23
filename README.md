@@ -136,8 +136,6 @@ config file is located at ```~/.config/curd/curd.conf```
 
 ## Dependencies
 - mpv - Video player (vlc support might be added later)
-- Socat - Receive output of mpv commands
-- Pypresence - Discord RPC
     
 ## API Used
 - [Anilist API](https://anilist.gitbook.io/anilist-apiv2-docs) - Update user data and download user data
