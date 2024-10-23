@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -539,4 +540,82 @@ func FindAnimeByAnilistIDInAnimes(animes []Anime, anilistID int) (*Anime, error)
 		}
 	}
 	return nil, fmt.Errorf("anime with ID %d not found", anilistID)
+}
+
+// GetAnimeDataByID retrieves detailed anime data from AniList using the anime's ID and user token
+func GetAnimeDataByID(anilistID int, token string) (Anime, error) {
+	query := `
+	query ($id: Int) {
+		Media (id: $id, type: ANIME) {
+			id
+			title {
+				romaji
+				english
+				native
+			}
+			episodes
+			duration
+			status
+		}
+	}
+	`
+	
+	variables := map[string]interface{}{
+		"id": anilistID,
+	}
+
+	jsonValue, _ := json.Marshal(map[string]interface{}{
+		"query":     query,
+		"variables": variables,
+	})
+
+	req, err := http.NewRequest("POST", "https://graphql.anilist.co", bytes.NewBuffer(jsonValue))
+	if err != nil {
+		return Anime{}, fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return Anime{}, fmt.Errorf("error sending request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return Anime{}, fmt.Errorf("error reading response: %v", err)
+	}
+
+	var result struct {
+		Data struct {
+			Media struct {
+				ID          int    `json:"id"`
+				Title       AnimeTitle  `json:"title"`
+				Episodes    int    `json:"episodes"`
+				Duration    int    `json:"duration"`
+				Status      string `json:"status"`
+				CoverImage  struct {
+					Large string `json:"large"`
+				} `json:"coverImage"`
+				Genres       []string `json:"genres"`
+				AverageScore int      `json:"averageScore"`
+			} `json:"Media"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return Anime{}, fmt.Errorf("error unmarshaling JSON: %v", err)
+	}
+
+	anime := Anime{
+		AnilistId:     result.Data.Media.ID,
+		Title:         result.Data.Media.Title,
+		TotalEpisodes: result.Data.Media.Episodes,
+		CoverImage:    result.Data.Media.CoverImage.Large,
+	}
+
+	return anime, nil
 }
