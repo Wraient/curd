@@ -342,10 +342,6 @@ func main() {
 		// Reset the WaitGroup for the next loop
 		wg = sync.WaitGroup{}
 
-		// Update Anilist progress
-		fmt.Println("Starting next episode: "+fmt.Sprint(anime.Ep.Number))
-		anime.Ep.Started = false
-
 		if anime.Ep.IsCompleted && !anime.Rewatching {
 			go func(){
 				err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
@@ -373,5 +369,20 @@ func main() {
 			internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 			internal.ExitCurd()
 		}
+		
+		if userCurdConfig.NextEpisodePrompt {
+			var answer string
+			fmt.Println("Start next episode? (y/n)")
+			fmt.Scanln(&answer)
+			if answer == "y" || answer == "Y" || answer == "yes" || answer == "Yes" || answer == "YES" || answer == "" {
+			} else {
+				internal.ExitCurd()
+			}
+		}
+		
+		fmt.Println("Starting next episode: "+fmt.Sprint(anime.Ep.Number))
+		anime.Ep.Started = false
+		
+
 	}
 }

@@ -76,7 +76,7 @@ func defaultConfigMap() map[string]string {
 		"StoragePath":             "$HOME/.local/share/curd",
 		"SubsLanguage":            "english",
 		"SubOrDub":                "sub",
-		"PercentageToMarkComplete": "90",
+		"PercentageToMarkComplete": "85",
 		"NextEpisodePrompt":       "true",
 		"SkipOp":                  "true",
 		"SkipEd":                  "true",
