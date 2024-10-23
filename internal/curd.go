@@ -128,7 +128,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 	if anime.Ep.ContinueLast {
 		// Get the last watched anime ID from the curd_id file
-		curdIDPath := filepath.Join(os.Getenv(userCurdConfig.StoragePath), "curd_id")
+		curdIDPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_id")
 		curdIDBytes, err := os.ReadFile(curdIDPath)
 		if err != nil {
 			Log(fmt.Sprintf("Error reading curd_id file: %v", err), logFile)
