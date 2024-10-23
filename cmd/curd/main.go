@@ -184,16 +184,18 @@ func main() {
 		// Thread to update Discord presence
 		go func() {
 			defer wg.Done()
-			for {
-				select {
-				case <-skipLoopDone:
-					return
-				default:
-					err = internal.DiscordPresence(discordClientId, anime)
-					if err != nil {
-						// internal.Log("Error setting Discord presence: "+err.Error(), logFile)
+			if userCurdConfig.DiscordPresence {
+				for {
+					select {
+					case <-skipLoopDone:
+						return
+					default:
+						err = internal.DiscordPresence(discordClientId, anime)
+						if err != nil {
+							// internal.Log("Error setting Discord presence: "+err.Error(), logFile)
+						}
+						time.Sleep(1 * time.Second)
 					}
-					time.Sleep(1 * time.Second)
 				}
 			}
 		}()
@@ -278,10 +280,12 @@ func main() {
 						if !anime.Ep.Started {
 							anime.Ep.Started = true
 							// Set the playback speed
-							speedCmd := []interface{}{"set_property", "speed", anime.Ep.Player.Speed}
-							_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, speedCmd)
-							if err != nil {
-								internal.Log("Error setting playback speed: "+err.Error(), logFile)
+							if userCurdConfig.SaveMpvSpeed {
+								speedCmd := []interface{}{"set_property", "speed", anime.Ep.Player.Speed}
+								_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, speedCmd)
+								if err != nil {
+									internal.Log("Error setting playback speed: "+err.Error(), logFile)
+								}
 							}
 						}
 
