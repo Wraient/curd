@@ -50,6 +50,7 @@ func main() {
 	flag.BoolVar(&userCurdConfig.SaveMpvSpeed, "save-mpv-speed", userCurdConfig.SaveMpvSpeed, "Save MPV speed setting (true/false)")
 	flag.BoolVar(&userCurdConfig.DiscordPresence, "discord-presence", userCurdConfig.DiscordPresence, "Enable Discord presence (true/false)")
 	continueLast := flag.Bool("c", false, "Continue last episode")
+	updateScript := flag.Bool("u", false, "Update the script")
 	editConfig := flag.Bool("e", false, "Edit config")
 
 	subFlag := flag.Bool("sub", false, "Watch sub version")
@@ -65,6 +66,19 @@ func main() {
 	flag.Parse()
 	
 	anime.Ep.ContinueLast = *continueLast
+
+	if *updateScript{
+		repo := "wraient/curd"
+		fileName := "curd"
+	
+		if err := internal.UpdateCurd(repo, fileName); err != nil {
+			fmt.Printf("Error updating executable: %v\n", err)
+			os.Exit(1)
+		} else {
+			fmt.Println("Program Updated!")
+			internal.ExitCurd()
+		}
+	}
 
 	if *editConfig {
 		internal.EditConfig(configFilePath)

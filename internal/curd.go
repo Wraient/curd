@@ -3,6 +3,8 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -109,10 +111,67 @@ func RestoreScreen() {
 }
 
 func ExitCurd() {
-	// RestoreScreen()
+	RestoreScreen()
 	fmt.Println("Have a great day!")
 	os.Exit(0)
 }
+
+func UpdateCurd(repo, fileName string) error {
+	// Get the path of the currently running executable
+	executablePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("unable to find current executable: %v", err)
+	}
+
+	// GitHub release URL for curd
+	url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, fileName)
+
+	// Temporary path for the downloaded curd.py
+	tmpPath := executablePath + ".tmp"
+
+	// Download the curd.py file
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download file: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check if the download was successful
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file: received status code %d", resp.StatusCode)
+	}
+
+	// Create a new temporary file
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %v", err)
+	}
+	defer out.Close()
+
+	// Write the downloaded content to the temporary file
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to save downloaded file: %v", err)
+	}
+
+	// Close and rename the temporary file to replace the current executable
+	out.Close()
+
+	// Replace the current executable with the downloaded curd
+	if err := os.Rename(tmpPath, executablePath); err != nil {
+		return fmt.Errorf("failed to replace the current executable: %v", err)
+	}
+	fmt.Println("Downloaded curd executable to", executablePath)
+	// Ensure the new file has executable permissions
+	if err := os.Chmod(executablePath, 0755); err != nil {
+		return fmt.Errorf("failed to set permissions on the new file: %v", err)
+	}
+
+	fmt.Println("Program Updated!")
+
+	return nil
+}
+
 
 func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
 	var err error
