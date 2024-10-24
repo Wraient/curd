@@ -42,7 +42,14 @@ func StartVideo(link string, args []string) (string, error) {
     if runtime.GOOS == "windows" {
         mpvSocketPath = fmt.Sprintf(`\\.\pipe\curd_mpvsocket_%s`, randomNumber)
     } else {
-        mpvSocketPath = fmt.Sprintf("/tmp/curd/curd_mpvsocket_%s", randomNumber)
+	// On Linux we need to ensure the directory in tmp exists else it fails to create file
+        socketDir := "/tmp/curd/"
+	if _, err := os.Stat(socketDir); os.IsNotExist(err) {
+		if err := os.Mkdir(socketDir, os.ModePerm); err != nil {
+			fmt.Println("Failed to create directory for mpv socket", socketDir)
+		}
+	}
+	mpvSocketPath = fmt.Sprintf("%scurd_mpvsocket_%s", socketDir, randomNumber)
     }
 
     // Prepare arguments for mpv
