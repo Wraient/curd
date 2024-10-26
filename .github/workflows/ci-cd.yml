@@ -63,7 +63,7 @@ jobs:
           go build -o "$outputDir\curd.exe" .\cmd\curd\main.go
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4  # Updated to version 4
         with:
           name: curd-binaries
           path: |
@@ -80,7 +80,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Download Artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4  # Updated to version 4
         with:
           name: curd-binaries
           path: Build  # Specify where to download the artifacts
