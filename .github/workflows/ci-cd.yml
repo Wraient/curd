@@ -78,13 +78,18 @@ jobs:
 
     - name: Build Windows binary
       run: |
-        echo Current directory: $(Get-Location)
-        echo Directory contents: $(dir)
-        echo Building the Windows binary...
+        echo "Current directory: $(Get-Location)"
+        echo "Directory contents:"
+        dir
+        echo "Building the Windows binary..."
         set GOOS=windows
         set GOARCH=amd64
-        go build -o curd.exe .\cmd\curd\main.go || (echo Build failed & exit 1)
-        echo Build completed successfully!
+        go build -o curd.exe .\cmd\curd\main.go
+        if ($LASTEXITCODE -ne 0) {
+          echo "Build failed"
+          exit 1
+        }
+        echo "Build completed successfully!"
 
     - name: Download Inno Setup # Clean up
       run: |
