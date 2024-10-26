@@ -101,13 +101,12 @@ jobs:
           $patch = [int]$version_parts[2] + 1
           $new_version = "$major.$minor.$patch"
           $new_version | Set-Content VERSION.txt
-          Write-Host "New version: $new_version"
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add VERSION.txt
           git commit -m "Bump version to $new_version"
           git tag "v$new_version"
-          echo "::set-output name=new_version::$new_version"
+          echo "new_version=$new_version" >> $GITHUB_OUTPUT
 
       - name: Update Inno Setup Script with New Version
         run: |
@@ -129,4 +128,4 @@ jobs:
           draft: false
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Automatically provided token
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
