@@ -75,9 +75,7 @@ jobs:
 
     - name: Build Windows binary  # Run the build script to generate curd.exe
       run: |
-        cd Build  # Navigate to Build directory
-        chmod +x buildwindows
-        ./buildwindows
+        .\Build\buildwindows
 
     - name: Download Inno Setup # Clean up
       run: |
