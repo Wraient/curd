@@ -83,7 +83,7 @@ jobs:
         dir
         echo "Building the Windows binary..."
 
-        $outputDir = "D:\a\curd\curd\Build\Build"
+        $outputDir = "D:\a\curd\curd\Build\"
         
         if (-Not (Test-Path $outputDir)) {
           New-Item -ItemType Directory -Path $outputDir
