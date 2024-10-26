@@ -22,7 +22,7 @@ jobs:
           go-version: '1.23.2'
 
       - name: Install Dependencies
-        run: go mod tidy  # Install Go dependencies
+        run: go mod tidy
 
       - name: Comment go-winio for Linux Build
         run: |
@@ -90,7 +90,7 @@ jobs:
         with:
           name: curd-binaries
           path: Build  # Specify where to download the artifacts
-
+        
       - name: Bump Version
         id: bump_version
         run: |
@@ -107,6 +107,7 @@ jobs:
           git add VERSION.txt
           git commit -m "Bump version to $new_version"
           git tag "v$new_version"
+          echo "::set-output name=new_version::$new_version"
 
       - name: Update Inno Setup Script with New Version
         run: |
@@ -124,7 +125,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: "v${{ steps.bump_version.outputs.new_version }}"  # Use the bumped version as tag
-          release_name: "Curd v${{ steps.bump_version.outputs.new_version }}"  # Use new version in release name
+          name: "Curd v${{ steps.bump_version.outputs.new_version }}"  # Use new version in release name
           draft: false
           prerelease: false
         env:
