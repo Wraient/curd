@@ -114,9 +114,16 @@ func ExitCurd(err error) {
 	RestoreScreen()
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(1)
+		if runtime.GOOS == "windows" {
+			fmt.Println("Press Enter to exit")
+			var wait string
+			fmt.Scanln(&wait)
+			os.Exit(1)
+		} else {
+			fmt.Println("Have a great day!")
+			os.Exit(1)
+		}
 	}
-	fmt.Println("Have a great day!")
 	os.Exit(0)
 }
 
@@ -267,7 +274,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		if anilistSelectedOption.Label == "add_new" {
 			AddNewAnime(userCurdConfig, anime, user, databaseAnimes, logFile)
 		}
-
+		
 		userQuery = anilistSelectedOption.Label
 		anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
 		if err != nil {
