@@ -46,13 +46,7 @@ jobs:
 
       - name: Build Linux binary
         run: |
-          pwd
-          tree ./
-          outputDir="Build"
-          mkdir -p "$outputDir"
-          go build -o "$outputDir/curd" ./cmd/curd/main.go
-          pwd
-          tree ./
+          ./Build/buildlinux
 
       - name: Revert Changes in player.go
         run: |
@@ -60,13 +54,7 @@ jobs:
 
       - name: Build Windows binary (cross-compile)
         run: |
-          pwd
-          tree ./
-          outputDir="Build"
-          mkdir -p "$outputDir"
-          GOOS=windows GOARCH=amd64 go build -o "$outputDir/curd.exe" ./cmd/curd/main.go
-          pwd
-          tree ./
+          ./Build/buildwindows
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4  # Updated to version 4
@@ -131,6 +119,6 @@ jobs:
           files: |
             Build/curd
             Build/curd.exe
-            Build/curdInstaller.exe
+            Build/Output/CurdInstaller.exe
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
