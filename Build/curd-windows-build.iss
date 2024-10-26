@@ -15,8 +15,8 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; Copy the Curd executable to the install directory
-Source: "Build/curd.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "Build/mpv.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "Build\curd.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Build\mpv.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 [Icons]
 ; Create the application icon in the Start Menu
