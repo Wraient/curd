@@ -377,7 +377,7 @@ func main() {
 
 		if anime.Ep.IsCompleted && !anime.Rewatching {
 			go func(){
-				err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+				err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
 				if err != nil {
 					internal.Log("Error updating Anilist progress: "+err.Error(), logFile)
 				}
@@ -402,7 +402,7 @@ func main() {
 			internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 			internal.ExitCurd(nil)
 		}
-		
+
 		if userCurdConfig.NextEpisodePrompt {
 			var answer string
 			fmt.Println("Start next episode? (y/n)")
