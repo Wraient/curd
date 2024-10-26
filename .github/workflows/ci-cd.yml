@@ -82,9 +82,21 @@ jobs:
         echo "Directory contents:"
         dir
         echo "Building the Windows binary..."
+
+        $outputDir = "D:\a\curd\curd\Build\Build"
+        
+        if (-Not (Test-Path $outputDir)) {
+          New-Item -ItemType Directory -Path $outputDir
+          echo "Created directory: $outputDir"
+        } else {
+          echo "Directory already exists: $outputDir"
+        }
+
+        echo "Building the Windows binary..."
         set GOOS=windows
         set GOARCH=amd64
-        go build -o curd.exe .\cmd\curd\main.go
+        go build -o "$outputDir\curd.exe" .\cmd\curd\main.go
+
         if ($LASTEXITCODE -ne 0) {
           echo "Build failed"
           exit 1
