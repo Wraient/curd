@@ -91,13 +91,6 @@ jobs:
           name: curd-binaries
           path: Build  # Specify where to download the artifacts
 
-      - name: Unzip Artifacts
-        run: |
-          tree /F
-          Expand-Archive -Path "Build/curd-binaries.zip" -DestinationPath "Build"
-          tree /F
-        shell: pwsh
-
       - name: Bump Version
         id: bump_version
         run: |
