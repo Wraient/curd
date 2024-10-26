@@ -106,7 +106,7 @@ jobs:
           git add VERSION.txt
           git commit -m "Bump version to $new_version"
           git tag "v$new_version"
-          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+          echo "::set-output name=new_version::$new_version"
 
       - name: Update Inno Setup Script with New Version
         run: |
@@ -127,5 +127,10 @@ jobs:
           name: "Curd v${{ steps.bump_version.outputs.new_version }}"  # Use new version in release name
           draft: false
           prerelease: false
+          generate_release_notes: true 
+          files: |
+            Build/curd
+            Build/curd.exe
+            Build/curdInstaller.exe
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
