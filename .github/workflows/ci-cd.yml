@@ -13,140 +13,121 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: '1.23.2'
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.23.2'
 
-    - name: Install Dependencies
-      run: go mod tidy  # Install Go dependencies
+      - name: Install Dependencies
+        run: go mod tidy  # Install Go dependencies
 
-    # - name: Comment go-winio for Linux Build
-    #   run: |
-    #     echo 'function toggle_winio_import() {
-    #         local action="$1"
-    #         local file="internal/player.go"
-            
-    #         if [ "$action" == "comment" ]; then
-    #             sed -i "s|^\\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|// \\1|" "$file"
-    #             sed -i "s|^\\(.*conn, err = winio.DialPipe.*\\)|// \\1|" "$file"
-    #         elif [ "$action" == "uncomment" ]; then
-    #             sed -i "s|// \\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|\\1|" "$file"
-    #             sed -i "s|^// \\(.*conn, err = winio.DialPipe.*\\)|\\1|" "$file"
-    #         fi
-    #     }
-    #     toggle_winio_import comment' > toggle_winio_import.sh
+      - name: Comment go-winio for Linux Build
+        run: |
+          echo 'function toggle_winio_import() {
+              local action="$1"
+              local file="internal/player.go"
+              
+              if [ "$action" == "comment" ]; then
+                  sed -i "s|^\\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|// \\1|" "$file"
+                  sed -i "s|^\\(.*conn, err = winio.DialPipe.*\\)|// \\1|" "$file"
+              elif [ "$action" == "uncomment" ]; then
+                  sed -i "s|// \\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|\\1|" "$file"
+                  sed -i "s|^// \\(.*conn, err = winio.DialPipe.*\\)|\\1|" "$file"
+              fi
+          }
+          toggle_winio_import comment' > toggle_winio_import.sh
 
-    # - name: Execute Commenting Function for Linux Build # Comment out lines before Linux build
-    #   run: |
-    #     bash toggle_winio_import.sh
+      - name: Execute Commenting Function for Linux Build # Comment out lines before Linux build
+        run: |
+          bash toggle_winio_import.sh
 
-    # - name: Build Linux binary
-    #   run: |
-    #     chmod +x Build/buildlinux
-    #     ./Build/buildlinux 
+      - name: Build Linux binary
+        run: |
+          outputDir="Build"  # Set the output directory for Linux builds
+          mkdir -p "$outputDir"  # Create the directory if it doesn't exist
+          go build -o "$outputDir/curd-linux" ./cmd/curd/main.go
 
-    # - name: Revert Changes in player.go
-    #   run: |
-    #     git checkout -- internal/player.go
+      - name: Revert Changes in player.go
+        run: |
+          git checkout -- internal/player.go
 
-    # - name: Run Tests
-    #   run: go test ./...  # Run tests for your Go code
+      - name: Build Windows binary (cross-compile)
+        run: |
+          outputDir="Build"  # Use the same name for consistency
+          mkdir -p "$outputDir"  # Create the directory if it doesn't exist
+          set GOOS=windows
+          set GOARCH=amd64
+          go build -o "$outputDir\curd.exe" .\cmd\curd\main.go
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: curd-binaries
+          path: |
+            Build/curd-linux
+            Build/curd.exe  # Include the Windows binary
 
   release:
     runs-on: windows-latest  # Use Windows runner for creating the installer
-    needs: build
+    needs: build  # Ensure the build job is complete before running this job
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'  # Only run on pushes to main
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: '1.23.2'
+      - name: Download Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: curd-binaries
+          path: Build  # Specify where to download the artifacts
 
-    - name: Install Dependencies
-      run: go mod tidy  # Install Go dependencies
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.23.2'
 
-    - name: Verify Go Version
-      run: go version  
+      - name: Install Dependencies
+        run: go mod tidy  # Install Go dependencies
 
-    - name: Build Windows binary
-      run: |
-        echo "Current directory: $(Get-Location)"
-        echo "Directory contents:"
-        dir
-        echo "Building the Windows binary..."
+      - name: Bump Version
+        id: bump_version
+        run: |
+          $current_version = Get-Content VERSION.txt
+          $version_parts = $current_version -split '\.'
+          $major = $version_parts[0]
+          $minor = $version_parts[1]
+          $patch = [int]$version_parts[2] + 1
+          $new_version = "$major.$minor.$patch"
+          $new_version | Set-Content VERSION.txt
+          Write-Host "New version: $new_version"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add VERSION.txt
+          git commit -m "Bump version to $new_version"
+          git tag "v$new_version"
 
-        $outputDir = "D:\a\curd\curd\Build\"
-        
-        if (-Not (Test-Path $outputDir)) {
-          New-Item -ItemType Directory -Path $outputDir
-          echo "Created directory: $outputDir"
-        } else {
-          echo "Directory already exists: $outputDir"
-        }
-
-        echo "Building the Windows binary..."
-        set GOOS=windows
-        set GOARCH=amd64
-        go build -o "$outputDir\curd.exe" .\cmd\curd\main.go
-
-        if ($LASTEXITCODE -ne 0) {
-          echo "Build failed"
-          exit 1
-        }
-        echo "Build completed successfully!"
-
-    - name: Download Inno Setup # Clean up
-      run: |
-        Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "is.exe"  # Download Inno Setup installer
-        Start-Process -FilePath "is.exe" -ArgumentList "/SILENT" -Wait  # Run installer silently
-        Remove-Item "is.exe"  
-
-    - name: List Build Directory
-      run: tree /F
-
-    - name: Bump Version
-      id: bump_version
-      run: |
-        $current_version = Get-Content VERSION.txt
-        $version_parts = $current_version -split '\.'
-        $major = $version_parts[0]
-        $minor = $version_parts[1]
-        $patch = [int]$version_parts[2] + 1
-        $new_version = "$major.$minor.$patch"
-        $new_version | Set-Content VERSION.txt
-        Write-Host "New version: $new_version"
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
-        git add VERSION.txt
-        git commit -m "Bump version to $new_version"
-        git tag "v$new_version"
-
-    - name: Update Inno Setup Script with New Version
-      run: |
-        $new_version = Get-Content VERSION.txt
-        $iss_path = "Build/curd-windows-build.iss"
-        (Get-Content $iss_path) -replace "AppVersion=.*", "AppVersion=$new_version" | Set-Content $iss_path
+      - name: Update Inno Setup Script with New Version
+        run: |
+          $new_version = Get-Content VERSION.txt
+          $iss_path = "Build/curd-windows-build.iss"
+          (Get-Content $iss_path) -replace "AppVersion=.*", "AppVersion=$new_version" | Set-Content $iss_path
   
-    - name: Create Windows Installer
-      run: |
-        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\a\curd\curd\Build\curd-windows-build.iss"  
-      shell: pwsh
+      - name: Create Windows Installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "Build\curd-windows-build.iss"  
+        shell: pwsh
 
-    - name: Create Release
-      id: create_release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.bump_version.outputs.new_version }}  # Use the bumped version as tag
-        release_name: "Curd v${{ steps.bump_version.outputs.new_version }}"  # Use new version in release name
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Automatically provided token
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: "v${{ steps.bump_version.outputs.new_version }}"  # Use the bumped version as tag
+          release_name: "Curd v${{ steps.bump_version.outputs.new_version }}"  # Use new version in release name
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Automatically provided token
