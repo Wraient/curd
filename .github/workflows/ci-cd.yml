@@ -76,6 +76,9 @@ jobs:
         Start-Process -FilePath "is.exe" -ArgumentList "/SILENT" -Wait  # Run installer silently
         Remove-Item "is.exe"  
 
+    - name: List Build Directory
+      run: dir Build      
+        
     - name: Create Windows Installer
       run: |
         & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" Build/curd-windows-build.iss  # Adjust the path to your Inno Setup script
