@@ -64,9 +64,7 @@ jobs:
           tree ./
           outputDir="Build"
           mkdir -p "$outputDir"
-          set GOOS=windows
-          set GOARCH=amd64
-          go build -o "$outputDir\curd.exe" .\cmd\curd\main.go
+          GOOS=windows GOARCH=amd64 go build -o "$outputDir/curd.exe" ./cmd/curd/main.go
           pwd
           tree ./
 
