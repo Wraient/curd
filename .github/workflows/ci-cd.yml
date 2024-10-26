@@ -74,7 +74,7 @@ jobs:
           name: curd-binaries
           path: |
             Build/curd
-            Build/curd.exe  # Include the Windows binary
+            Build/curd.exe
 
   release:
     runs-on: windows-latest  # Use Windows runner for creating the installer
