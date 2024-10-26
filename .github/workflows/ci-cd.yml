@@ -46,9 +46,11 @@ jobs:
 
       - name: Build Linux binary
         run: |
-          outputDir="Build"  # Set the output directory for Linux builds
-          mkdir -p "$outputDir"  # Create the directory if it doesn't exist
-          go build -o "$outputDir/curd-linux" ./cmd/curd/main.go
+          pwd
+          tree ./
+          outputDir="Build"
+          mkdir -p "$outputDir"
+          go build -o "$outputDir/curd" ./cmd/curd/main.go
 
       - name: Revert Changes in player.go
         run: |
@@ -56,8 +58,8 @@ jobs:
 
       - name: Build Windows binary (cross-compile)
         run: |
-          outputDir="Build"  # Use the same name for consistency
-          mkdir -p "$outputDir"  # Create the directory if it doesn't exist
+          outputDir="Build"
+          mkdir -p "$outputDir"
           set GOOS=windows
           set GOARCH=amd64
           go build -o "$outputDir\curd.exe" .\cmd\curd\main.go
@@ -67,7 +69,7 @@ jobs:
         with:
           name: curd-binaries
           path: |
-            Build/curd-linux
+            Build/curd
             Build/curd.exe  # Include the Windows binary
 
   release:
