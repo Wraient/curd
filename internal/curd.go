@@ -260,8 +260,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			ExitCurd(fmt.Errorf("Error selecting anime"))
 		}
 
-		if anilistSelectedOption.Key == "-1" || anilistSelectedOption.Label == "quit" {
-			ExitCurd(fmt.Errorf("Quit"))
+		if anilistSelectedOption.Key == "-1" {
+			ExitCurd(nil)
 		}
 
 		if anilistSelectedOption.Label == "add_new" {

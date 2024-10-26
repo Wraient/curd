@@ -162,6 +162,10 @@ func (m *Model) filterOptions() {
 			Key:   "add_new",
 		})
 	}
+	m.filteredKeys = append(m.filteredKeys, SelectionOption{
+		Label: "Quit",
+		Key:   "-1",
+	})
 }
 
 // DynamicSelect displays a simple selection prompt without extra features
