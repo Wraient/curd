@@ -1,14 +1,3 @@
-@echo off
-echo Starting the build process...
-set GOOS=windows
-set GOARCH=amd64
-echo GOOS is set to %GOOS%
-echo GOARCH is set to %GOARCH%
-echo Building Go application...
-tree /F
-go build -o curd.exe .\cmd\curd\main.go
-if %ERRORLEVEL% NEQ 0 (
-    echo Build failed with error level %ERRORLEVEL%
-) else (
-    echo Build completed successfully!
-)
+outputDir="Build"
+mkdir -p "$outputDir"
+GOOS=windows GOARCH=amd64 go build -o "$outputDir/curd.exe" -ldflags "-s -w" ./cmd/curd/main.go
