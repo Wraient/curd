@@ -86,18 +86,19 @@ jobs:
         Remove-Item "is.exe"  
 
     - name: List Build Directory
-      run: dir
+      run: tree /F
 
     - name: Bump Version
       id: bump_version
       run: |
-        current_version=$(cat VERSION.txt)
-        # Increment the patch version
-        IFS='.' read -r major minor patch <<< "$current_version"
-        new_patch=$((patch + 1))
-        new_version="$major.$minor.$new_patch"
-        echo "$new_version" > VERSION.txt
-        echo "New version: $new_version"
+        $current_version = Get-Content VERSION.txt
+        $version_parts = $current_version -split '\.'
+        $major = $version_parts[0]
+        $minor = $version_parts[1]
+        $patch = [int]$version_parts[2] + 1
+        $new_version = "$major.$minor.$patch"
+        $new_version | Set-Content VERSION.txt
+        Write-Host "New version: $new_version"
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
         git add VERSION.txt
