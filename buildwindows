@@ -1,4 +1,0 @@
-@echo off
-set GOOS=windows
-set GOARCH=amd64
-go build -o curd.exe -ldflags="-s -w" -trimpath cmd\curd\main.go
