@@ -363,7 +363,6 @@ func main() {
 				if err != nil {
 					internal.Log("Failed to mpv speed"+err.Error(), logFile)
 				}
-
 			}
 
 			time.Sleep(1 * time.Second) // Wait before checking again
