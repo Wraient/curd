@@ -42,7 +42,7 @@ func StartVideo(link string, args []string) (string, error) {
     if runtime.GOOS == "windows" {
         mpvSocketPath = fmt.Sprintf(`\\.\pipe\curd_mpvsocket_%s`, randomNumber)
     } else {
-        mpvSocketPath = fmt.Sprintf("/tmp/curd/curd_mpvsocket_%s", randomNumber)
+        mpvSocketPath = fmt.Sprintf("/tmp/curd_mpvsocket_%s", randomNumber)
     }
 
     // Prepare arguments for mpv
