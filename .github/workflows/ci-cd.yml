@@ -73,14 +73,18 @@ jobs:
     - name: Install Dependencies
       run: go mod tidy  # Install Go dependencies
 
-    - name: Build Windows binary  # Run the build script to generate curd.exe
+    - name: Verify Go Version
+      run: go version  
+
+    - name: Build Windows binary
       run: |
-        Get-Location
-        dir D:\a\curd\
+        echo Current directory: $(Get-Location)
+        echo Directory contents: $(dir)
         echo Building the Windows binary...
         set GOOS=windows
         set GOARCH=amd64
-        go build -o curd.exe .\cmd\curd\main.go
+        go build -o curd.exe .\cmd\curd\main.go || (echo Build failed & exit 1)
+        echo Build completed successfully!
 
     - name: Download Inno Setup # Clean up
       run: |
