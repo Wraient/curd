@@ -51,6 +51,8 @@ jobs:
           outputDir="Build"
           mkdir -p "$outputDir"
           go build -o "$outputDir/curd" ./cmd/curd/main.go
+          pwd
+          tree ./
 
       - name: Revert Changes in player.go
         run: |
@@ -58,11 +60,15 @@ jobs:
 
       - name: Build Windows binary (cross-compile)
         run: |
+          pwd
+          tree ./
           outputDir="Build"
           mkdir -p "$outputDir"
           set GOOS=windows
           set GOARCH=amd64
           go build -o "$outputDir\curd.exe" .\cmd\curd\main.go
+          pwd
+          tree ./
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4  # Updated to version 4
