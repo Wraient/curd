@@ -1,0 +1,109 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main  # Trigger on pushes to the main branch
+  pull_request:
+    branches:
+      - main  # Trigger on pull requests targeting the main branch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: '1.20'  # Specify the Go version
+
+    - name: Install Dependencies
+      run: go mod tidy  # Install Go dependencies
+
+    - name: Comment go-winio for Linux Build
+      run: |
+        echo 'function toggle_winio_import() {
+            local action="$1"
+            local file="internal/player.go"
+            
+            if [ "$action" == "comment" ]; then
+                sed -i "s|^\\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|// \\1|" "$file"
+                sed -i "s|^\\(.*conn, err = winio.DialPipe.*\\)|// \\1|" "$file"
+            elif [ "$action" == "uncomment" ]; then
+                sed -i "s|// \\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|\\1|" "$file"
+                sed -i "s|^// \\(.*conn, err = winio.DialPipe.*\\)|\\1|" "$file"
+            fi
+        }
+        toggle_winio_import comment' > toggle_winio_import.sh
+
+    - name: Execute Commenting Function for Linux Build # Comment out lines before Linux build
+      run: |
+        bash toggle_winio_import.sh
+
+    - name: Build Linux binary
+      run: |
+        chmod +x Build/buildlinux
+        ./Build/buildlinux 
+
+    - name: Revert Changes in player.go
+      run: |
+        git checkout -- internal/player.go
+
+    - name: Build Windows binary
+      run: |
+        chmod +x Build/buildwindows
+        ./Build/buildwindows 
+
+    # - name: Run Tests
+    #   run: go test ./...  # Run tests for your Go code
+
+  release:
+    runs-on: windows-latest  # Use Windows runner for creating the installer
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'  # Only run on pushes to main
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Download Inno Setup # Clean up
+      run: |
+        Invoke-WebRequest -Uri "https://files.jrsoftware.org/download.php/is.exe" -OutFile "is.exe"  # Download Inno Setup installer
+        Start-Process -FilePath "is.exe" -ArgumentList "/SILENT" -Wait  # Run installer silently
+        Remove-Item "is.exe"  
+
+    - name: Create Windows Installer
+      run: |
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" Build/curd-windows-build.iss  # Adjust the path to your Inno Setup script
+      shell: pwsh  # Use PowerShell shell
+
+    - name: Bump Version
+      id: bump_version
+      run: |
+        current_version=$(cat VERSION.txt)
+        # Increment the patch version
+        IFS='.' read -r major minor patch <<< "$current_version"
+        new_patch=$((patch + 1))
+        new_version="$major.$minor.$new_patch"
+        echo "$new_version" > VERSION.txt
+        echo "New version: $new_version"
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add VERSION.txt
+        git commit -m "Bump version to $new_version"
+        git tag "v$new_version"
+
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.bump_version.outputs.new_version }}  # Use the bumped version as tag
+        release_name: "Curd v${{ steps.bump_version.outputs.new_version }}"  # Use new version in release name
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Automatically provided token
