@@ -24,34 +24,34 @@ jobs:
     - name: Install Dependencies
       run: go mod tidy  # Install Go dependencies
 
-    - name: Comment go-winio for Linux Build
-      run: |
-        echo 'function toggle_winio_import() {
-            local action="$1"
-            local file="internal/player.go"
+    # - name: Comment go-winio for Linux Build
+    #   run: |
+    #     echo 'function toggle_winio_import() {
+    #         local action="$1"
+    #         local file="internal/player.go"
             
-            if [ "$action" == "comment" ]; then
-                sed -i "s|^\\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|// \\1|" "$file"
-                sed -i "s|^\\(.*conn, err = winio.DialPipe.*\\)|// \\1|" "$file"
-            elif [ "$action" == "uncomment" ]; then
-                sed -i "s|// \\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|\\1|" "$file"
-                sed -i "s|^// \\(.*conn, err = winio.DialPipe.*\\)|\\1|" "$file"
-            fi
-        }
-        toggle_winio_import comment' > toggle_winio_import.sh
+    #         if [ "$action" == "comment" ]; then
+    #             sed -i "s|^\\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|// \\1|" "$file"
+    #             sed -i "s|^\\(.*conn, err = winio.DialPipe.*\\)|// \\1|" "$file"
+    #         elif [ "$action" == "uncomment" ]; then
+    #             sed -i "s|// \\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|\\1|" "$file"
+    #             sed -i "s|^// \\(.*conn, err = winio.DialPipe.*\\)|\\1|" "$file"
+    #         fi
+    #     }
+    #     toggle_winio_import comment' > toggle_winio_import.sh
 
-    - name: Execute Commenting Function for Linux Build # Comment out lines before Linux build
-      run: |
-        bash toggle_winio_import.sh
+    # - name: Execute Commenting Function for Linux Build # Comment out lines before Linux build
+    #   run: |
+    #     bash toggle_winio_import.sh
 
-    - name: Build Linux binary
-      run: |
-        chmod +x Build/buildlinux
-        ./Build/buildlinux 
+    # - name: Build Linux binary
+    #   run: |
+    #     chmod +x Build/buildlinux
+    #     ./Build/buildlinux 
 
-    - name: Revert Changes in player.go
-      run: |
-        git checkout -- internal/player.go
+    # - name: Revert Changes in player.go
+    #   run: |
+    #     git checkout -- internal/player.go
 
     - name: Build Windows binary
       run: |
@@ -77,7 +77,7 @@ jobs:
         Remove-Item "is.exe"  
 
     - name: List Build Directory
-      run: dir Build      
+      run: dir
         
     - name: Create Windows Installer
       run: |
