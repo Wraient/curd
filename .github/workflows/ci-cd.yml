@@ -75,7 +75,11 @@ jobs:
 
     - name: Build Windows binary  # Run the build script to generate curd.exe
       run: |
-        .\Build\buildwindows
+        Get-Location
+        echo Building the Windows binary...
+        set GOOS=windows
+        set GOARCH=amd64
+        go build -o curd.exe ..\cmd\curd\main.go
 
     - name: Download Inno Setup # Clean up
       run: |
