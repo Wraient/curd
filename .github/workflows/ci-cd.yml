@@ -53,11 +53,6 @@ jobs:
     #   run: |
     #     git checkout -- internal/player.go
 
-    - name: Build Windows binary
-      run: |
-        chmod +x Build/buildwindows
-        ./Build/buildwindows 
-
     # - name: Run Tests
     #   run: go test ./...  # Run tests for your Go code
 
@@ -70,6 +65,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: '1.23.2'
+
+    - name: Install Dependencies
+      run: go mod tidy  # Install Go dependencies
+
+    - name: Build Windows binary  # Run the build script to generate curd.exe
+      run: |
+        cd Build  # Navigate to Build directory
+        chmod +x buildwindows
+        ./buildwindows
+
     - name: Download Inno Setup # Clean up
       run: |
         Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "is.exe"  # Download Inno Setup installer
@@ -78,11 +87,6 @@ jobs:
 
     - name: List Build Directory
       run: dir
-        
-    - name: Create Windows Installer
-      run: |
-        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" Build/curd-windows-build.iss  # Adjust the path to your Inno Setup script
-      shell: pwsh  # Use PowerShell shell
 
     - name: Bump Version
       id: bump_version
@@ -99,6 +103,15 @@ jobs:
         git add VERSION.txt
         git commit -m "Bump version to $new_version"
         git tag "v$new_version"
+
+    - name: Update Inno Setup Script with New Version
+      run: |
+        sed -i "s/AppVersion=.*/AppVersion=${{ steps.bump_version.outputs.new_version }}/" Build/curd-windows-build.iss
+
+    - name: Create Windows Installer
+      run: |
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\a\curd\curd\Build\curd-windows-build.iss"  
+      shell: pwsh
 
     - name: Create Release
       id: create_release
