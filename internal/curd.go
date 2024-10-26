@@ -110,8 +110,12 @@ func RestoreScreen() {
     fmt.Print("\033[?1049l") // Switch back to the main screen buffer
 }
 
-func ExitCurd() {
+func ExitCurd(err error) {
 	RestoreScreen()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 	fmt.Println("Have a great day!")
 	os.Exit(0)
 }
@@ -185,27 +189,27 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	animeMap, err := SearchAnimeAnilist(query, user.Token)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to search anime: %v", err), logFile)
-		ExitCurd()
+		ExitCurd(fmt.Errorf("Failed to search anime"))
 	}
 	anilistSelectedOption, err := DynamicSelect(animeMap)
 	if err != nil {
 		Log(fmt.Sprintf("No anime available: %v", err), logFile)
-		ExitCurd()
+		ExitCurd(fmt.Errorf("No anime available"))
 	}
 	animeID, err := strconv.Atoi(anilistSelectedOption.Key)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to convert anime ID to integer: %v", err), logFile)
-		ExitCurd()
+		ExitCurd(fmt.Errorf("Failed to convert anime ID to integer"))
 	}
 	err = AddAnimeToWatchingList(animeID, user.Token)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to add anime to watching list: %v", err), logFile)
-		ExitCurd()
+		ExitCurd(fmt.Errorf("Failed to add anime to watching list"))
 	}
 	anilistUserData, err := GetUserData(user.Token, user.Id)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
-		ExitCurd()
+		ExitCurd(fmt.Errorf("Failed to get user data"))
 	}
 	user.AnimeList = ParseAnimeList(anilistUserData)
 }
@@ -217,12 +221,12 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	user.Id, user.Username, err = GetAnilistUserID(user.Token)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to get user ID: %v", err), logFile)
-		ExitCurd()
+		ExitCurd(fmt.Errorf("Failed to get user ID"))
 	}
 	anilistUserData, err := GetUserData(user.Token, user.Id)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
-		ExitCurd()
+		ExitCurd(fmt.Errorf("Failed to get user data"))
 	}
 	user.AnimeList = ParseAnimeList(anilistUserData)
 	animeListMap := GetAnimeMap(user.AnimeList)
@@ -236,13 +240,13 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		curdIDBytes, err := os.ReadFile(curdIDPath)
 		if err != nil {
 			Log(fmt.Sprintf("Error reading curd_id file: %v", err), logFile)
-			ExitCurd()
+			ExitCurd(fmt.Errorf("Error reading curd_id file"))
 		}
 
 		lastWatchedID, err := strconv.Atoi(strings.TrimSpace(string(curdIDBytes)))
 		if err != nil {
 			Log(fmt.Sprintf("Error converting curd_id to integer: %v", err), logFile)
-			ExitCurd()
+			ExitCurd(fmt.Errorf("Error converting curd_id to integer"))
 		}
 
 		anime.AnilistId = lastWatchedID
@@ -253,11 +257,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anilistSelectedOption, err = DynamicSelect(animeListMap)
 		if err != nil {
 			Log(fmt.Sprintf("Error selecting anime: %v", err), logFile)
-			ExitCurd()
+			ExitCurd(fmt.Errorf("Error selecting anime"))
 		}
 
 		if anilistSelectedOption.Key == "-1" || anilistSelectedOption.Label == "quit" {
-			ExitCurd()
+			ExitCurd(fmt.Errorf("Quit"))
 		}
 
 		if anilistSelectedOption.Label == "add_new" {
@@ -268,7 +272,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
 		if err != nil {
 			Log(fmt.Sprintf("Error converting Anilist ID: %v", err), logFile)
-			ExitCurd()
+			ExitCurd(fmt.Errorf("Error converting Anilist ID"))
 		}
 	}
 	// Find anime in Local history
@@ -277,7 +281,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	// Get anime entry
 	selectedAnilistAnime, err := FindAnimeByAnilistID(user.AnimeList, anilistSelectedOption.Key)
 	if err != nil {
-		fmt.Println("Can not find the anime in anilist animelist")
+		Log(fmt.Sprintf("Can not find the anime in anilist animelist: %v", err), logFile)
+		ExitCurd(fmt.Errorf("Can not find the anime in anilist animelist"))
 	}
 
 	// Set anime entry
@@ -290,12 +295,12 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		// Get Anime list (All anime)
 		animeList, err := SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
 		if err != nil {
-			fmt.Println("Failed to select anime", logFile)
-			os.Exit(1)
+			Log(fmt.Sprintf("Failed to select anime: %v", err), logFile)
+			ExitCurd(fmt.Errorf("Failed to select anime"))
 		}
 		if len(animeList) == 0 {
-			fmt.Println("No results found.")
-			ExitCurd()
+			// fmt.Println("No results found.")
+			ExitCurd(fmt.Errorf("No results found."))
 		}
 
 		// find anime in animeList
@@ -309,8 +314,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			fmt.Println("Failed to automatically select anime")
 			selectedAllanimeAnime, err := DynamicSelect(animeList)
 			if err != nil {
-				fmt.Println("No anime available")
-				ExitCurd()
+				// fmt.Println("No anime available")
+				ExitCurd(fmt.Errorf("No anime available"))
 			}
 			anime.AllanimeId = selectedAllanimeAnime.Key
 		}

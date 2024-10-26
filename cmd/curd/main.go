@@ -81,17 +81,17 @@ func main() {
 		
 		if err := internal.UpdateCurd(repo, fileName); err != nil {
 			fmt.Printf("Error updating executable: %v\n", err)
-			os.Exit(1)
-			} else {
-				fmt.Println("Program Updated!")
-				internal.ExitCurd()
-			}
+			internal.ExitCurd(err)
+		} else {
+			fmt.Println("Program Updated!")
+			internal.ExitCurd(nil)
 		}
-		
-		if *editConfig {
-			internal.EditConfig(configFilePath)
-			return
-		}
+	}
+
+	if *editConfig {
+		internal.EditConfig(configFilePath)
+		return
+	}
 		
 	// Set SubOrDub based on the flags
 	if *subFlag {
@@ -117,7 +117,7 @@ func main() {
 	
 	if *addNewAnime {
 		internal.AddNewAnime(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
-		internal.ExitCurd()
+		internal.ExitCurd(fmt.Errorf("Added new anime!"))
 	}
 
 	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
@@ -296,7 +296,7 @@ func main() {
 								internal.Log("Received invalid JSON response, continuing...", logFile)
 							} else {
 								internal.Log("Episode is not completed, exiting", logFile)
-								internal.ExitCurd()
+								internal.ExitCurd(nil)
 							}
 						}
 					}
@@ -393,14 +393,14 @@ func main() {
 				fmt.Scanln(&userScore)
 				internal.RateAnime(user.Token, anime.AnilistId, userScore)
 				internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
-				internal.ExitCurd()
+				internal.ExitCurd(nil)
 			}
 		}
 		if anime.Rewatching && anime.Ep.IsCompleted && anime.Ep.Number-1 == anime.TotalEpisodes {
 			anime.Ep.Number = anime.Ep.Number - 1
 			fmt.Println("Completed anime. (Rewatching so no scoring)")
 			internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
-			internal.ExitCurd()
+			internal.ExitCurd(nil)
 		}
 		
 		if userCurdConfig.NextEpisodePrompt {
@@ -409,13 +409,12 @@ func main() {
 			fmt.Scanln(&answer)
 			if answer == "y" || answer == "Y" || answer == "yes" || answer == "Yes" || answer == "YES" || answer == "" {
 			} else {
-				internal.ExitCurd()
+				internal.ExitCurd(nil)
 			}
 		}
 		
-		fmt.Println("Starting next episode: "+fmt.Sprint(anime.Ep.Number))
-		anime.Ep.Started = false
-		
+			fmt.Println("Starting next episode: "+fmt.Sprint(anime.Ep.Number))
+			anime.Ep.Started = false		
 
 	}
 }
