@@ -1,5 +1,6 @@
-@echo off
 set GOOS=windows
 set GOARCH=amd64
-go build -o Build/curd.exe -ldflags="-s -w" -trimpath cmd\curd\main.go
 tree /F
+echo Building Go application
+rem Build the Go application
+go build -o curd.exe ..\cmd\curd\main.go
