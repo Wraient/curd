@@ -107,8 +107,10 @@ jobs:
 
     - name: Update Inno Setup Script with New Version
       run: |
-        sed -i "s/AppVersion=.*/AppVersion=${{ steps.bump_version.outputs.new_version }}/" Build/curd-windows-build.iss
-
+        $new_version = Get-Content VERSION.txt
+        $iss_path = "Build/curd-windows-build.iss"
+        (Get-Content $iss_path) -replace "AppVersion=.*", "AppVersion=$new_version" | Set-Content $iss_path
+  
     - name: Create Windows Installer
       run: |
         & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "D:\a\curd\curd\Build\curd-windows-build.iss"  
