@@ -130,6 +130,9 @@ func ExitCurd(err error) {
 
 func CurdOut(data interface{}) {
 	userCurdConfig := GetGlobalConfig()
+	if userCurdConfig == nil {
+		userCurdConfig = &CurdConfig{}
+	}
 	if !userCurdConfig.RofiSelection {
 		fmt.Println(fmt.Sprintf("%v", data))
 	} else {
