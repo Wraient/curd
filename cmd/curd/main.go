@@ -61,6 +61,7 @@ func main() {
 	continueLast := flag.Bool("c", false, "Continue last episode")
 	addNewAnime := flag.Bool("new", false, "Add new anime")
 	rofiSelection := flag.Bool("rofi", false, "Open selection in rofi")
+	noRofi := flag.Bool("no-rofi", false, "No rofi")
 	updateScript := flag.Bool("u", false, "Update the script")
 	editConfig := flag.Bool("e", false, "Edit config")
 	subFlag := flag.Bool("sub", false, "Watch sub version")
@@ -94,6 +95,10 @@ func main() {
 		userCurdConfig.RofiSelection = true
 	}
 
+	if *noRofi {
+		userCurdConfig.RofiSelection = false
+	}
+
 	if *editConfig {
 		internal.EditConfig(configFilePath)
 		return
@@ -112,8 +117,16 @@ func main() {
 		internal.Log("Error reading token", logFile)
 	}
 	if user.Token == "" {
-		fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
-		fmt.Scanln(&user.Token)
+		if userCurdConfig.RofiSelection {
+			user.Token, err = internal.GetTokenFromRofi()
+		} else {
+			fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
+			fmt.Scanln(&user.Token)
+		}
+		if err != nil {
+			internal.Log("Error getting user input: "+err.Error(), logFile)
+			internal.ExitCurd(err)
+		}
 		internal.WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
 	}
 
@@ -392,11 +405,12 @@ func main() {
 			// internal.CurdOut(anime.Ep.Number, anime.TotalEpisodes, &userCurdConfig)
 			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion {
 				anime.Ep.Number = anime.Ep.Number - 1
-				var userScore float64
 				internal.CurdOut("Completed anime.")
-				fmt.Println("Rate this anime: ")
-				fmt.Scanln(&userScore)
-				internal.RateAnime(user.Token, anime.AnilistId, userScore)
+				err = internal.RateAnime(user.Token, anime.AnilistId)
+				if err != nil {
+					internal.Log("Error rating anime: "+err.Error(), logFile)
+					internal.CurdOut("Error rating anime: "+err.Error())
+				}
 				internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 				internal.ExitCurd(nil)
 			}
@@ -410,8 +424,15 @@ func main() {
 
 		if userCurdConfig.NextEpisodePrompt {
 			var answer string
-			fmt.Println("Start next episode? (y/n)")
-			fmt.Scanln(&answer)
+			if userCurdConfig.RofiSelection {
+				answer, err = internal.GetUserInputFromRofi("Start next episode? (y/n)")
+				if err != nil {
+					internal.ExitCurd(err)
+				}
+			} else {
+				fmt.Println("Start next episode? (y/n)")
+				fmt.Scanln(&answer)
+			}
 			if answer == "y" || answer == "Y" || answer == "yes" || answer == "Yes" || answer == "YES" || answer == "" {
 			} else {
 				internal.ExitCurd(nil)

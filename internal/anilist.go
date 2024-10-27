@@ -349,7 +349,29 @@ func UpdateAnimeProgress(token string, mediaID, progress int) error {
 }
 
 // Function to rate an anime on AniList
-func RateAnime(token string, mediaID int, score float64) error {
+func RateAnime(token string, mediaID int) error {
+	var score float64
+	var err error
+
+	userCurdConfig := GetGlobalConfig()
+	if userCurdConfig == nil {
+		return fmt.Errorf("failed to get curd config")
+	}
+
+	if userCurdConfig.RofiSelection {
+		userInput, err := GetUserInputFromRofi("Enter a score for the anime (0-10):")
+		if err != nil {
+			return err
+		}
+		score, err = strconv.ParseFloat(userInput, 64)
+		if err != nil {
+			return err
+		}
+	} else {
+		fmt.Println("Rate this anime: ")
+		fmt.Scanln(&score)
+	}
+
 	url := "https://graphql.anilist.co"
 	query := `
 	mutation($mediaId: Int, $score: Float) {
@@ -370,7 +392,7 @@ func RateAnime(token string, mediaID int, score float64) error {
 		"Content-Type":  "application/json",
 	}
 
-	_, err := makePostRequest(url, query, variables, headers)
+	_, err = makePostRequest(url, query, variables, headers)
 	if err != nil {
 		return err
 	}
