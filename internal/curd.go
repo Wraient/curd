@@ -220,9 +220,18 @@ func UpdateCurd(repo, fileName string) error {
 }
 
 func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
-	CurdOut("Enter the anime name:")
 	var query string
-	fmt.Scanln(&query)
+	if userCurdConfig.RofiSelection {
+		userInput, err := GetUserInputFromRofi("Enter the anime name:")
+		if err != nil {
+			Log("Error getting user input: "+err.Error(), logFile)
+			ExitCurd(fmt.Errorf("Error getting user input: "+err.Error()))
+		}
+		query = userInput
+	} else {
+		CurdOut("Enter the anime name:")
+		fmt.Scanln(&query)
+	}
 	animeMap, err := SearchAnimeAnilist(query, user.Token)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to search anime: %v", err), logFile)
@@ -242,6 +251,13 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	if err != nil {
 		Log(fmt.Sprintf("Failed to add anime to watching list: %v", err), logFile)
 		ExitCurd(fmt.Errorf("Failed to add anime to watching list"))
+	}
+	if user.Id == 0 {
+		user.Id, user.Username, err = GetAnilistUserID(user.Token)
+		if err != nil {
+			Log(fmt.Sprintf("Failed to get user ID: %v", err), logFile)
+			ExitCurd(fmt.Errorf("Failed to get user ID"))
+		}
 	}
 	anilistUserData, err := GetUserData(user.Token, user.Id)
 	if err != nil {
@@ -407,18 +423,36 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		if anime.TotalEpisodes == 0 {
 			CurdOut("Still unable to determine total episodes.")
 			CurdOut(fmt.Sprintf("Your AniList progress: %d", selectedAnilistAnime.Progress))
-			fmt.Print("Enter the episode you want to start from: ")
 			var episodeNumber int
-			fmt.Scanln(&episodeNumber)
+			if userCurdConfig.RofiSelection {
+				userInput, err := GetUserInputFromRofi("Enter the episode you want to start from:")
+				if err != nil {
+					Log("Error getting user input: "+err.Error(), logFile)
+					ExitCurd(fmt.Errorf("Error getting user input: "+err.Error()))
+				}
+				episodeNumber, err = strconv.Atoi(userInput)
+			} else {
+				fmt.Print("Enter the episode you want to start from: ")
+				fmt.Scanln(&episodeNumber)
+			}
 			anime.Ep.Number = episodeNumber
 		} else {
 			anime.Ep.Number = selectedAnilistAnime.Progress + 1
 		}
 	} else if anime.TotalEpisodes < anime.Ep.Number { // Handle weird cases
 		Log(fmt.Sprintf("Weird case: anime.TotalEpisodes < anime.Ep.Number: %v < %v", anime.TotalEpisodes, anime.Ep.Number), logFile)
-		fmt.Printf("Would like to start the anime from beginning? (y/n)\n")
 		var answer string
-		fmt.Scanln(&answer)
+		if userCurdConfig.RofiSelection {
+			userInput, err := GetUserInputFromRofi("Would like to start the anime from beginning? (y/n)")
+			if err != nil {
+				Log("Error getting user input: "+err.Error(), logFile)
+				ExitCurd(fmt.Errorf("Error getting user input: "+err.Error()))
+			}
+			answer = userInput
+		} else {
+			fmt.Printf("Would like to start the anime from beginning? (y/n)\n")
+			fmt.Scanln(&answer)
+		}
 		if answer == "y" {
 			anime.Ep.Number = 1
 		} else {
@@ -459,8 +493,17 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 			RestoreScreen()
 			os.Exit(1)
 		}
-		CurdOut(fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
-		fmt.Scanln(&anime.Ep.Number)
+		if userCurdConfig.RofiSelection {
+			userInput, err := GetUserInputFromRofi(fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
+			if err != nil {
+				Log("Error getting user input: "+err.Error(), logFile)
+				ExitCurd(fmt.Errorf("Error getting user input: "+err.Error()))
+			}
+			anime.Ep.Number, err = strconv.Atoi(userInput)
+		} else {
+			CurdOut(fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
+			fmt.Scanln(&anime.Ep.Number)
+		}
 		link, err = GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
 		if err != nil {
 			CurdOut("Failed to get episode link")

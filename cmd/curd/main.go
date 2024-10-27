@@ -61,6 +61,7 @@ func main() {
 	continueLast := flag.Bool("c", false, "Continue last episode")
 	addNewAnime := flag.Bool("new", false, "Add new anime")
 	rofiSelection := flag.Bool("rofi", false, "Open selection in rofi")
+	noRofi := flag.Bool("no-rofi", false, "No rofi")
 	updateScript := flag.Bool("u", false, "Update the script")
 	editConfig := flag.Bool("e", false, "Edit config")
 	subFlag := flag.Bool("sub", false, "Watch sub version")
@@ -92,6 +93,10 @@ func main() {
 
 	if *rofiSelection {
 		userCurdConfig.RofiSelection = true
+	}
+
+	if *noRofi {
+		userCurdConfig.RofiSelection = false
 	}
 
 	if *editConfig {
@@ -401,7 +406,11 @@ func main() {
 			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion {
 				anime.Ep.Number = anime.Ep.Number - 1
 				internal.CurdOut("Completed anime.")
-				internal.RateAnime(user.Token, anime.AnilistId)
+				err = internal.RateAnime(user.Token, anime.AnilistId)
+				if err != nil {
+					internal.Log("Error rating anime: "+err.Error(), logFile)
+					internal.CurdOut("Error rating anime: "+err.Error())
+				}
 				internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 				internal.ExitCurd(nil)
 			}

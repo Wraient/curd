@@ -353,7 +353,12 @@ func RateAnime(token string, mediaID int) error {
 	var score float64
 	var err error
 
-	if GetGlobalConfig().RofiSelection {
+	userCurdConfig := GetGlobalConfig()
+	if userCurdConfig == nil {
+		return fmt.Errorf("failed to get curd config")
+	}
+
+	if userCurdConfig.RofiSelection {
 		userInput, err := GetUserInputFromRofi("Enter a score for the anime (0-10):")
 		if err != nil {
 			return err
