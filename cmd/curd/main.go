@@ -23,14 +23,14 @@ func main() {
 	var anime internal.Anime
 	var user internal.User
 
-    var homeDir string
-    if runtime.GOOS == "windows" {
-        homeDir = os.Getenv("USERPROFILE")
-    } else {
-        homeDir = os.Getenv("HOME")
-    }
+	var homeDir string
+	if runtime.GOOS == "windows" {
+		homeDir = os.Getenv("USERPROFILE")
+	} else {
+		homeDir = os.Getenv("HOME")
+	}
 
-    configFilePath := filepath.Join(homeDir, ".config", "curd", "curd.conf")
+	configFilePath := filepath.Join(homeDir, ".config", "curd", "curd.conf")
 
 	// load curd userCurdConfig
 	userCurdConfig, err := internal.LoadConfig(configFilePath)
@@ -38,6 +38,7 @@ func main() {
 		fmt.Println("Error loading config:", err)
 		return
 	}
+	internal.SetGlobalConfig(&userCurdConfig)
 
 	logFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "debug.log")
 	internal.ClearLogFile(logFile)
@@ -59,11 +60,12 @@ func main() {
 	flag.BoolVar(&userCurdConfig.DiscordPresence, "discord-presence", userCurdConfig.DiscordPresence, "Enable Discord presence (true/false)")
 	continueLast := flag.Bool("c", false, "Continue last episode")
 	addNewAnime := flag.Bool("new", false, "Add new anime")
+	rofiSelection := flag.Bool("rofi", false, "Open selection in rofi")
 	updateScript := flag.Bool("u", false, "Update the script")
 	editConfig := flag.Bool("e", false, "Edit config")
 	subFlag := flag.Bool("sub", false, "Watch sub version")
 	dubFlag := flag.Bool("dub", false, "Watch dub version")
-	
+
 	// Custom help/usage function
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Curd is a CLI tool to manage anime playback with advanced features like skipping intro, outro, filler, recap, tracking progress, and integrating with Discord.\n")
@@ -72,34 +74,38 @@ func main() {
 	}
 
 	flag.Parse()
-	
+
 	anime.Ep.ContinueLast = *continueLast
 
-	if *updateScript{
+	if *updateScript {
 		repo := "wraient/curd"
 		fileName := "curd"
-		
+
 		if err := internal.UpdateCurd(repo, fileName); err != nil {
-			fmt.Printf("Error updating executable: %v\n", err)
+			internal.CurdOut(fmt.Sprintf("Error updating executable: %v\n", err))
 			internal.ExitCurd(err)
 		} else {
-			fmt.Println("Program Updated!")
+			internal.CurdOut("Program Updated!")
 			internal.ExitCurd(nil)
 		}
+	}
+
+	if *rofiSelection {
+		userCurdConfig.RofiSelection = true
 	}
 
 	if *editConfig {
 		internal.EditConfig(configFilePath)
 		return
 	}
-		
+
 	// Set SubOrDub based on the flags
 	if *subFlag {
 		userCurdConfig.SubOrDub = "sub"
-		} else if *dubFlag {
-			userCurdConfig.SubOrDub = "dub"
-		}
-		
+	} else if *dubFlag {
+		userCurdConfig.SubOrDub = "dub"
+	}
+
 	// Get the token from the token file
 	user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
 	if err != nil {
@@ -110,29 +116,29 @@ func main() {
 		fmt.Scanln(&user.Token)
 		internal.WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
 	}
-	
+
 	// Load animes in database
 	databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
 	databaseAnimes := internal.LocalGetAllAnime(databaseFile)
-	
+
 	if *addNewAnime {
 		internal.AddNewAnime(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
 		internal.ExitCurd(fmt.Errorf("Added new anime!"))
 	}
 
 	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
-	
+
 	temp_anime, err := internal.FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId))
 	if err != nil {
 		internal.Log("Error finding anime by Anilist ID: "+err.Error(), logFile)
 	}
-	
+
 	if anime.TotalEpisodes == temp_anime.Progress {
 		internal.Log(temp_anime.Progress, logFile)
 		internal.Log(anime.TotalEpisodes, logFile)
 		internal.Log(user.AnimeList, logFile)
 		internal.Log("Rewatching anime: "+internal.GetAnimeName(anime), logFile)
-		anime.Rewatching = true	
+		anime.Rewatching = true
 	}
 
 	anime.Ep.Player.Speed = 1.0
@@ -168,7 +174,7 @@ func main() {
 			internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
 			internal.Log(anime.Ep.Player.SocketPath, logFile)
 		} else {
-			fmt.Println("Filler episode, skipping: ", anime.Ep.Number)
+			internal.CurdOut(fmt.Sprint("Filler episode, skipping: ", anime.Ep.Number))
 		}
 
 		wg.Add(1)
@@ -184,12 +190,12 @@ func main() {
 				// if filler episode or recap episode and skip is enabled
 				if (userCurdConfig.SkipFiller || userCurdConfig.SkipRecap) && (anime.Ep.IsFiller || anime.Ep.IsRecap) {
 					if anime.Ep.IsFiller && userCurdConfig.SkipFiller {
-						fmt.Println("Filler Episode, starting next episode: ", anime.Ep.Number+1)
+						internal.CurdOut(fmt.Sprint("Filler Episode, starting next episode: ", anime.Ep.Number+1))
 						internal.Log("Filler episode detected", logFile)
 					} else if anime.Ep.IsRecap && userCurdConfig.SkipRecap {
-						fmt.Println("Recap Episode, starting next episode: ", anime.Ep.Number+1)
+						internal.CurdOut(fmt.Sprint("Recap Episode, starting next episode: ", anime.Ep.Number+1))
 						internal.Log("Recap episode detected", logFile)
-					} 
+					}
 					anime.Ep.Number++
 					anime.Ep.Started = false
 					anime.Ep.IsCompleted = true
@@ -202,7 +208,7 @@ func main() {
 					}
 					// Exit the skip loop
 					close(skipLoopDone)
-				} 
+				}
 			}
 		}()
 
@@ -244,15 +250,15 @@ func main() {
 						durationPos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "duration"})
 						if err != nil {
 							internal.Log("Error getting video duration: "+err.Error(), logFile)
-							} else if durationPos != nil {
-								if duration, ok := durationPos.(float64); ok {
-									anime.Ep.Duration = int(duration + 0.5) // Round to nearest integer
-									internal.Log(fmt.Sprintf("Video duration: %d seconds", anime.Ep.Duration), logFile)
-									} else {
+						} else if durationPos != nil {
+							if duration, ok := durationPos.(float64); ok {
+								anime.Ep.Duration = int(duration + 0.5) // Round to nearest integer
+								internal.Log(fmt.Sprintf("Video duration: %d seconds", anime.Ep.Duration), logFile)
+							} else {
 								internal.Log("Error: duration is not a float64", logFile)
 							}
 						}
-						break	
+						break
 					}
 				}
 				time.Sleep(1 * time.Second)
@@ -375,7 +381,7 @@ func main() {
 		wg = sync.WaitGroup{}
 
 		if anime.Ep.IsCompleted && !anime.Rewatching {
-			go func(){
+			go func() {
 				err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
 				if err != nil {
 					internal.Log("Error updating Anilist progress: "+err.Error(), logFile)
@@ -383,11 +389,11 @@ func main() {
 			}()
 
 			anime.Ep.IsCompleted = false
-			// fmt.Println(anime.Ep.Number, anime.TotalEpisodes)
+			// internal.CurdOut(anime.Ep.Number, anime.TotalEpisodes, &userCurdConfig)
 			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion {
 				anime.Ep.Number = anime.Ep.Number - 1
 				var userScore float64
-				fmt.Println("Completed anime.")
+				internal.CurdOut("Completed anime.")
 				fmt.Println("Rate this anime: ")
 				fmt.Scanln(&userScore)
 				internal.RateAnime(user.Token, anime.AnilistId, userScore)
@@ -397,7 +403,7 @@ func main() {
 		}
 		if anime.Rewatching && anime.Ep.IsCompleted && anime.Ep.Number-1 == anime.TotalEpisodes {
 			anime.Ep.Number = anime.Ep.Number - 1
-			fmt.Println("Completed anime. (Rewatching so no scoring)")
+			internal.CurdOut("Completed anime. (Rewatching so no scoring)")
 			internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 			internal.ExitCurd(nil)
 		}
@@ -411,9 +417,9 @@ func main() {
 				internal.ExitCurd(nil)
 			}
 		}
-		
-			fmt.Println("Starting next episode: "+fmt.Sprint(anime.Ep.Number))
-			anime.Ep.Started = false		
+
+		internal.CurdOut(fmt.Sprint("Starting next episode: ", anime.Ep.Number))
+		anime.Ep.Started = false
 
 	}
 }

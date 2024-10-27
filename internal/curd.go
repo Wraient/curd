@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+    "github.com/gen2brain/beeep"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -47,11 +48,11 @@ func EditConfig(configFilePath string) {
 	// Run the editor command
 	err := cmd.Run()
 	if err != nil {
-		fmt.Printf("Error opening config file: %v\n", err)
+		CurdOut(fmt.Sprintf("Error opening config file: %v", err))
 		return
 	}
 
-	fmt.Println("Config file edited successfully.")
+	CurdOut("Config file edited successfully.")
 }
 
 // ClearLogFile removes all contents from the specified log file
@@ -112,19 +113,45 @@ func RestoreScreen() {
 
 func ExitCurd(err error) {
 	RestoreScreen()
+	CurdOut("Have a great day!")
 	if err != nil {
-		fmt.Println(err)
+		CurdOut(err)
 		if runtime.GOOS == "windows" {
 			fmt.Println("Press Enter to exit")
 			var wait string
 			fmt.Scanln(&wait)
 			os.Exit(1)
 		} else {
-			fmt.Println("Have a great day!")
 			os.Exit(1)
 		}
 	}
 	os.Exit(0)
+}
+
+func CurdOut(data interface{}) {
+	userCurdConfig := GetGlobalConfig()
+	if !userCurdConfig.RofiSelection {
+		fmt.Println(fmt.Sprintf("%v", data))
+	} else {
+		switch runtime.GOOS {
+		case "windows":
+			err := beeep.Notify(
+				"Curd",
+				fmt.Sprintf("%v", data),
+				"",
+			)
+	
+			if err != nil {
+				Log(fmt.Sprintf("Failed to send notification: %v", err), logFile)
+			}
+		case "linux":
+			cmd := exec.Command("notify-send", fmt.Sprintf("%v", data))
+			err := cmd.Run()
+			if err != nil {
+				Log(fmt.Sprintf("Failed to send notification: %v", err), logFile)
+			}
+		}
+	}
 }
 
 func UpdateCurd(repo, fileName string) error {
@@ -177,7 +204,7 @@ func UpdateCurd(repo, fileName string) error {
     if err := os.Rename(tmpPath, executablePath); err != nil {
         return fmt.Errorf("failed to replace the current executable: %v", err)
     }
-    fmt.Println("Downloaded curd executable to", executablePath)
+    CurdOut(fmt.Sprintf("Downloaded curd executable to %v", executablePath))
 
 	if runtime.GOOS != "windows" {
 		// Ensure the new file has executable permissions
@@ -190,7 +217,7 @@ func UpdateCurd(repo, fileName string) error {
 }
 
 func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
-	fmt.Println("Enter the anime name:")
+	CurdOut("Enter the anime name:")
 	var query string
 	fmt.Scanln(&query)
 	animeMap, err := SearchAnimeAnilist(query, user.Token)
@@ -318,7 +345,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			
 		// If unable to get Allanime id automatically get manually
 		if anime.AllanimeId == "" {
-			fmt.Println("Failed to automatically select anime")
+			CurdOut("Failed to automatically select anime")
 			selectedAllanimeAnime, err := DynamicSelect(animeList)
 			if err != nil {
 				// fmt.Println("No anime available")
@@ -357,17 +384,17 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	}
 
 	if anime.TotalEpisodes == 0 { // If failed to get anime data
-		fmt.Println("Failed to get anime data. Attempting to retrieve from anime list.")
+		CurdOut("Failed to get anime data. Attempting to retrieve from anime list.")
 		animeList, err := SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
 		if err != nil {
-			fmt.Println("Failed to retrieve anime list:", err)
+			CurdOut(fmt.Sprintf("Failed to retrieve anime list: %v", err))
 		} else {
 			for allanimeId, label := range animeList {
 				if allanimeId == anime.AllanimeId {
 					// Extract total episodes from the label
 					if matches := regexp.MustCompile(`\((\d+) episodes\)`).FindStringSubmatch(label); len(matches) > 1 {
 						anime.TotalEpisodes, _ = strconv.Atoi(matches[1])
-						fmt.Printf("Retrieved total episodes: %d\n", anime.TotalEpisodes)
+						CurdOut(fmt.Sprintf("Retrieved total episodes: %d", anime.TotalEpisodes))
 						break
 					}
 				}
@@ -375,8 +402,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		}
 		
 		if anime.TotalEpisodes == 0 {
-			fmt.Println("Still unable to determine total episodes.")
-			fmt.Println("Your AniList progress:", selectedAnilistAnime.Progress)
+			CurdOut("Still unable to determine total episodes.")
+			CurdOut(fmt.Sprintf("Your AniList progress: %d", selectedAnilistAnime.Progress))
 			fmt.Print("Enter the episode you want to start from: ")
 			var episodeNumber int
 			fmt.Scanln(&episodeNumber)
@@ -425,15 +452,15 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 		// If unable to get episode link automatically get manually
 		episodeList, err := EpisodesList(anime.AllanimeId, userCurdConfig.SubOrDub)
 		if err != nil {
-			fmt.Println("No episode list found")
+			CurdOut("No episode list found")
 			RestoreScreen()
 			os.Exit(1)
 		}
-		fmt.Printf("Enter the episode (%v episodes)\n", episodeList[len(episodeList)-1])
+		CurdOut(fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
 		fmt.Scanln(&anime.Ep.Number)
 		link, err = GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
 		if err != nil {
-			fmt.Println("Failed to get episode link")
+			CurdOut("Failed to get episode link")
 			os.Exit(1)
 		}
 		// anime.Ep.Links = link
@@ -441,7 +468,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 	anime.Ep.Links = link
 
 	if len(anime.Ep.Links) == 0 {
-		fmt.Println("No episode links found")
+		CurdOut("No episode links found")
 		os.Exit(1)
 	}
 

@@ -56,7 +56,7 @@ func StartVideo(link string, args []string) (string, error) {
         // Get the path to mpv.exe for Windows
         mpvPath, err := getMPVPath()
         if err != nil {
-            fmt.Println("Error: Failed to get MPV path")
+            CurdOut("Error: Failed to get MPV path")
             Log("Failed to get mpv path.", logFile)
             return "", err
         }
@@ -71,7 +71,7 @@ func StartVideo(link string, args []string) (string, error) {
     // Start the mpv process
     err = command.Start()
     if err != nil {
-        fmt.Println("Error: Failed to start mpv process")
+        CurdOut("Error: Failed to start mpv process")
         return "", fmt.Errorf("failed to start mpv: %w", err)
     }
     return mpvSocketPath, nil

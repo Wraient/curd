@@ -22,10 +22,42 @@ type CurdConfig struct {
 	SkipEd                  bool   `config:"SkipEd"`
 	SkipFiller              bool   `config:"SkipFiller"`
 	SkipRecap               bool   `config:"SkipRecap"`
+	RofiSelection           bool   `config:"RofiSelection"`
 	ScoreOnCompletion       bool   `config:"ScoreOnCompletion"`
 	SaveMpvSpeed            bool   `config:"SaveMpvSpeed"`
 	DiscordPresence         bool   `config:"DiscordPresence"`
 }
+
+// Default configuration values as a map
+func defaultConfigMap() map[string]string {
+	return map[string]string{
+		"Player":                  "mpv",
+		"StoragePath":             "$HOME/.local/share/curd",
+		"SubsLanguage":            "english",
+		"SubOrDub":                "sub",
+		"PercentageToMarkComplete": "85",
+		"NextEpisodePrompt":       "false",
+		"SkipOp":                  "true",
+		"SkipEd":                  "true",
+		"SkipFiller":              "true",
+		"SkipRecap":               "true",
+		"RofiSelection":           "false",
+		"ScoreOnCompletion":       "true",
+		"SaveMpvSpeed":            "true",
+		"DiscordPresence":         "true",
+	}
+}
+
+var globalConfig *CurdConfig
+
+func SetGlobalConfig(config *CurdConfig) {
+	globalConfig = config
+}
+
+func GetGlobalConfig() *CurdConfig {
+	return globalConfig
+}
+
 
 // LoadConfig reads or creates the config file, adds missing fields, and returns the populated CurdConfig struct
 func LoadConfig(configPath string) (CurdConfig, error) {
@@ -34,7 +66,7 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Create the config file with default values if it doesn't exist
-		fmt.Println("Config file not found. Creating default config...")
+		CurdOut("Config file not found. Creating default config...")
 		if err := createDefaultConfig(configPath); err != nil {
 			return CurdConfig{}, fmt.Errorf("error creating default config file: %v", err)
 		}
@@ -67,25 +99,6 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 	config := populateConfig(configMap)
 
 	return config, nil
-}
-
-// Default configuration values as a map
-func defaultConfigMap() map[string]string {
-	return map[string]string{
-		"Player":                  "mpv",
-		"StoragePath":             "$HOME/.local/share/curd",
-		"SubsLanguage":            "english",
-		"SubOrDub":                "sub",
-		"PercentageToMarkComplete": "85",
-		"NextEpisodePrompt":       "false",
-		"SkipOp":                  "true",
-		"SkipEd":                  "true",
-		"SkipFiller":              "true",
-		"SkipRecap":               "true",
-		"ScoreOnCompletion":       "true",
-		"SaveMpvSpeed":            "true",
-		"DiscordPresence":         "true",
-	}
 }
 
 // Create a config file with default values in key=value format
