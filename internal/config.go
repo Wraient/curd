@@ -131,6 +131,21 @@ func createDefaultConfig(path string) error {
 	return nil
 }
 
+func ChangeToken(config *CurdConfig, user *User) {
+	var err error
+	if config.RofiSelection {
+		user.Token, err = GetTokenFromRofi()
+	} else {
+		fmt.Println("Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
+		fmt.Scanln(&user.Token)
+	}
+	if err != nil {
+		Log("Error getting user input: "+err.Error(), logFile)
+		ExitCurd(err)
+	}
+	WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(config.StoragePath), "token"))
+}
+
 // Load config file from disk into a map (key=value format)
 func loadConfigFromFile(path string) (map[string]string, error) {
 	file, err := os.Open(path)

@@ -62,6 +62,7 @@ func main() {
 	addNewAnime := flag.Bool("new", false, "Add new anime")
 	rofiSelection := flag.Bool("rofi", false, "Open selection in rofi")
 	noRofi := flag.Bool("no-rofi", false, "No rofi")
+	changeToken := flag.Bool("change-token", false, "Change token")
 	updateScript := flag.Bool("u", false, "Update the script")
 	editConfig := flag.Bool("e", false, "Edit config")
 	subFlag := flag.Bool("sub", false, "Watch sub version")
@@ -69,6 +70,7 @@ func main() {
 
 	// Custom help/usage function
 	flag.Usage = func() {
+		internal.RestoreScreen()
 		fmt.Fprintf(os.Stderr, "Curd is a CLI tool to manage anime playback with advanced features like skipping intro, outro, filler, recap, tracking progress, and integrating with Discord.\n")
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults() // This prints the default flag information
@@ -89,6 +91,11 @@ func main() {
 			internal.CurdOut("Program Updated!")
 			internal.ExitCurd(nil)
 		}
+	}
+
+	if *changeToken {
+		internal.ChangeToken(&userCurdConfig, &user)
+		return
 	}
 
 	if *rofiSelection {
@@ -117,17 +124,7 @@ func main() {
 		internal.Log("Error reading token", logFile)
 	}
 	if user.Token == "" {
-		if userCurdConfig.RofiSelection {
-			user.Token, err = internal.GetTokenFromRofi()
-		} else {
-			fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
-			fmt.Scanln(&user.Token)
-		}
-		if err != nil {
-			internal.Log("Error getting user input: "+err.Error(), logFile)
-			internal.ExitCurd(err)
-		}
-		internal.WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
+		internal.ChangeToken(&userCurdConfig, &user)
 	}
 
 	// Load animes in database

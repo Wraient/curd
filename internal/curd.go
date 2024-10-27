@@ -256,13 +256,13 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 		user.Id, user.Username, err = GetAnilistUserID(user.Token)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to get user ID: %v", err), logFile)
-			ExitCurd(fmt.Errorf("Failed to get user ID"))
+			ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
 		}
 	}
 	anilistUserData, err := GetUserData(user.Token, user.Id)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
-		ExitCurd(fmt.Errorf("Failed to get user data"))
+		ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
 	}
 	user.AnimeList = ParseAnimeList(anilistUserData)
 }
@@ -274,12 +274,12 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	user.Id, user.Username, err = GetAnilistUserID(user.Token)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to get user ID: %v", err), logFile)
-		ExitCurd(fmt.Errorf("Failed to get user ID"))
+		ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
 	}
 	anilistUserData, err := GetUserData(user.Token, user.Id)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
-		ExitCurd(fmt.Errorf("Failed to get user data"))
+		ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
 	}
 	user.AnimeList = ParseAnimeList(anilistUserData)
 	animeListMap := GetAnimeMap(user.AnimeList)
