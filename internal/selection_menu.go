@@ -1,7 +1,9 @@
 package internal
 
 import (
+	"bytes"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -74,7 +76,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if m.filteredKeys[m.selected].Key == "add_new" {
-				fmt.Println("Adding a new anime...")
+				CurdOut("Adding a new anime...")
 				m.filteredKeys[m.selected] = SelectionOption{"add_new", "0"}
 				return m, tea.Quit
 			}
@@ -168,8 +170,67 @@ func (m *Model) filterOptions() {
 	})
 }
 
+func RofiSelect(options map[string]string) (SelectionOption, error) {
+	// Create a slice to store the options in the order we want
+	var optionsList []string
+	for _, value := range options {
+		optionsList = append(optionsList, value)
+	}
+	
+	// Sort the options alphabetically
+	sort.Strings(optionsList)
+	
+	// Add "Add new anime" and "Quit" options
+	optionsList = append(optionsList, "Add new anime", "Quit")
+	
+	// Join all options into a single string, separated by newlines
+	optionsString := strings.Join(optionsList, "\n")
+	
+	// Prepare the Rofi command
+	cmd := exec.Command("rofi", "-dmenu", "-i", "-p", "Select an anime")
+	
+	// Set up pipes for input and output
+	cmd.Stdin = strings.NewReader(optionsString)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	
+	// Run the command
+	err := cmd.Run()
+	if err != nil {
+		return SelectionOption{}, fmt.Errorf("failed to run Rofi: %v", err)
+	}
+	
+	// Get the selected option
+	selected := strings.TrimSpace(out.String())
+	
+	// Handle special cases
+	switch selected {
+	case "":
+		return SelectionOption{}, fmt.Errorf("no selection made")
+	case "Add new anime":
+		return SelectionOption{Label: "Add new anime", Key: "add_new"}, nil
+	case "Quit":
+		return SelectionOption{Label: "Quit", Key: "-1"}, nil
+	}
+	
+	// Find the key for the selected value
+	for key, value := range options {
+		if value == selected {
+			return SelectionOption{Label: value, Key: key}, nil
+		}
+	}
+	
+	// If we get here, the selected option wasn't found in the original map
+	return SelectionOption{}, fmt.Errorf("selected option not found in original list")
+}
+
 // DynamicSelect displays a simple selection prompt without extra features
 func DynamicSelect(options map[string]string) (SelectionOption, error) {
+
+	if GetGlobalConfig().RofiSelection {
+		return RofiSelect(options)
+	}
+
 	model := &Model{
 		options:      options,
 		filteredKeys: make([]SelectionOption, 0),

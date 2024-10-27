@@ -177,7 +177,7 @@ func AddAnimeToWatchingList(animeID int, token string) error {
 		return fmt.Errorf("failed to add anime: %w", err)
 	}
 
-	fmt.Printf("Anime with ID %d has been added to your watching list.\n", animeID)
+	CurdOut(fmt.Sprintf("Anime with ID %d has been added to your watching list.", animeID))
 	return nil
 }
 
@@ -344,7 +344,7 @@ func UpdateAnimeProgress(token string, mediaID, progress int) error {
 		return err
 	}
 
-	fmt.Println("Anime progress updated! Latest watched episode:", progress)
+	CurdOut(fmt.Sprint("Anime progress updated! Latest watched episode: ", progress))
 	return nil
 }
 
@@ -375,7 +375,7 @@ func RateAnime(token string, mediaID int, score float64) error {
 		return err
 	}
 
-	fmt.Printf("Successfully rated anime (mediaId: %d) with score: %.2f\n", mediaID, score)
+	CurdOut(fmt.Sprintf("Successfully rated anime (mediaId: %d) with score: %.2f", mediaID, score))
 	return nil
 }
 
@@ -456,7 +456,7 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 	// Access the list entries in the input map
 	if input["data"] == nil {
 		Log("Anilist request failed", logFile)
-		fmt.Println("Anilist request failed")
+		CurdOut("Anilist request failed")
 		ExitCurd(fmt.Errorf("Anilist request failed"))
 		return animeList
 	}

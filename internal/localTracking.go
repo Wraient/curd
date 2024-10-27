@@ -12,7 +12,7 @@ import (
 func LocalAddAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, watchingTime int, animeDuration int, animeName string) {
 	file, err := os.OpenFile(databaseFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
-		fmt.Println("Error opening file:", err)
+		CurdOut(fmt.Sprintf("Error opening file: %v", err))
 		return
 	}
 	defer file.Close()
@@ -29,9 +29,9 @@ func LocalAddAnime(databaseFile string, anilistID int, allanimeID string, watchi
 		animeName,
 	})
 	if err != nil {
-		fmt.Println("Error writing to file:", err)
+		CurdOut(fmt.Sprintf("Error writing to file: %v", err))
 	} else {
-		fmt.Println("Written to file")
+		CurdOut("Written to file")
 	}
 }
 
@@ -40,7 +40,7 @@ func LocalDeleteAnime(databaseFile string, anilistID int, allanimeID string) {
 	animeList := [][]string{}
 	file, err := os.Open(databaseFile)
 	if err != nil {
-		fmt.Println("Error opening file:", err)
+		CurdOut(fmt.Sprintf("Error opening file: %v", err))
 		return
 	}
 	defer file.Close()
@@ -48,7 +48,7 @@ func LocalDeleteAnime(databaseFile string, anilistID int, allanimeID string) {
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
 	if err != nil {
-		fmt.Println("Error reading file:", err)
+		CurdOut(fmt.Sprintf("Error reading file: %v", err))
 		return
 	}
 
@@ -63,7 +63,7 @@ func LocalDeleteAnime(databaseFile string, anilistID int, allanimeID string) {
 	// Write the filtered list back to the file
 	fileWrite, err := os.OpenFile(databaseFile, os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		fmt.Println("Error opening file for writing:", err)
+		CurdOut(fmt.Sprintf("Error opening file for writing: %v", err))
 		return
 	}
 	defer fileWrite.Close()
@@ -73,7 +73,7 @@ func LocalDeleteAnime(databaseFile string, anilistID int, allanimeID string) {
 
 	err = writer.WriteAll(animeList)
 	if err != nil {
-		fmt.Println("Error writing to file:", err)
+		CurdOut(fmt.Sprintf("Error writing to file: %v", err))
 	}
 }
 
@@ -84,14 +84,14 @@ func LocalGetAllAnime(databaseFile string) []Anime {
 	// Ensure the directory exists
 	dir := filepath.Dir(databaseFile)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		fmt.Println("Error creating directory:", err)
+		CurdOut(fmt.Sprintf("Error creating directory: %v", err))
 		return animeList
 	}
 
 	// Open the file, create if it doesn't exist
 	file, err := os.OpenFile(databaseFile, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
-		fmt.Println("Error opening or creating file:", err)
+		CurdOut(fmt.Sprintf("Error opening or creating file: %v", err))
 		return animeList
 	}
 	defer file.Close()
@@ -99,7 +99,7 @@ func LocalGetAllAnime(databaseFile string) []Anime {
 	// If the file was just created, it will be empty, so return an empty list
 	fileInfo, err := file.Stat()
 	if err != nil {
-		fmt.Println("Error getting file info:", err)
+		CurdOut(fmt.Sprintf("Error getting file info: %v", err))
 		return animeList
 	}
 	if fileInfo.Size() == 0 {
@@ -109,7 +109,7 @@ func LocalGetAllAnime(databaseFile string) []Anime {
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
 	if err != nil {
-		fmt.Println("Error reading file:", err)
+		CurdOut(fmt.Sprintf("Error reading file: %v", err))
 		return animeList
 	}
 
@@ -126,7 +126,7 @@ func LocalGetAllAnime(databaseFile string) []Anime {
 // Function to parse a single row of anime data
 func parseAnimeRow(row []string) *Anime {
 	if len(row) < 5 {
-		fmt.Printf("Invalid row format: %v\n", row)
+		CurdOut(fmt.Sprintf("Invalid row format: %v", row))
 		return nil
 	}
 
@@ -211,7 +211,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 	// Write updated list back to file
 	file, err := os.Create(databaseFile)
 	if err != nil {
-		fmt.Println("Error creating file:", err)
+		CurdOut(fmt.Sprintf("Error creating file: %v", err))
 		return err
 	}
 	defer file.Close()
@@ -229,7 +229,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 			GetAnimeName(anime),
 		}
 		if err := writer.Write(record); err != nil {
-			fmt.Println("Error writing record:", err)
+			CurdOut(fmt.Sprintf("Error writing record: %v", err))
 		}
 	}
 	
