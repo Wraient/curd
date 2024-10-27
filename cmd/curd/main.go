@@ -415,8 +415,15 @@ func main() {
 
 		if userCurdConfig.NextEpisodePrompt {
 			var answer string
-			fmt.Println("Start next episode? (y/n)")
-			fmt.Scanln(&answer)
+			if userCurdConfig.RofiSelection {
+				answer, err = internal.GetUserInputFromRofi("Start next episode? (y/n)")
+				if err != nil {
+					internal.ExitCurd(err)
+				}
+			} else {
+				fmt.Println("Start next episode? (y/n)")
+				fmt.Scanln(&answer)
+			}
 			if answer == "y" || answer == "Y" || answer == "yes" || answer == "Yes" || answer == "YES" || answer == "" {
 			} else {
 				internal.ExitCurd(nil)
