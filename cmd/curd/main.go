@@ -112,8 +112,16 @@ func main() {
 		internal.Log("Error reading token", logFile)
 	}
 	if user.Token == "" {
-		fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
-		fmt.Scanln(&user.Token)
+		if userCurdConfig.RofiSelection {
+			user.Token, err = internal.GetTokenFromRofi()
+		} else {
+			fmt.Println("No token found, please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
+			fmt.Scanln(&user.Token)
+		}
+		if err != nil {
+			internal.Log("Error getting user input: "+err.Error(), logFile)
+			internal.ExitCurd(err)
+		}
 		internal.WriteTokenToFile(user.Token, filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
 	}
 
