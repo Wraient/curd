@@ -400,11 +400,8 @@ func main() {
 			// internal.CurdOut(anime.Ep.Number, anime.TotalEpisodes, &userCurdConfig)
 			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion {
 				anime.Ep.Number = anime.Ep.Number - 1
-				var userScore float64
 				internal.CurdOut("Completed anime.")
-				fmt.Println("Rate this anime: ")
-				fmt.Scanln(&userScore)
-				internal.RateAnime(user.Token, anime.AnilistId, userScore)
+				internal.RateAnime(user.Token, anime.AnilistId)
 				internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 				internal.ExitCurd(nil)
 			}
