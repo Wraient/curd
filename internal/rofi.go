@@ -42,7 +42,7 @@ func GetUserInputFromRofi(message string) (string, error) {
 		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
 	}
 	// Create the Rofi command
-	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(userCurdConfig.StoragePath, "userinput.rasi"), "-p", "Input", "-mesg", message)
+	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "userinput.rasi"), "-p", "Input", "-mesg", message)
 	
 	// Set up pipes for output
 	var out bytes.Buffer

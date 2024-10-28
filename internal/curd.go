@@ -600,7 +600,7 @@ func CheckAndDownloadFiles(storagePath string, filesToCheck []string) error {
 
 	// Check each file
 	for _, fileName := range filesToCheck {
-		filePath := filepath.Join(storagePath, fileName)
+		filePath := filepath.Join(os.ExpandEnv(storagePath), fileName)
 
 		// Skip if file already exists
 		if _, err := os.Stat(filePath); err == nil {

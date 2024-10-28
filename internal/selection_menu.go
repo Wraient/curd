@@ -207,7 +207,7 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 	rofiInput.WriteString("Quit\n")
 
 	// Get the absolute path to the rasi config
-	configPath := filepath.Join(userCurdConfig.StoragePath, "selectanimepreview.rasi")
+	configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanimepreview.rasi")
 	
 	// Create the command with explicit arguments
 	args := []string{
@@ -353,7 +353,7 @@ func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, e
 	optionsString := strings.Join(optionsList, "\n")
 	
 	// Prepare the Rofi command
-	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(userCurdConfig.StoragePath, "selectanime.rasi"), "-i", "-p", "Select an anime")
+	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanime.rasi"), "-i", "-p", "Select an anime")
 	
 	// Set up pipes for input and output
 	cmd.Stdin = strings.NewReader(optionsString)

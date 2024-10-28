@@ -99,18 +99,6 @@ func main() {
 	}
 
 	if *rofiSelection {
-		// Define a slice of file names to check and download
-		filesToCheck := []string{
-			"selectanimepreview.rasi",
-			"selectanime.rasi",
-			"userinput.rasi",
-		}
-
-		// Call the function to check and download files
-		if err := internal.CheckAndDownloadFiles(userCurdConfig.StoragePath, filesToCheck); err != nil {
-			internal.CurdOut(fmt.Sprintf("Error checking and downloading files: %v\n", err))
-			internal.ExitCurd(err)
-		}
 		userCurdConfig.RofiSelection = true
 	}
 
@@ -139,6 +127,23 @@ func main() {
 		internal.ChangeToken(&userCurdConfig, &user)
 	}
 
+	if userCurdConfig.RofiSelection {
+		// Define a slice of file names to check and download
+		filesToCheck := []string{
+			"selectanimepreview.rasi",
+			"selectanime.rasi",
+			"userinput.rasi",
+		}
+
+		// Call the function to check and download files
+		err := internal.CheckAndDownloadFiles(os.ExpandEnv(userCurdConfig.StoragePath), filesToCheck)
+		if err != nil {
+			internal.Log(fmt.Sprintf("Error checking and downloading files: %v\n", err), logFile)
+			internal.CurdOut(fmt.Sprintf("Error checking and downloading files: %v\n", err))
+			internal.ExitCurd(err)
+		}
+	}
+	
 	// Load animes in database
 	databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
 	databaseAnimes := internal.LocalGetAllAnime(databaseFile)
