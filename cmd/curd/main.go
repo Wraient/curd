@@ -65,6 +65,7 @@ func main() {
 	imagePreview := flag.Bool("image-preview", false, "Show image preview")
 	noImagePreview := flag.Bool("no-image-preview", false, "No image preview")
 	changeToken := flag.Bool("change-token", false, "Change token")
+	currentCategory := flag.Bool("current", false, "Current category")
 	updateScript := flag.Bool("u", false, "Update the script")
 	editConfig := flag.Bool("e", false, "Edit config")
 	subFlag := flag.Bool("sub", false, "Watch sub version")
@@ -98,6 +99,10 @@ func main() {
 	if *changeToken {
 		internal.ChangeToken(&userCurdConfig, &user)
 		return
+	}
+
+	if *currentCategory {
+		userCurdConfig.CurrentCategory = true
 	}
 
 	if *rofiSelection {

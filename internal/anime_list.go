@@ -86,11 +86,15 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 		return animeList, err
 	}
 
+	// Debug: Log the response status and first part of body
+	Log(fmt.Sprintf("Response Status: %s", resp.Status), logFile)
+	Log(fmt.Sprintf("Response Body (first 500 chars): %s", string(body[:min(len(body), 500)])), logFile)
+
 	// Parse the JSON response
 	var response response
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		Log(fmt.Sprint("Error parsing JSON:", err), logFile)
+		Log(fmt.Sprintf("Error parsing JSON for query '%s': %v\nBody: %s", query, err, string(body)), logFile)
 		return animeList, err
 	}
 
@@ -118,4 +122,12 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 		// animeList.WriteString(fmt.Sprintf("%s\t%s (%s episodes)\n", anime.ID, anime.Name, episodesStr))
 	}
 	return animeList, nil
+}
+
+// Helper function
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

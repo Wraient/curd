@@ -30,6 +30,7 @@ type Model struct {
 	terminalWidth  int
 	terminalHeight int
 	scrollOffset   int // Track the topmost visible item
+	addNewOption   bool  // Add this field
 }
 
 // Init initializes the model
@@ -162,13 +163,14 @@ func (m *Model) filterOptions() {
 		return m.filteredKeys[i].Label < m.filteredKeys[j].Label
 	})
 
-	// Reset the selection to the "Add new anime" option if no matches are found
-	if len(m.filteredKeys) == 0 {
+	// Add "Add new anime" option if enabled
+	if m.addNewOption {
 		m.filteredKeys = append(m.filteredKeys, SelectionOption{
 			Label: "Add new anime",
 			Key:   "add_new",
 		})
 	}
+
 	m.filteredKeys = append(m.filteredKeys, SelectionOption{
 		Label: "Quit",
 		Key:   "-1",
@@ -400,6 +402,7 @@ func DynamicSelect(options map[string]string, addnewoption bool) (SelectionOptio
 	model := &Model{
 		options:      options,
 		filteredKeys: make([]SelectionOption, 0),
+		addNewOption: addnewoption,
 	}
 
 	model.filterOptions()

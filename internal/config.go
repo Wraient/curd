@@ -24,6 +24,7 @@ type CurdConfig struct {
 	ImagePreview			bool   `config:"ImagePreview"`
 	SkipRecap               bool   `config:"SkipRecap"`
 	RofiSelection           bool   `config:"RofiSelection"`
+	CurrentCategory			bool   `config:"CurrentCategory"`
 	ScoreOnCompletion       bool   `config:"ScoreOnCompletion"`
 	SaveMpvSpeed            bool   `config:"SaveMpvSpeed"`
 	DiscordPresence         bool   `config:"DiscordPresence"`
