@@ -5,8 +5,15 @@ A cli application to stream anime with [Anilist](https://anilist.co/) integratio
 Works on Windows and Linux
 
 ## Demo Video
+Normal mode:
+
 
 https://github.com/user-attachments/assets/376e7580-b1af-40ee-82c3-154191f75b79
+
+Rofi with Image preview
+
+
+https://github.com/user-attachments/assets/cbf799bc-9fdd-4402-ab61-b4e31f1e264d
 
 
 ## Features
@@ -15,15 +22,18 @@ https://github.com/user-attachments/assets/376e7580-b1af-40ee-82c3-154191f75b79
 - Skip anime Intro and Outro
 - Skip Filler and Recap episodes
 - Discord RPC about the anime
+- Rofi support
+- Image preview in rofi
 - Local anime history to continue from where you left off last time
 - Save mpv speed for next episode
 - Configurable through config file
 
 ## Installing and Setup
+> **Note**: `Curd` requires `mpv`, `rofi`, and `ueberzug` for Image preview and Rofi support. These are included in the installation instructions below for each distribution.
+
 ### Linux
 <details>
 <summary>Arch Linux / Manjaro (AUR-based systems)</summary>
-
 
 Using Yay
 
@@ -37,21 +47,22 @@ or using Paru:
 paru -Sy curd
 ```
 
-Or manually:
+Or, to manually clone and install:
 
-```
+```bash
 git clone https://aur.archlinux.org/curd.git
 cd curd
 makepkg -si
+sudo pacman -S rofi ueberzug
 ```
 </details>
 
 <details>
-<summary>Debian / Ubuntu (and derivatives)</summary>
+<summary> Debian / Ubuntu (and derivatives) </summary>
 
-```
+```bash
 sudo apt update
-sudo apt install mpv curl
+sudo apt install mpv curl rofi ueberzug
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
 sudo mv curd /usr/local/bin/
@@ -60,11 +71,11 @@ curd
 </details>
 
 <details>
-<summary>Fedora</summary>
+<summary>Fedora Installation</summary>
 
-```
+```bash
 sudo dnf update
-sudo dnf install mpv curl
+sudo dnf install mpv curl rofi ueberzug
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
 sudo mv curd /usr/local/bin/
@@ -73,11 +84,11 @@ curd
 </details>
 
 <details>
-<summary>openSUSE</summary>
+<summary>openSUSE Installation</summary>
 
-```
+```bash
 sudo zypper refresh
-sudo zypper install mpv curl
+sudo zypper install mpv curl rofi ueberzug
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
 sudo mv curd /usr/local/bin/
@@ -86,11 +97,10 @@ curd
 </details>
 
 <details>
-<summary>Other Linux Distributions (Generic Instructions)</summary>
+<summary>Generic Installation</summary>
 
-```
-# Install mpv and curl
-
+```bash
+# Install mpv, curl, rofi, and ueberzug (required for Image preview)
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
 sudo mv curd /usr/local/bin/
@@ -101,34 +111,86 @@ curd
 <details>
 <summary>Uninstallation</summary>
 
-```
+```bash
 sudo rm /usr/local/bin/curd
 ```
 
 For AUR-based distributions:
 
-```
+```bash
 yay -R curd
 ```
 </details>
 
-## [Windows Installer](https://github.com/Wraient/curd/releases/latest/download/CurdInstaller.exe)
+### [Windows Installer](https://github.com/Wraient/curd/releases/latest/download/CurdInstaller.exe)
 
 
 ## Usage
 
-- For first time, just run the script and go to the link and enter your anilist token. After that you can use the script to watch anime.
+Run `curd` with the following options:
 
-|Description            | Command          |
-------------------------|------------------
-|*Watching new anime*   | `curd -new`      |
-|*Watch dub*            | `curd -dub`      |
-|*Watch sub*            | `curd -sub`      |
-|*Update the script*    | `curd -u`        |
-|*Edit config file*    | `curd -e`        |
-|*Continue last watching anime* |`curd -c`  |
-|*Help*                 | `curd -help`     |
+```bash
+curd [options]
+```
 
+### Options
+
+> **Note**:
+> - To use rofi you need rofi and ueberzug installed.
+> - Rofi .rasi files are at default `~/.local/share/curd/`
+> - You can edit them as you like.
+> - If there are no rasi files with specific names, they would be downloaded from this repo.
+
+| Flag                      | Description                                                             | Default       |
+|---------------------------|-------------------------------------------------------------------------|---------------|
+| `-c`                      | Continue the last episode                                              | -             |
+| `-change-token`           | Change your authentication token                                       | -             |
+| `-dub`                    | Watch the dubbed version of the anime                                  | -             |
+| `-sub`                    | Watch the subbed version of the anime                                  | -             |
+| `-new`                    | Add a new anime to your list                                           | -             |
+| `-e`                      | Edit the configuration file                                            | -             |
+| `-skip-op`                | Automatically skip the opening section of each episode                 | `true`        |
+| `-skip-ed`                | Automatically skip the ending section of each episode                  | `true`        |
+| `-skip-filler`            | Automatically skip filler episodes                                     | `true`        |
+| `-skip-recap`             | Automatically skip recap sections                                      | `true`        |
+| `-discord-presence`       | Enable or disable Discord presence                                     | `true`        |
+| `-image-preview`          | Show an image preview of the anime                                     | -             |
+| `-no-image-preview`       | Disable image preview                                                  | -             |
+| `-next-episode-prompt`    | Prompt for the next episode after completing one                       | -             |
+| `-rofi`                   | Open anime selection in the rofi interface                             | -             |
+| `-no-rofi`                | Disable rofi interface                                                 | -             |
+| `-percentage-to-mark-complete` | Set the percentage watched to mark an episode as complete       | `85`          |
+| `-player`                 | Specify the player to use for playback                                 | `"mpv"`       |
+| `-save-mpv-speed`         | Save the current MPV speed setting for future sessions                 | `true`        |
+| `-score-on-completion`    | Prompt to score the episode on completion                              | `true`        |
+| `-storage-path`           | Path to the storage directory                                          | `"$HOME/.local/share/curd"` |
+| `-subs-lang`              | Set the language for subtitles                                         | `"english"`   |
+| `-u`                      | Update the script                                                      | -             |
+
+### Examples
+
+- **Continue the Last Episode**:
+  ```bash
+  curd -c
+  ```
+
+- **Add a New Anime**:
+  ```bash
+  curd -new
+  ```
+
+- **Play with Rofi and Image Preview**:
+  ```bash
+  curd -rofi -image-preview
+  ```
+
+## Configuration
+
+All configurations are stored in a file you can edit with the `-e` option.
+
+```bash
+curd -e
+```
 
 Script is made in a way that you use it for one session of watching.
 
@@ -139,6 +201,8 @@ config file is located at ```~/.config/curd/curd.conf```
 
 ## Dependencies
 - mpv - Video player (vlc support might be added later)
+- rofi - Selection menu
+- ueberzug - Display images in rofi
     
 ## API Used
 - [Anilist API](https://anilist.gitbook.io/anilist-apiv2-docs) - Update user data and download user data
