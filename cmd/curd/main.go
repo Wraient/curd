@@ -62,6 +62,8 @@ func main() {
 	addNewAnime := flag.Bool("new", false, "Add new anime")
 	rofiSelection := flag.Bool("rofi", false, "Open selection in rofi")
 	noRofi := flag.Bool("no-rofi", false, "No rofi")
+	imagePreview := flag.Bool("image-preview", false, "Show image preview")
+	noImagePreview := flag.Bool("no-image-preview", false, "No image preview")
 	changeToken := flag.Bool("change-token", false, "Change token")
 	updateScript := flag.Bool("u", false, "Update the script")
 	editConfig := flag.Bool("e", false, "Edit config")
@@ -106,6 +108,14 @@ func main() {
 		userCurdConfig.RofiSelection = false
 	}
 
+	if *imagePreview {
+		userCurdConfig.ImagePreview = true
+	}
+
+	if *noImagePreview || runtime.GOOS == "windows" {
+		userCurdConfig.ImagePreview = false
+	}
+
 	if *editConfig {
 		internal.EditConfig(configFilePath)
 		return
@@ -143,7 +153,7 @@ func main() {
 			internal.ExitCurd(err)
 		}
 	}
-	
+
 	// Load animes in database
 	databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
 	databaseAnimes := internal.LocalGetAllAnime(databaseFile)

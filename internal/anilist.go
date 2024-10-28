@@ -511,7 +511,7 @@ func RateAnime(token string, mediaID int) error {
 	}
 
 	if userCurdConfig.RofiSelection {
-		userInput, err := GetUserInputFromRofi("Enter a score for the anime (0-10):")
+		userInput, err := GetUserInputFromRofi("Enter a score for the anime (0-10)")
 		if err != nil {
 			return err
 		}

@@ -27,7 +27,7 @@ func GetTokenFromRofi() (string, error) {
 	}
 
 	// Use rofi again to get the token input from the user
-	token, err := GetUserInputFromRofi("Enter the token:")
+	token, err := GetUserInputFromRofi("Enter the token")
 	if err != nil {
 		return "", err
 	}

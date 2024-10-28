@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	// "strings"
 )
 
@@ -39,6 +41,12 @@ type response struct {
 
 // searchAnime performs the API call and fetches anime information
 func SearchAnime(query, mode string) (map[string]string, error) {
+	userCurdConfig := GetGlobalConfig()
+	if userCurdConfig == nil {
+		logFile = os.ExpandEnv("$HOME/.local/share/curd/debug.log")
+	} else {
+		logFile = filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "debug.log")
+	}
 	const (
 		agent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
 		allanimeRef   = "https://allanime.to"
@@ -71,6 +79,7 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 	}
 	defer resp.Body.Close()
 
+	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		Log(fmt.Sprint("Error reading response body:", err), logFile)

@@ -229,7 +229,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	var anilistUserDataPreview map[string]interface{}
 
 	if userCurdConfig.RofiSelection {
-		userInput, err := GetUserInputFromRofi("Enter the anime name:")
+		userInput, err := GetUserInputFromRofi("Enter the anime name")
 		if err != nil {
 			Log("Error getting user input: "+err.Error(), logFile)
 			ExitCurd(fmt.Errorf("Error getting user input: "+err.Error()))
@@ -307,11 +307,12 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	}
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		anilistUserDataPreview, err = GetUserDataPreview(user.Token, user.Id)
-		Log(anilistUserDataPreview, logFile)
+		if err != nil {
+			Log(fmt.Sprintf("Failed to get user data preview: %v", err), logFile)
+			ExitCurd(fmt.Errorf("Failed to get user data preview"))
+		}
 		user.AnimeList = ParseAnimeList(anilistUserDataPreview)
-		Log(user.AnimeList, logFile)
 		animeListMapPreview = GetAnimeMapPreview(user.AnimeList)
-		Log(animeListMapPreview, logFile)
 	} else {
 		anilistUserData, err = GetUserData(user.Token, user.Id)
 		if err != nil {
@@ -365,7 +366,6 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			anilistSelectedOption = AddNewAnime(userCurdConfig, anime, user, databaseAnimes, logFile)
 		}
 		
-		userQuery = anilistSelectedOption.Label
 		anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
 		if err != nil {
 			Log(fmt.Sprintf("Error converting Anilist ID: %v", err), logFile)
@@ -387,18 +387,21 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
 	anime.Ep.Number = selectedAnilistAnime.Progress+1
 	var animeList map[string]string
+	userQuery = anime.Title.Romaji
 
 	// if anime not found in database, find it in animeList
 	if animePointer == nil {
+		Log("Anime not found in database, searching in animeList...", logFile)
 		// Get Anime list (All anime)
-
+		Log(fmt.Sprintf("Searching for anime with query: %s, SubOrDub: %s", userQuery, userCurdConfig.SubOrDub), logFile)
+		
 		animeList, err = SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
+		Log(fmt.Sprintf("SearchAnime result - animeList: %+v, err: %v", animeList, err), logFile)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to select anime: %v", err), logFile)
 			ExitCurd(fmt.Errorf("Failed to select anime"))
 		}
 		if len(animeList) == 0 {
-			// fmt.Println("No results found.")
 			ExitCurd(fmt.Errorf("No results found."))
 		}
 
@@ -425,6 +428,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.Ep.Player.PlaybackTime = animePointer.Ep.Player.PlaybackTime
 		anime.Ep.Resume = true
 		anime.Ep.Number = animePointer.Ep.Number
+	}
+
+	if selectedAllanimeAnime.Key == "-1" {
+		ExitCurd(nil)
 	}
 
 	// If upstream is ahead, update the episode number
@@ -472,7 +479,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			CurdOut(fmt.Sprintf("Your AniList progress: %d", selectedAnilistAnime.Progress))
 			var episodeNumber int
 			if userCurdConfig.RofiSelection {
-				userInput, err := GetUserInputFromRofi("Enter the episode you want to start from:")
+				userInput, err := GetUserInputFromRofi("Enter the episode you want to start from")
 				if err != nil {
 					Log("Error getting user input: "+err.Error(), logFile)
 					ExitCurd(fmt.Errorf("Error getting user input: "+err.Error()))
@@ -629,3 +636,4 @@ func CheckAndDownloadFiles(storagePath string, filesToCheck []string) error {
 
 	return nil
 }
+
