@@ -90,7 +90,7 @@ func Log(data interface{}, logFile string) error {
 
 	// Log the current time and the JSON representation along with caller info
 	currentTime := time.Now().Format("2006/01/02 15:04:05")
-	logMessage := fmt.Sprintf("[LOG] %s %s %d: %s\n", currentTime, filename, lineNumber, jsonData)
+	logMessage := fmt.Sprintf("[LOG] %s %s:%d: %s\n", currentTime, filename, lineNumber, jsonData)
 	_, err = fmt.Fprint(file, logMessage) // Write to the file
 	if err != nil {
 		return err
@@ -219,8 +219,15 @@ func UpdateCurd(repo, fileName string) error {
     return nil
 }
 
-func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
+func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) SelectionOption {
 	var query string
+	var animeMap map[string]string
+	var animeMapPreview map[string]RofiSelectPreview
+	var err error
+	var anilistSelectedOption SelectionOption
+	var anilistUserData map[string]interface{}
+	var anilistUserDataPreview map[string]interface{}
+
 	if userCurdConfig.RofiSelection {
 		userInput, err := GetUserInputFromRofi("Enter the anime name:")
 		if err != nil {
@@ -232,12 +239,20 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 		CurdOut("Enter the anime name:")
 		fmt.Scanln(&query)
 	}
-	animeMap, err := SearchAnimeAnilist(query, user.Token)
+	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+		animeMapPreview, err = SearchAnimeAnilistPreview(query, user.Token)
+	} else {
+		animeMap, err = SearchAnimeAnilist(query, user.Token)
+	}
 	if err != nil {
 		Log(fmt.Sprintf("Failed to search anime: %v", err), logFile)
 		ExitCurd(fmt.Errorf("Failed to search anime"))
 	}
-	anilistSelectedOption, err := DynamicSelect(animeMap)
+	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+		anilistSelectedOption, err = DynamicSelectPreview(animeMapPreview, false)
+	} else {
+		anilistSelectedOption, err = DynamicSelect(animeMap, false)
+	}
 	if err != nil {
 		Log(fmt.Sprintf("No anime available: %v", err), logFile)
 		ExitCurd(fmt.Errorf("No anime available"))
@@ -259,16 +274,30 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 			ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
 		}
 	}
-	anilistUserData, err := GetUserData(user.Token, user.Id)
+	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+		anilistUserDataPreview, err = GetUserDataPreview(user.Token, user.Id)
+	} else {
+		anilistUserData, err = GetUserData(user.Token, user.Id)
+	}
 	if err != nil {
 		Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
 		ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
 	}
-	user.AnimeList = ParseAnimeList(anilistUserData)
+	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+		user.AnimeList = ParseAnimeList(anilistUserDataPreview)
+	} else {
+		user.AnimeList = ParseAnimeList(anilistUserData)
+	}
+
+	return anilistSelectedOption
 }
 
 func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime, logFile string) {
 	var err error
+	var anilistUserData map[string]interface{}
+	var anilistUserDataPreview map[string]interface{}
+	var animeListMap map[string]string
+	var animeListMapPreview map[string]RofiSelectPreview
 
 	// Get user id, username and Anime list
 	user.Id, user.Username, err = GetAnilistUserID(user.Token)
@@ -276,13 +305,22 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		Log(fmt.Sprintf("Failed to get user ID: %v", err), logFile)
 		ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
 	}
-	anilistUserData, err := GetUserData(user.Token, user.Id)
-	if err != nil {
-		Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
-		ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
+	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+		anilistUserDataPreview, err = GetUserDataPreview(user.Token, user.Id)
+		Log(anilistUserDataPreview, logFile)
+		user.AnimeList = ParseAnimeList(anilistUserDataPreview)
+		Log(user.AnimeList, logFile)
+		animeListMapPreview = GetAnimeMapPreview(user.AnimeList)
+		Log(animeListMapPreview, logFile)
+	} else {
+		anilistUserData, err = GetUserData(user.Token, user.Id)
+		if err != nil {
+			Log(fmt.Sprintf("Failed to get user data: %v", err), logFile)
+			ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
+		}
+		user.AnimeList = ParseAnimeList(anilistUserData)
+		animeListMap = GetAnimeMap(user.AnimeList)
 	}
-	user.AnimeList = ParseAnimeList(anilistUserData)
-	animeListMap := GetAnimeMap(user.AnimeList)
 	var anilistSelectedOption SelectionOption
 	var selectedAllanimeAnime SelectionOption
 	var userQuery string
@@ -307,18 +345,24 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	} else {
 		// Select anime to watch (Anilist)
 		var err error
-		anilistSelectedOption, err = DynamicSelect(animeListMap)
+		if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+			anilistSelectedOption, err = DynamicSelectPreview(animeListMapPreview, true)
+		} else {
+			anilistSelectedOption, err = DynamicSelect(animeListMap, true)
+		}
 		if err != nil {
 			Log(fmt.Sprintf("Error selecting anime: %v", err), logFile)
 			ExitCurd(fmt.Errorf("Error selecting anime"))
 		}
 
+		Log(anilistSelectedOption, logFile)
+
 		if anilistSelectedOption.Key == "-1" {
 			ExitCurd(nil)
 		}
-
-		if anilistSelectedOption.Label == "add_new" {
-			AddNewAnime(userCurdConfig, anime, user, databaseAnimes, logFile)
+		
+		if anilistSelectedOption.Label == "add_new" || anilistSelectedOption.Key == "add_new" {
+			anilistSelectedOption = AddNewAnime(userCurdConfig, anime, user, databaseAnimes, logFile)
 		}
 		
 		userQuery = anilistSelectedOption.Label
@@ -342,11 +386,13 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	anime.Title = selectedAnilistAnime.Media.Title
 	anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
 	anime.Ep.Number = selectedAnilistAnime.Progress+1
+	var animeList map[string]string
 
 	// if anime not found in database, find it in animeList
 	if animePointer == nil {
 		// Get Anime list (All anime)
-		animeList, err := SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
+
+		animeList, err = SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to select anime: %v", err), logFile)
 			ExitCurd(fmt.Errorf("Failed to select anime"))
@@ -361,11 +407,12 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		if err != nil {
 			Log(fmt.Sprintf("Failed to find anime in animeList: %v", err), logFile)
 		}
-			
+
 		// If unable to get Allanime id automatically get manually
 		if anime.AllanimeId == "" {
 			CurdOut("Failed to automatically select anime")
-			selectedAllanimeAnime, err := DynamicSelect(animeList)
+			selectedAllanimeAnime, err := DynamicSelect(animeList, false)
+
 			if err != nil {
 				// fmt.Println("No anime available")
 				ExitCurd(fmt.Errorf("No anime available"))
@@ -541,3 +588,44 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 	return mpvSocketPath
 }
 
+func CheckAndDownloadFiles(storagePath string, filesToCheck []string) error {
+	// Create storage directory if it doesn't exist
+	storagePath = os.ExpandEnv(storagePath)
+	if err := os.MkdirAll(storagePath, 0755); err != nil {
+		return fmt.Errorf("failed to create storage directory: %v", err)
+	}
+
+	// Base URL for downloading config files
+	baseURL := "https://raw.githubusercontent.com/Wraient/curd/refs/heads/main/rofi/"
+
+	// Check each file
+	for _, fileName := range filesToCheck {
+		filePath := filepath.Join(storagePath, fileName)
+
+		// Skip if file already exists
+		if _, err := os.Stat(filePath); err == nil {
+			continue
+		}
+
+		// Download file if it doesn't exist
+		resp, err := http.Get(baseURL + fileName)
+		if err != nil {
+			return fmt.Errorf("failed to download %s: %v", fileName, err)
+		}
+		defer resp.Body.Close()
+
+		// Create the file
+		out, err := os.Create(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to create file %s: %v", fileName, err)
+		}
+		defer out.Close()
+
+		// Write the content
+		if _, err := io.Copy(out, resp.Body); err != nil {
+			return fmt.Errorf("failed to write file %s: %v", fileName, err)
+		}
+	}
+
+	return nil
+}

@@ -99,10 +99,22 @@ func main() {
 	}
 
 	if *rofiSelection {
+		// Define a slice of file names to check and download
+		filesToCheck := []string{
+			"selectanimepreview.rasi",
+			"selectanime.rasi",
+			"userinput.rasi",
+		}
+
+		// Call the function to check and download files
+		if err := internal.CheckAndDownloadFiles(userCurdConfig.StoragePath, filesToCheck); err != nil {
+			internal.CurdOut(fmt.Sprintf("Error checking and downloading files: %v\n", err))
+			internal.ExitCurd(err)
+		}
 		userCurdConfig.RofiSelection = true
 	}
 
-	if *noRofi {
+	if *noRofi || runtime.GOOS == "windows" {
 		userCurdConfig.RofiSelection = false
 	}
 
@@ -133,7 +145,7 @@ func main() {
 
 	if *addNewAnime {
 		internal.AddNewAnime(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
-		internal.ExitCurd(fmt.Errorf("Added new anime!"))
+		// internal.ExitCurd(fmt.Errorf("Added new anime!"))
 	}
 
 	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes, logFile)
