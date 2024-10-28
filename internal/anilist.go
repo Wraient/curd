@@ -49,6 +49,118 @@ func GetAnimeMap(animeList AnimeList) map[string]string {
 	return animeMap
 }
 
+// GetAnimeMap takes an AnimeList and returns a map with media.id as key and media.title.english as value.
+func GetAnimeMapPreview(animeList AnimeList) map[string]RofiSelectPreview {
+	animeMap := make(map[string]RofiSelectPreview)
+
+	// Helper function to populate the map from a slice of entries
+	populateMap := func(entries []Entry) {
+		for _, entry := range entries {
+			// Only include entries with a non-empty English title
+			if entry.Media.Title.English != "" {
+				animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+					Title: entry.Media.Title.English,
+					CoverImage: entry.CoverImage,
+				}
+			} else {
+				animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+					Title: entry.Media.Title.Romaji,
+					CoverImage: entry.CoverImage,
+				}
+			}
+		}
+	}
+
+	// Populate the map for each category
+	populateMap(animeList.Watching)
+	populateMap(animeList.Completed)
+	populateMap(animeList.Paused)
+	populateMap(animeList.Dropped)
+	populateMap(animeList.Planning)
+
+	return animeMap
+}
+
+// SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
+func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPreview, error) {
+	url := "https://graphql.anilist.co"
+
+	queryString := `
+	query ($search: String) {
+		Page(page: 1, perPage: 10) {
+			media(search: $search, type: ANIME) {
+				id
+				title {
+					romaji
+					english
+					native
+				}
+				coverImage {
+					large
+				}
+			}
+		}
+	}`
+
+	variables := map[string]string{"search": query}
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"query":     queryString,
+		"variables": variables,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to search for anime. Status Code: %d, Response: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var responseData map[string]ResponseData
+	err = json.Unmarshal(body, &responseData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	animeList := responseData["data"].Page.Media
+	animeDict := make(map[string]RofiSelectPreview)
+
+	// Map titles and cover images to their IDs
+	for _, anime := range animeList {
+		idStr := strconv.Itoa(anime.ID)
+		title := anime.Title.English
+		if title == "" {
+			title = anime.Title.Romaji
+		}
+		animeDict[idStr] = RofiSelectPreview{
+			Title:      title,
+			CoverImage: anime.CoverImage.Large,
+		}
+	}
+
+	return animeDict, nil
+}
+
 // SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
 func SearchAnimeAnilist(query, token string) (map[string]string, error) {
 	url := "https://graphql.anilist.co"
@@ -271,6 +383,46 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 	return response, nil
 }
 
+func GetUserDataPreview(token string, userID int) (map[string]interface{}, error) {
+	query := fmt.Sprintf(`
+	{
+		MediaListCollection(userId: %d, type: ANIME) {
+			lists {
+				entries {
+					media {
+						id
+						episodes
+						duration
+						coverImage {
+							large
+						}
+						title {
+							romaji
+							english
+							native
+						}
+					}
+					status
+					score
+					progress
+				}
+			}
+		}
+	}`, userID)
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+
+	response, err := makePostRequest("https://graphql.anilist.co", query, nil, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
+}
+
 // Function to load a JSON file
 func LoadJSONFile(filePath string) (map[string]interface{}, error) {
 	data, err := os.ReadFile(filepath.Clean(filePath))
@@ -449,6 +601,7 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 
 func ParseAnimeList(input map[string]interface{}) AnimeList {
 	var animeList AnimeList
+	userCurdConfig := GetGlobalConfig()
 
 	toInt := func(value interface{}) int {
 		switch v := value.(type) {
@@ -491,7 +644,6 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 		for _, entry := range entries {
 			entryData := entry.(map[string]interface{})
 			media := entryData["media"].(map[string]interface{})
-
 			animeEntry := Entry{
 				Media: Media{
 					Duration: toInt(media["duration"]),
@@ -506,6 +658,10 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 				Progress: toInt(entryData["progress"]),
 				Score:    entryData["score"].(float64),
 				Status:   safeString(entryData["status"]), // Ensure status is fetched safely
+			}
+
+			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+				animeEntry.CoverImage = safeString(media["coverImage"].(map[string]interface{})["large"])
 			}
 
 			// Append entries based on their status

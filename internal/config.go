@@ -21,6 +21,7 @@ type CurdConfig struct {
 	SkipOp                  bool   `config:"SkipOp"`
 	SkipEd                  bool   `config:"SkipEd"`
 	SkipFiller              bool   `config:"SkipFiller"`
+	ImagePreview			bool   `config:"ImagePreview"`
 	SkipRecap               bool   `config:"SkipRecap"`
 	RofiSelection           bool   `config:"RofiSelection"`
 	ScoreOnCompletion       bool   `config:"ScoreOnCompletion"`
@@ -42,6 +43,7 @@ func defaultConfigMap() map[string]string {
 		"SkipFiller":              "true",
 		"SkipRecap":               "true",
 		"RofiSelection":           "false",
+		"ImagePreview":            "false",
 		"ScoreOnCompletion":       "true",
 		"SaveMpvSpeed":            "true",
 		"DiscordPresence":         "true",

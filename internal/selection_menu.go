@@ -3,11 +3,16 @@ package internal
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
-
-	tea "github.com/charmbracelet/bubbletea"
+	"time"
+	"github.com/charmbracelet/bubbletea"
+	"crypto/md5"
+	"path/filepath"
 )
 
 // SelectionOption holds the label and the internal key
@@ -170,7 +175,164 @@ func (m *Model) filterOptions() {
 	})
 }
 
-func RofiSelect(options map[string]string) (SelectionOption, error) {
+
+func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption bool) (SelectionOption, error) {
+	// Pre-download first 14 images in background
+	go preDownloadImages(options, 14)
+
+	userCurdConfig := GetGlobalConfig()
+	if userCurdConfig.StoragePath == "" {
+		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
+	}
+
+	// Prepare Rofi input with anime titles and their cached image paths
+	var rofiInput strings.Builder
+	for _, option := range options {
+		// Download and get cache path for the image
+		cachePath, err := downloadToCache(option.CoverImage)
+		if err != nil {
+			Log(fmt.Sprintf("Error caching image: %v", err), logFile)
+			continue
+		}
+		
+		// Format: "Title\x00icon\x1f/path/to/cached/image\n"
+		// This tells Rofi to use the image as an icon for this entry
+		rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", option.Title, cachePath))
+	}
+
+	// Add "Add new anime" and "Quit" options
+	if addnewoption {
+		rofiInput.WriteString("Add new anime\n")
+	}
+	rofiInput.WriteString("Quit\n")
+
+	// Get the absolute path to the rasi config
+	configPath := filepath.Join(userCurdConfig.StoragePath, "selectanimepreview.rasi")
+	
+	// Create the command with explicit arguments
+	args := []string{
+		"-dmenu",
+		"-theme", configPath,
+		"-show-icons",
+		"-p", "Select Anime",
+		"-i",  // Case-insensitive matching
+		"-no-custom",  // Disable custom input
+	}
+	
+	// Create the command
+	rofiCmd := exec.Command("rofi", args...)
+
+	// Set up pipes for input/output
+	rofiCmd.Stdin = strings.NewReader(rofiInput.String())
+	var stdout, stderr bytes.Buffer
+	rofiCmd.Stdout = &stdout
+	rofiCmd.Stderr = &stderr
+	
+	// Run the command
+	err := rofiCmd.Run()
+	if err != nil {
+		// Log both stdout and stderr for debugging
+		Log(fmt.Sprintf("Rofi stderr: %s", stderr.String()), logFile)
+		Log(fmt.Sprintf("Rofi stdout: %s", stdout.String()), logFile)
+		return SelectionOption{}, fmt.Errorf("failed to execute rofi: %w", err)
+	}
+	
+	selectedTitle := strings.TrimSpace(stdout.String())
+
+	// Handle special cases
+	switch selectedTitle {
+	case "":
+		return SelectionOption{}, fmt.Errorf("no selection made")
+	case "Add new anime":
+		return SelectionOption{Label: "Add new anime", Key: "add_new"}, nil
+	case "Quit":
+		return SelectionOption{Label: "Quit", Key: "-1"}, nil
+	}
+
+	// Find the selected anime in options
+	for id, option := range options {
+		if option.Title == selectedTitle {
+			return SelectionOption{
+				Label: option.Title,
+				Key:   id,
+			}, nil
+		}
+	}
+
+	return SelectionOption{}, fmt.Errorf("selection not found in options")
+}
+
+func preDownloadImages(options map[string]RofiSelectPreview, count int) {
+	i := 0
+	for _, option := range options {
+		if i >= count {
+			break
+		}
+		downloadToCache(option.CoverImage)
+		i++
+	}
+}
+
+func downloadToCache(imageURL string) (string, error) {
+	cacheDir := os.ExpandEnv("${HOME}/.cache/curd/images")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	// Create a hash of the URL to use as filename
+	filename := fmt.Sprintf("%x.jpg", md5.Sum([]byte(imageURL)))
+	cachePath := filepath.Join(cacheDir, filename)
+
+	// Check if file already exists in cache
+	if _, err := os.Stat(cachePath); err == nil {
+		return cachePath, nil
+	}
+
+	// Download the image
+	resp, err := http.Get(imageURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	file, err := os.Create(cachePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		os.Remove(cachePath) // Clean up on error
+		return "", err
+	}
+
+	return cachePath, nil
+}
+
+func showCachedImagePreview(imageURL string) error {
+	cachePath, err := downloadToCache(imageURL)
+	if err != nil {
+		return err
+	}
+
+	// Display the image with ueberzug
+	cmd := exec.Command("ueberzug", "layer", "--silent", "add", "preview", "--path", cachePath)
+	err = cmd.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start image preview: %w", err)
+	}
+	time.Sleep(2 * time.Second) // Allow image to load for a moment
+	return nil
+}
+
+
+func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, error) {
+	userCurdConfig := GetGlobalConfig()
+	if userCurdConfig.StoragePath == "" {
+		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
+	}
+
 	// Create a slice to store the options in the order we want
 	var optionsList []string
 	for _, value := range options {
@@ -181,13 +343,17 @@ func RofiSelect(options map[string]string) (SelectionOption, error) {
 	sort.Strings(optionsList)
 	
 	// Add "Add new anime" and "Quit" options
-	optionsList = append(optionsList, "Add new anime", "Quit")
+	if addanimeopt {
+		optionsList = append(optionsList, "Add new anime", "Quit")
+	} else {
+		optionsList = append(optionsList, "Quit")
+	}
 	
 	// Join all options into a single string, separated by newlines
 	optionsString := strings.Join(optionsList, "\n")
 	
 	// Prepare the Rofi command
-	cmd := exec.Command("rofi", "-dmenu", "-i", "-p", "Select an anime")
+	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(userCurdConfig.StoragePath, "selectanime.rasi"), "-i", "-p", "Select an anime")
 	
 	// Set up pipes for input and output
 	cmd.Stdin = strings.NewReader(optionsString)
@@ -225,10 +391,10 @@ func RofiSelect(options map[string]string) (SelectionOption, error) {
 }
 
 // DynamicSelect displays a simple selection prompt without extra features
-func DynamicSelect(options map[string]string) (SelectionOption, error) {
+func DynamicSelect(options map[string]string, addnewoption bool) (SelectionOption, error) {
 
 	if GetGlobalConfig().RofiSelection {
-		return RofiSelect(options)
+		return RofiSelect(options, addnewoption)
 	}
 
 	model := &Model{

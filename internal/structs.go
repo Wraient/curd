@@ -66,6 +66,9 @@ type AniListAnime struct {
 		English string `json:"english"`
 		Native  string `json:"native"`
 	} `json:"title"`
+	CoverImage struct {
+		Large string `json:"large"`
+	} `json:"coverImage"`
 }
 
 // Page represents the page in AniList response
@@ -90,6 +93,7 @@ type Entry struct {
 	Progress int   `json:"progress"`
 	Score    float64 `json:"score"`
 	Status   string `json:"status"`
+	CoverImage string `json:"coverImage"`
 }
 
 type AnimeList struct {
@@ -98,4 +102,9 @@ type AnimeList struct {
 	Paused		[]Entry `json:"paused"`
 	Dropped 	[]Entry `json:"dropped"`
 	Planning 	[]Entry `json:"planning"`
+}
+
+type RofiSelectPreview struct {
+	Title string `json:"title"`
+	CoverImage  string `json:"coverImage"`
 }
