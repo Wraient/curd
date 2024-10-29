@@ -500,6 +500,43 @@ func UpdateAnimeProgress(token string, mediaID, progress int) error {
 	return nil
 }
 
+func UpdateAnimeStatus(token string, mediaID int, status string) error {
+	url := "https://graphql.anilist.co"
+	query := `
+	mutation($mediaId: Int, $status: MediaListStatus) {
+		SaveMediaListEntry(mediaId: $mediaId, status: $status) {
+			id
+			status
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"mediaId": mediaID,
+		"status":  status,
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+
+	_, err := makePostRequest(url, query, variables, headers)
+	if err != nil {
+		return fmt.Errorf("failed to update anime status: %w", err)
+	}
+
+	statusMap := map[string]string{
+		"CURRENT":   "Currently Watching",
+		"COMPLETED": "Completed",
+		"PAUSED":    "On Hold",
+		"DROPPED":   "Dropped",
+		"PLANNING":  "Plan to Watch",
+	}
+
+	CurdOut(fmt.Sprintf("Anime status updated to: %s", statusMap[status]))
+	return nil
+}
+
 // Function to rate an anime on AniList
 func RateAnime(token string, mediaID int) error {
 	var score float64
