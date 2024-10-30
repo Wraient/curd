@@ -4,6 +4,10 @@
 A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC written in golang.
 Works on Windows and Linux
 
+## Join the discord server
+
+https://discord.gg/cNaNVEE3B6
+
 ## Demo Video
 Normal mode:
 
