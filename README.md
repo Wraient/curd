@@ -4,6 +4,10 @@
 A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC written in golang.
 Works on Windows and Linux
 
+## Join the discord server
+
+https://discord.gg/cNaNVEE3B6
+
 ## Demo Video
 Normal mode:
 
@@ -28,22 +32,23 @@ https://github.com/user-attachments/assets/cbf799bc-9fdd-4402-ab61-b4e31f1e264d
 - Save mpv speed for next episode
 - Configurable through config file
 
+
 ## Installing and Setup
-> **Note**: `Curd` requires `mpv`, `rofi`, and `ueberzug` for Image preview and Rofi support. These are included in the installation instructions below for each distribution.
+> **Note**: `Curd` requires `mpv`, `rofi`, and `ueberzugpp` for Rofi support and image preview. These are included in the installation instructions below for each distribution.
 
 ### Linux
 <details>
 <summary>Arch Linux / Manjaro (AUR-based systems)</summary>
 
-Using Yay
+Using Yay:
 
-```
+```bash
 yay -Sy curd
 ```
 
 or using Paru:
 
-```
+```bash
 paru -Sy curd
 ```
 
@@ -53,16 +58,16 @@ Or, to manually clone and install:
 git clone https://aur.archlinux.org/curd.git
 cd curd
 makepkg -si
-sudo pacman -S rofi ueberzug
+sudo pacman -S rofi ueberzugpp
 ```
 </details>
 
 <details>
-<summary> Debian / Ubuntu (and derivatives) </summary>
+<summary>Debian / Ubuntu (and derivatives)</summary>
 
 ```bash
 sudo apt update
-sudo apt install mpv curl rofi ueberzug
+sudo apt install mpv curl rofi ueberzugpp
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
 sudo mv curd /usr/local/bin/
@@ -75,7 +80,7 @@ curd
 
 ```bash
 sudo dnf update
-sudo dnf install mpv curl rofi ueberzug
+sudo dnf install mpv curl rofi ueberzugpp
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
 sudo mv curd /usr/local/bin/
@@ -88,7 +93,7 @@ curd
 
 ```bash
 sudo zypper refresh
-sudo zypper install mpv curl rofi ueberzug
+sudo zypper install mpv curl rofi ueberzugpp
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
 sudo mv curd /usr/local/bin/
@@ -100,7 +105,7 @@ curd
 <summary>Generic Installation</summary>
 
 ```bash
-# Install mpv, curl, rofi, and ueberzug (required for Image preview)
+# Install mpv, curl, rofi, and ueberzugpp (required for image preview)
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
 sudo mv curd /usr/local/bin/
@@ -123,7 +128,6 @@ yay -R curd
 </details>
 
 ### [Windows Installer](https://github.com/Wraient/curd/releases/latest/download/CurdInstaller.exe)
-
 
 ## Usage
 
