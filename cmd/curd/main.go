@@ -209,7 +209,7 @@ func main() {
 		}
 
 		// Start curd
-		if !anime.Ep.IsFiller {
+		if !((anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap)) {
 			// fmt.Println("Not a filler episode, Starting: ", anime.Ep.Number)
 			anime.Ep.Player.SocketPath = internal.StartCurd(&userCurdConfig, &anime, logFile)
 
@@ -230,7 +230,7 @@ func main() {
 				internal.Log(anime, logFile)
 
 				// if filler episode or recap episode and skip is enabled
-				if (userCurdConfig.SkipFiller || userCurdConfig.SkipRecap) && (anime.Ep.IsFiller || anime.Ep.IsRecap) {
+				if (anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap) {
 					if anime.Ep.IsFiller && userCurdConfig.SkipFiller {
 						internal.CurdOut(fmt.Sprint("Filler Episode, starting next episode: ", anime.Ep.Number+1))
 						internal.Log("Filler episode detected", logFile)

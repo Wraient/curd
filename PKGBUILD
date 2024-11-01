@@ -6,7 +6,7 @@ pkgdesc="Watch anime in CLI with AniList Tracking, Discord RPC, Intro/Outro/Fill
 arch=("x86_64")
 url="https://github.com/Wraient/curd"
 license=('GPL')
-depends=('mpv' 'rofi' 'ueberzug')
+depends=('mpv' 'rofi' 'ueberzugpp')
 source=("curd::https://github.com/Wraient/curd/releases/download/${pkgver}/curd")
 sha256sums=('SKIP')
 

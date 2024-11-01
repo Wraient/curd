@@ -318,8 +318,8 @@ func showCachedImagePreview(imageURL string) error {
 		return err
 	}
 
-	// Display the image with ueberzug
-	cmd := exec.Command("ueberzug", "layer", "--silent", "add", "preview", "--path", cachePath)
+	// Display the image with ueberzugpp
+	cmd := exec.Command("ueberzugpp", "layer", "--silent", "add", "preview", "--path", cachePath)
 	err = cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start image preview: %w", err)
