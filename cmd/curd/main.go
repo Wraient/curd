@@ -197,7 +197,7 @@ func main() {
 			if err != nil {
 				internal.Log("Error getting anime ID and image: "+err.Error(), logFile)
 			}
-			err = internal.DiscordPresence(discordClientId, anime)
+			err = internal.DiscordPresence(discordClientId, anime, false)
 			if err != nil {
 				internal.Log("Error setting Discord presence: "+err.Error(), logFile)
 			}
@@ -264,7 +264,16 @@ func main() {
 					case <-skipLoopDone:
 						return
 					default:
-						err = internal.DiscordPresence(discordClientId, anime)
+						isPaused, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "pause"})
+						if err != nil {
+							internal.Log("Error getting pause status: "+err.Error(), logFile)
+						}
+						if isPaused == nil {
+							isPaused = true
+						} else {
+							isPaused = isPaused.(bool)
+						}
+						err = internal.DiscordPresence(discordClientId, anime, isPaused.(bool))
 						if err != nil {
 							// internal.Log("Error setting Discord presence: "+err.Error(), logFile)
 						}

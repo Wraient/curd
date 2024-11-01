@@ -5,22 +5,32 @@ import (
 	"github.com/hugolgst/rich-go/client"
 )
 
-func DiscordPresence(clientId string, anime Anime) error {
+func DiscordPresence(clientId string, anime Anime, IsPaused bool) error {
 	err := client.Login(clientId)
 	if err != nil {
 		return err
 	}
-
-	err = client.SetActivity(client.Activity{
-		Details:    fmt.Sprintf("%s", GetAnimeName(anime)), // Large text
-		LargeImage: anime.CoverImage,
-		LargeText:  GetAnimeName(anime), // Would display while hovering over the large image
-		State:      fmt.Sprintf("\nEpisode %d - %d:%02d / %d:%02d", 
+	var state string
+	if IsPaused {
+		state = fmt.Sprintf("\nEpisode %d - %d:%02d (Paused)", 
+			anime.Ep.Number, 
+			ConvertSecondsToMinutes(anime.Ep.Player.PlaybackTime), 
+			anime.Ep.Player.PlaybackTime % 60,
+		)
+	} else {
+		state = fmt.Sprintf("\nEpisode %d - %d:%02d / %d:%02d", 
 			anime.Ep.Number, 
 			ConvertSecondsToMinutes(anime.Ep.Player.PlaybackTime), 
 			anime.Ep.Player.PlaybackTime % 60,
 			ConvertSecondsToMinutes(anime.Ep.Duration),
-			anime.Ep.Duration % 60),
+			anime.Ep.Duration % 60,
+		)
+	}
+	err = client.SetActivity(client.Activity{
+		Details:    fmt.Sprintf("%s", GetAnimeName(anime)), // Large text
+		LargeImage: anime.CoverImage,
+		LargeText:  GetAnimeName(anime), // Would display while hovering over the large image
+		State:      state,
 		// SmallImage: anime.CoverImage, // Image would appear in the bottom left corner
 		// SmallText:  fmt.Sprintf("%s", anime.Ep.Title.English), // Would display while hovering over the small image
 		Buttons: []*client.Button{
