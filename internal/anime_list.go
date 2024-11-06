@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"net/url"
 	// "strings"
 )
 
@@ -39,9 +40,9 @@ type response struct {
 // 	fmt.Println(animeList)
 // }
 
-// searchAnime performs the API call and fetches anime information
 func SearchAnime(query, mode string) (map[string]string, error) {
 	userCurdConfig := GetGlobalConfig()
+	var logFile string
 	if userCurdConfig == nil {
 		logFile = os.ExpandEnv("$HOME/.local/share/curd/debug.log")
 	} else {
@@ -54,18 +55,47 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 		allanimeAPI   = "https://api." + allanimeBase + "/api"
 	)
 
-	// Format and return the anime list
+	// Prepare the anime list
 	animeList := make(map[string]string)
 	
-	searchGql := `query( $search: SearchInput $limit: Int $page: Int $translationType: VaildTranslationTypeEnumType $countryOrigin: VaildCountryOriginEnumType ) { shows( search: $search limit: $limit page: $page translationType: $translationType countryOrigin: $countryOrigin ) { edges { _id name availableEpisodes __typename } } }`
+	searchGql := `query($search: SearchInput, $limit: Int, $page: Int, $translationType: VaildTranslationTypeEnumType, $countryOrigin: VaildCountryOriginEnumType) {
+		shows(search: $search, limit: $limit, page: $page, translationType: $translationType, countryOrigin: $countryOrigin) {
+			edges {
+				_id
+				name
+				availableEpisodes
+				__typename
+			}
+		}
+	}`
+
+	// Prepare the GraphQL variables
+	variables := map[string]interface{}{
+		"search": map[string]interface{}{
+			"allowAdult":    false,
+			"allowUnknown":  false,
+			"query":         query,
+		},
+		"limit":          40,
+		"page":           1,
+		"translationType": mode,
+		"countryOrigin":   "ALL",
+	}
+
+	// Marshal the variables to JSON
+	variablesJSON, err := json.Marshal(variables)
+	if err != nil {
+		Log(fmt.Sprintf("Error encoding variables to JSON: %v", err), logFile)
+		return animeList, err
+	}
 
 	// Build the request URL
-	url := fmt.Sprintf("%s?variables={\"search\":{\"allowAdult\":false,\"allowUnknown\":false,\"query\":\"%s\"},\"limit\":40,\"page\":1,\"translationType\":\"%s\",\"countryOrigin\":\"ALL\"}&query=%s", allanimeAPI, query, mode, searchGql)
+	url := fmt.Sprintf("%s?variables=%s&query=%s", allanimeAPI, url.QueryEscape(string(variablesJSON)), url.QueryEscape(searchGql))
 
 	// Make the HTTP request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		Log(fmt.Sprint("Error creating HTTP request:", err), logFile)
+		Log(fmt.Sprintf("Error creating HTTP request: %v", err), logFile)
 		return animeList, err
 	}
 	req.Header.Set("User-Agent", agent)
@@ -74,7 +104,7 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		Log(fmt.Sprint("Error making HTTP request:", err), logFile)
+		Log(fmt.Sprintf("Error making HTTP request: %v", err), logFile)
 		return animeList, err
 	}
 	defer resp.Body.Close()
@@ -82,11 +112,11 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Log(fmt.Sprint("Error reading response body:", err), logFile)
+		Log(fmt.Sprintf("Error reading response body: %v", err), logFile)
 		return animeList, err
 	}
 
-	// Debug: Log the response status and first part of body
+	// Debug: Log the response status and first part of the body
 	Log(fmt.Sprintf("Response Status: %s", resp.Status), logFile)
 	Log(fmt.Sprintf("Response Body (first 500 chars): %s", string(body[:min(len(body), 500)])), logFile)
 
@@ -99,17 +129,8 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 	}
 
 	for _, anime := range response.Data.Shows.Edges {
-		// availableEpisodes, _ := anime.AvailableEpisodes.Int64() // Converts json.Number to int64
-
 		var episodesStr string
-
-		// Log(anime.AvailableEpisodes, logFile)
-		// episodesStr = anime.AvailableEpisodes.sub
-
-		//anime = {"dub":0,"raw":0,"sub":4}
-
 		if episodes, ok := anime.AvailableEpisodes.(map[string]interface{}); ok {
-			// Log(episodes, logFile)
 			if subEpisodes, ok := episodes["sub"].(float64); ok {
 				episodesStr = fmt.Sprintf("%d", int(subEpisodes))
 			} else {
@@ -117,9 +138,7 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 				episodesStr = "Unknown"
 			}
 		}
-
 		animeList[anime.ID] = fmt.Sprintf("%s (%s episodes)", anime.Name, episodesStr)
-		// animeList.WriteString(fmt.Sprintf("%s\t%s (%s episodes)\n", anime.ID, anime.Name, episodesStr))
 	}
 	return animeList, nil
 }
