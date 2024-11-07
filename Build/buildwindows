@@ -1,3 +1,1 @@
-outputDir="Build"
-mkdir -p "$outputDir"
-GOOS=windows GOARCH=amd64 go build -o "$outputDir/curd.exe" -ldflags "-s -w" ./cmd/curd/main.go
+GOOS=windows GOARCH=amd64 go build -o curd.exe -ldflags "-s -w" ./cmd/curd/main.go

@@ -497,6 +497,11 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	} else {
 		anilistSelectedOption, err = DynamicSelect(animeMap, false)
 	}
+
+	if anilistSelectedOption.Key == "-1" {
+		ExitCurd(nil)
+	}
+
 	if err != nil {
 		Log(fmt.Sprintf("No anime available: %v", err), logFile)
 		ExitCurd(fmt.Errorf("No anime available"))
@@ -726,6 +731,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
         if anime.AllanimeId == "" {
             CurdOut("Failed to automatically select anime")
             selectedAllanimeAnime, err := DynamicSelect(animeList, false)
+
+			if selectedAllanimeAnime.Key == "-1" {
+				ExitCurd(nil)
+			}
 
             if err != nil {
                 // fmt.Println("No anime available")
