@@ -3,8 +3,8 @@ module github.com/wraient/curd
 go 1.23.2
 
 require (
-	github.com/Microsoft/go-winio v0.6.2
 	github.com/charmbracelet/bubbletea v1.1.1
+	github.com/coder/websocket v1.8.12
 	github.com/gen2brain/beeep v0.0.0-20240516210008-9c006672e7f4
 	github.com/hugolgst/rich-go v0.0.0-20240715122152-74618cc1ace2
 )

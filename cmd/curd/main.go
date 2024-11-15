@@ -3,12 +3,17 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strconv"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
+
 	"github.com/wraient/curd/internal"
 )
 
@@ -70,6 +75,8 @@ func main() {
 	editConfig := flag.Bool("e", false, "Edit config")
 	subFlag := flag.Bool("sub", false, "Watch sub version")
 	dubFlag := flag.Bool("dub", false, "Watch dub version")
+	daemonFlag := flag.Bool("d", false, "Run as daemon for anilist notifications")
+	closeDaemonFlag := flag.Bool("close-daemon", false, "Close the running daemon")
 
 	// Custom help/usage function
 	flag.Usage = func() {
@@ -99,6 +106,77 @@ func main() {
 	if *changeToken {
 		internal.ChangeToken(&userCurdConfig, &user)
 		return
+	}
+
+	// Add this after flag.Parse() around line 86
+	if *closeDaemonFlag {
+		pidFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd-daemon.pid")
+		
+		// Read PID from file
+		pidBytes, err := os.ReadFile(pidFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				internal.CurdOut("No daemon is running")
+				internal.ExitCurd(nil)
+			}
+			log.Fatalf("Error reading PID file: %v", err)
+		}
+		
+		// Parse PID
+		pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+		if err != nil {
+			log.Fatalf("Error parsing PID: %v", err)
+		}
+		
+		// Find process
+		process, err := os.FindProcess(pid)
+		if err != nil {
+			log.Fatalf("Error finding process: %v", err)
+		}
+		
+		// Send SIGTERM signal
+		if err := process.Signal(syscall.SIGTERM); err != nil {
+			log.Fatalf("Error terminating daemon: %v", err)
+		}
+		
+		// Remove PID file
+		if err := os.Remove(pidFile); err != nil {
+			log.Printf("Warning: Failed to remove PID file: %v", err)
+		}
+		
+		internal.CurdOut("Daemon stopped successfully")
+		internal.ExitCurd(nil)
+	}
+
+	if *daemonFlag {
+		// Check if daemon is already running
+		pidFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd-daemon.pid")
+		if _, err := os.Stat(pidFile); err == nil {
+			internal.CurdOut("Daemon is already running")
+			internal.ExitCurd(nil)
+		}
+
+		// Fork the process
+		if os.Getenv("CURD_DAEMON") != "1" {
+			cmd := exec.Command(os.Args[0], "-d")
+			cmd.Env = append(os.Environ(), "CURD_DAEMON=1")
+			cmd.Start()
+			
+			internal.CurdOut("Daemon started in background")
+			internal.ExitCurd(nil)
+		}
+
+		// Write PID file
+		pid := os.Getpid()
+		if err := os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644); err != nil {
+			log.Fatalf("Failed to write PID file: %v", err)
+		}
+		defer os.Remove(pidFile)
+
+		// Start daemon
+		if err := internal.StartDaemon(user.Token); err != nil {
+			log.Fatalf("Daemon error: %v", err)
+		}
 	}
 
 	if *currentCategory {

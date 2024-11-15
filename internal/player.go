@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-    "github.com/Microsoft/go-winio"
+    // "github.com/Microsoft/go-winio"
 )
 var logFile = "debug.log"
 
@@ -77,25 +77,13 @@ func StartVideo(link string, args []string) (string, error) {
     return mpvSocketPath, nil
 }
 
-// Helper function to join args with a space
-func joinArgs(args []string) string {
-    result := ""
-    for i, arg := range args {
-        if i > 0 {
-            result += " "
-        }
-        result += arg
-    }
-    return result
-}
-
 func MPVSendCommand(ipcSocketPath string, command []interface{}) (interface{}, error) {
     var conn net.Conn
     var err error
 
     if runtime.GOOS == "windows" {
         // Use named pipe for Windows
-        conn, err = winio.DialPipe(ipcSocketPath, nil)
+        // conn, err = winio.DialPipe(ipcSocketPath, nil)
     } else {
         conn, err = net.Dial("unix", ipcSocketPath)
     }

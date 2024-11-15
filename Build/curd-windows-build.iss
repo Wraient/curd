@@ -1,6 +1,6 @@
 [Setup]
 AppName=Curd Installer
-AppVersion=0.0.10
+AppVersion=1.0.1
 DefaultDirName={pf}\Curd
 DefaultGroupName=Curd
 AllowNoIcons=yes
@@ -15,7 +15,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; Copy the Curd executable to the install directory
-Source: "Z:releases/curd-0.0.10/windows/curd.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Z:releases/curd-1.0.1/windows/curd.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Z:/home/wraient/Projects/curd/Build/mpv.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 [Icons]
