@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // Function to add an anime entry
@@ -244,4 +245,170 @@ func LocalFindAnime(animeList []Anime, anilistID int, allanimeID string) *Anime 
 		}
 	}
 	return nil
+}
+
+func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
+	var query string
+	var animeList map[string]string
+	var err error
+	var anime Anime
+
+	// Get anime name from user
+	if userCurdConfig.RofiSelection {
+		userInput, err := GetUserInputFromRofi("Enter the anime name")
+		if err != nil {
+			Log("Error getting user input: "+err.Error(), logFile)
+			ExitCurd(fmt.Errorf("Error getting user input: "+err.Error()))
+		}
+		query = userInput
+	} else {
+		CurdOut("Enter the anime name:")
+		fmt.Scanln(&query)
+	}
+
+	// Search for the anime
+	animeList, err = SearchAnime(query, userCurdConfig.SubOrDub)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to search anime: %v", err), logFile)
+		ExitCurd(fmt.Errorf("Failed to search anime"))
+	}
+
+	if len(animeList) == 0 {
+		ExitCurd(fmt.Errorf("No results found."))
+	}
+
+	// Select anime from search results
+	selectedAnime, err := DynamicSelect(animeList, false)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to select anime: %v", err), logFile)
+		ExitCurd(fmt.Errorf("Failed to select anime"))
+	}
+
+	if selectedAnime.Key == "-1" {
+		ExitCurd(nil)
+	}
+
+	anime.AllanimeId = selectedAnime.Key
+	anime.Title.English = selectedAnime.Label
+
+	// Get episode number
+	var episodeNumber int
+	if userCurdConfig.RofiSelection {
+		userInput, err := GetUserInputFromRofi("Enter the episode number")
+		if err != nil {
+			Log("Error getting episode number: "+err.Error(), logFile)
+			ExitCurd(fmt.Errorf("Error getting episode number: "+err.Error()))
+		}
+		episodeNumber, err = strconv.Atoi(userInput)
+		if err != nil {
+			Log(fmt.Sprintf("Invalid episode number: %v", err), logFile)
+			ExitCurd(fmt.Errorf("Invalid episode number"))
+		}
+	} else {
+		CurdOut("Enter the episode number:")
+		fmt.Scanln(&episodeNumber)
+	}
+
+	anime.Ep.Number = episodeNumber
+	
+	for {
+		// Get episode link
+		link, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+		if err != nil {
+			Log(fmt.Sprintf("Failed to get episode link: %v", err), logFile)
+			ExitCurd(fmt.Errorf("Failed to get episode link"))
+		}
+
+		if len(link) == 0 {
+			ExitCurd(fmt.Errorf("No episode links found"))
+		}
+
+		CurdOut(fmt.Sprintf("%s - Episode %d", GetAnimeName(anime), anime.Ep.Number))
+
+		// Start video playback
+		mpvSocketPath, err := StartVideo(PrioritizeLink(link), []string{})
+		if err != nil {
+			Log("Failed to start mpv", logFile)
+			os.Exit(1)
+		}
+
+		anime.Ep.Player.SocketPath = mpvSocketPath
+		anime.Ep.Started = false
+		
+		Log(fmt.Sprintf("Started mpvsocketpath ", anime.Ep.Player.SocketPath), logFile)
+
+		// Get video duration
+		go func() {
+			for {
+				if anime.Ep.Started {
+					if anime.Ep.Duration == 0 {
+						// Get video duration
+						durationPos, err := MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "duration"})
+						if err != nil {
+							Log("Error getting video duration: "+err.Error(), logFile)
+						} else if durationPos != nil {
+							if duration, ok := durationPos.(float64); ok {
+								anime.Ep.Duration = int(duration + 0.5) // Round to nearest integer
+								Log(fmt.Sprintf("Video duration: %d seconds", anime.Ep.Duration), logFile)
+							} else {
+								Log("Error: duration is not a float64", logFile)
+							}
+						}
+						break
+					}
+				}
+				time.Sleep(1 * time.Second)
+			}
+		}()
+
+		// Listen for video started
+		for {
+			timePos, err := MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
+			if err != nil {
+				Log("Error getting playback time: "+err.Error(), logFile)
+
+				// Check if the error is due to invalid JSON
+				// User closed the video
+				if anime.Ep.Started {
+					percentageWatched := PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
+					// Episode is completed
+					Log(fmt.Sprint(percentageWatched), logFile)
+					Log(fmt.Sprint(anime.Ep.Player.PlaybackTime), logFile)
+					Log(fmt.Sprint(anime.Ep.Duration), logFile)
+					Log(fmt.Sprint(userCurdConfig.PercentageToMarkComplete), logFile)
+					if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
+						anime.Ep.Number++
+						anime.Ep.Started = false
+						Log("Completed episode, starting next.", logFile)
+						anime.Ep.IsCompleted = true
+						// Exit the skip loop
+						break
+					} else if fmt.Sprintf("%v", err) == "invalid character '{' after top-level value" { // Episode is not completed
+						Log("Received invalid JSON response, continuing...", logFile)
+					} else {
+						Log("Episode is not completed, exiting", logFile)
+						ExitCurd(nil)
+					}
+				}
+			}
+
+			// Convert timePos to integer
+			if timePos != nil {
+				if !anime.Ep.Started {
+					anime.Ep.Started = true
+				}
+
+				animePosition, ok := timePos.(float64)
+				if !ok {
+					Log("Error: timePos is not a float64", logFile)
+					continue
+				}
+
+				anime.Ep.Player.PlaybackTime = int(animePosition + 0.5) // Round to nearest integer
+			}
+			time.Sleep(1 * time.Second)
+
+		}
+	}
+
 }

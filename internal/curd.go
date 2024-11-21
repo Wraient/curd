@@ -587,6 +587,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
             "COMPLETED": "Completed",
             "DROPPED":   "Dropped",
             "UPDATE":    "Update Anime Entry",
+            "UNTRACKED": "Untracked Watching",
         }
 
         // Select category using DynamicSelect
@@ -606,6 +607,9 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
             ClearScreen()
             UpdateAnimeEntry(userCurdConfig, user, logFile)
             ExitCurd(nil)
+        } else if categorySelection.Key == "UNTRACKED" {
+            ClearScreen()
+            WatchUntracked(userCurdConfig, logFile)
         }
 
         ClearScreen()
