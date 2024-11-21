@@ -204,7 +204,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User, logFile string) {
 		// Include anime from all categories
 		for _, entry := range user.AnimeList.Watching {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
@@ -214,7 +214,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User, logFile string) {
 		}
 		for _, entry := range user.AnimeList.Completed {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
@@ -224,7 +224,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User, logFile string) {
 		}
 		for _, entry := range user.AnimeList.Paused {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
@@ -234,7 +234,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User, logFile string) {
 		}
 		for _, entry := range user.AnimeList.Dropped {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
@@ -244,7 +244,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User, logFile string) {
 		}
 		for _, entry := range user.AnimeList.Planning {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
@@ -257,35 +257,35 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User, logFile string) {
 		// Include anime from all categories
 		for _, entry := range user.AnimeList.Watching {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMap[strconv.Itoa(entry.Media.ID)] = title
 		}
 		for _, entry := range user.AnimeList.Completed {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMap[strconv.Itoa(entry.Media.ID)] = title
 		}
 		for _, entry := range user.AnimeList.Paused {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMap[strconv.Itoa(entry.Media.ID)] = title
 		}
 		for _, entry := range user.AnimeList.Dropped {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMap[strconv.Itoa(entry.Media.ID)] = title
 		}
 		for _, entry := range user.AnimeList.Planning {
 			title := entry.Media.Title.English
-			if title == "" {
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
 			animeListMap[strconv.Itoa(entry.Media.ID)] = title
@@ -623,7 +623,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
         animeListMapPreview = make(map[string]RofiSelectPreview)
         for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
             title := entry.Media.Title.English
-            if title == "" {
+            if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
                 title = entry.Media.Title.Romaji
             }
             animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
@@ -635,7 +635,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
         animeListMap = make(map[string]string)
         for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
             title := entry.Media.Title.English
-            if title == "" {
+            if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
                 title = entry.Media.Title.Romaji
             }
             animeListMap[strconv.Itoa(entry.Media.ID)] = title

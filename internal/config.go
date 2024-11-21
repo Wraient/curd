@@ -16,6 +16,7 @@ type CurdConfig struct {
 	SubsLanguage            string `config:"SubsLanguage"`
 	SubOrDub                string `config:"SubOrDub"`
 	StoragePath             string `config:"StoragePath"`
+	AnimeNameLanguage		string `config:"AnimeNameLanguage"`
 	PercentageToMarkComplete int    `config:"PercentageToMarkComplete"`
 	NextEpisodePrompt       bool   `config:"NextEpisodePrompt"`
 	SkipOp                  bool   `config:"SkipOp"`
@@ -35,6 +36,7 @@ func defaultConfigMap() map[string]string {
 	return map[string]string{
 		"Player":                  "mpv",
 		"StoragePath":             "$HOME/.local/share/curd",
+		"AnimeNameLanguage":	   "english",
 		"SubsLanguage":            "english",
 		"SubOrDub":                "sub",
 		"PercentageToMarkComplete": "85",

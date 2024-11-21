@@ -14,6 +14,7 @@ import (
 type anime struct {
 	ID               string      `json:"_id"`
 	Name             string      `json:"name"`
+	EnglishName      string      `json:"englishName"`
 	AvailableEpisodes interface{} `json:"availableEpisodes"`
 }
 
@@ -63,6 +64,7 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 			edges {
 				_id
 				name
+				englishName
 				availableEpisodes
 				__typename
 			}
@@ -138,7 +140,14 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 				episodesStr = "Unknown"
 			}
 		}
-		animeList[anime.ID] = fmt.Sprintf("%s (%s episodes)", anime.Name, episodesStr)
+		
+		// Use English name if available and configured, otherwise use default name
+		displayName := anime.Name
+		if anime.EnglishName != "" && userCurdConfig.AnimeNameLanguage == "english" {
+			displayName = anime.EnglishName
+		}
+		
+		animeList[anime.ID] = fmt.Sprintf("%s (%s episodes)", displayName, episodesStr)
 	}
 	return animeList, nil
 }

@@ -165,7 +165,8 @@ func parseAnimeRow(row []string) *Anime {
 
 // Function to get the anime name (English or Romaji) from an Anime struct
 func GetAnimeName(anime Anime) string {
-	if anime.Title.English != "" {
+	userCurdConfig := GetGlobalConfig()
+	if anime.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
 		return anime.Title.English
 	}
 	return anime.Title.Romaji

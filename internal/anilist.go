@@ -26,12 +26,14 @@ func FindKeyByValue(m map[string]string, value string) (string, error) {
 // GetAnimeMap takes an AnimeList and returns a map with media.id as key and media.title.english as value.
 func GetAnimeMap(animeList AnimeList) map[string]string {
 	animeMap := make(map[string]string)
+	userCurdConfig := GetGlobalConfig()
 
 	// Helper function to populate the map from a slice of entries
 	populateMap := func(entries []Entry) {
 		for _, entry := range entries {
 			// Only include entries with a non-empty English title
-			if entry.Media.Title.English != "" {
+
+			if entry.Media.Title.English != ""  && userCurdConfig.AnimeNameLanguage == "english" {
 				animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.English
 			} else {
 				animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.Romaji
@@ -49,15 +51,17 @@ func GetAnimeMap(animeList AnimeList) map[string]string {
 	return animeMap
 }
 
-// GetAnimeMap takes an AnimeList and returns a map with media.id as key and media.title.english as value.
+// GetAnimeMapPreview takes an AnimeList and returns a map with media.id as key and media.title.english as value.
 func GetAnimeMapPreview(animeList AnimeList) map[string]RofiSelectPreview {
+	userCurdConfig := GetGlobalConfig()
 	animeMap := make(map[string]RofiSelectPreview)
 
 	// Helper function to populate the map from a slice of entries
 	populateMap := func(entries []Entry) {
 		for _, entry := range entries {
 			// Only include entries with a non-empty English title
-			if entry.Media.Title.English != "" {
+			Log(fmt.Sprintf("AnimeNameLanguage: ", userCurdConfig.AnimeNameLanguage), logFile)
+			if entry.Media.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
 				animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
 					Title: entry.Media.Title.English,
 					CoverImage: entry.CoverImage,
