@@ -82,7 +82,7 @@ wine "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "$installer_script"
 # Move installer to the release folder
 installer_output="Build/Output/CurdInstaller.exe"  # Replace with actual output location if different
 if [ -f "$installer_output" ]; then
-    mv "$installer_output" "$windows_folder/CurdInstaller-v$version.exe"
+    mv "$installer_output" "$windows_folder/CurdInstaller.exe"
 else
     echo "Installer creation failed. Please check Inno Setup script output."
 fi
