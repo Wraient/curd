@@ -24,7 +24,7 @@ func getMPVPath() (string, error) {
     return mpvPath, nil
 }
 
-func StartVideo(link string, args []string) (string, error) {
+func StartVideo(link string, args []string, title string) (string, error) {
     var command *exec.Cmd
 
     // Generate a random number for the socket path
@@ -44,6 +44,10 @@ func StartVideo(link string, args []string) (string, error) {
     } else {
         mpvSocketPath = fmt.Sprintf("/tmp/curd_mpvsocket_%s", randomNumber)
     }
+
+    // Add the title to MPV arguments
+    titleArg := fmt.Sprintf("--title=%s", title)
+    args = append(args, titleArg)
 
     // Prepare arguments for mpv
     var mpvArgs []string

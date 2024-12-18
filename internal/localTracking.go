@@ -327,7 +327,7 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 		CurdOut(fmt.Sprintf("%s - Episode %d", GetAnimeName(anime), anime.Ep.Number))
 
 		// Start video playback
-		mpvSocketPath, err := StartVideo(PrioritizeLink(link), []string{})
+		mpvSocketPath, err := StartVideo(PrioritizeLink(link), []string{}, fmt.Sprintf("%s - Episode %d", GetAnimeName(anime), anime.Ep.Number))
 		if err != nil {
 			Log("Failed to start mpv", logFile)
 			os.Exit(1)
