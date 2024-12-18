@@ -70,7 +70,7 @@ sudo apt update
 sudo apt install mpv curl rofi ueberzugpp
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
-sudo mv curd /usr/local/bin/
+sudo mv curd /usr/bin/
 curd
 ```
 </details>
@@ -83,7 +83,7 @@ sudo dnf update
 sudo dnf install mpv curl rofi ueberzugpp
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
-sudo mv curd /usr/local/bin/
+sudo mv curd /usr/bin/
 curd
 ```
 </details>
@@ -96,7 +96,7 @@ sudo zypper refresh
 sudo zypper install mpv curl rofi ueberzugpp
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
-sudo mv curd /usr/local/bin/
+sudo mv curd /usr/bin/
 curd
 ```
 </details>
@@ -108,7 +108,7 @@ curd
 # Install mpv, curl, rofi, and ueberzugpp (required for image preview)
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
 chmod +x curd
-sudo mv curd /usr/local/bin/
+sudo mv curd /usr/bin/
 curd
 ```
 </details>
@@ -117,7 +117,7 @@ curd
 <summary>Uninstallation</summary>
 
 ```bash
-sudo rm /usr/local/bin/curd
+sudo rm /usr/bin/curd
 ```
 
 For AUR-based distributions:
@@ -180,7 +180,7 @@ curd [options]
 
 - **Add a New Anime**:
   ```bash
-  curd -new
+  curd -percentage-to-mark-complete=90
   ```
 
 - **Play with Rofi and Image Preview**:
