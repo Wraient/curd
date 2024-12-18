@@ -555,6 +555,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
     var anilistUserData map[string]interface{}
     var anilistUserDataPreview map[string]interface{}
     
+	// Filter anime list based on selected category
+	var animeListMap map[string]string
+	var animeListMapPreview map[string]RofiSelectPreview
+	
+
     // Get user id, username and Anime list
     user.Id, user.Username, err = GetAnilistUserID(user.Token)
     if err != nil {
@@ -579,77 +584,106 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
         user.AnimeList = ParseAnimeList(anilistUserData)
     }
 
-    // Skip category selection if Current flag is set
-    var categorySelection SelectionOption
-    if userCurdConfig.CurrentCategory {
-        categorySelection = SelectionOption{
-            Key:   "CURRENT",
-            Label: "Currently Watching",
-        }
-    } else {
-        // Create category selection map
-        categories := map[string]string{
-            "ALL":       "Show All",
-            "CURRENT":   "Currently Watching",
-            "PAUSED":    "On Hold",
-            "PLANNING":  "Plan to Watch",
-            "COMPLETED": "Completed",
-            "DROPPED":   "Dropped",
-            "UPDATE":    "Update Anime Entry",
-            "UNTRACKED": "Untracked Watching",
-        }
-
-        // Select category using DynamicSelect
-        var err error
-        categorySelection, err = DynamicSelect(categories, false)
+	// If continueLast flag is set, directly get the last watched anime
+    if anime.Ep.ContinueLast {
+        // Get the last anime ID from the curd_id file
+        idFilePath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_id")
+        idBytes, err := os.ReadFile(idFilePath)
         if err != nil {
-            Log(fmt.Sprintf("Failed to select category: %v", err), logFile)
-            ExitCurd(fmt.Errorf("Failed to select category"))
+            Log("Error reading curd_id file: "+err.Error(), logFile)
+            ExitCurd(fmt.Errorf("No last watched anime found"))
+        }
+        
+        anilistID, err := strconv.Atoi(string(idBytes))
+        if err != nil {
+            Log("Error converting anilist ID: "+err.Error(), logFile)
+            ExitCurd(fmt.Errorf("Invalid anime ID in curd_id file"))
         }
 
-        if categorySelection.Key == "-1" {
-            ExitCurd(nil)
+        // Find the anime in database
+        animePointer := LocalFindAnime(*databaseAnimes, anilistID, "")
+        if animePointer == nil {
+            ExitCurd(fmt.Errorf("Last watched anime not found in database"))
         }
 
-        // Handle UPDATE option
-        if categorySelection.Key == "UPDATE" {
-            ClearScreen()
-            UpdateAnimeEntry(userCurdConfig, user, logFile)
-            ExitCurd(nil)
-        } else if categorySelection.Key == "UNTRACKED" {
-            ClearScreen()
-            WatchUntracked(userCurdConfig, logFile)
-        }
-
-        ClearScreen()
-    }
-
-    // Filter anime list based on selected category
-    var animeListMap map[string]string
-    var animeListMapPreview map[string]RofiSelectPreview
-    
-    if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-        animeListMapPreview = make(map[string]RofiSelectPreview)
-        for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
-            title := entry.Media.Title.English
-            if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-                title = entry.Media.Title.Romaji
-            }
-            animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-                Title:      title,
-                CoverImage: entry.CoverImage,
-            }
-        }
+        // Set the anime details
+        anime.AnilistId = animePointer.AnilistId
+        // anime.AllanimeId = animePointer.AllanimeId
+        // anime.Title = animePointer.Title
+        // anime.Ep.Number = animePointer.Ep.Number
+        // anime.Ep.Player.PlaybackTime = animePointer.Ep.Player.PlaybackTime
+        // anime.Ep.Resume = true
+        
     } else {
-        animeListMap = make(map[string]string)
-        for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
-            title := entry.Media.Title.English
-            if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-                title = entry.Media.Title.Romaji
-            }
-            animeListMap[strconv.Itoa(entry.Media.ID)] = title
-        }
-    }
+		// Skip category selection if Current flag is set
+		var categorySelection SelectionOption
+		if userCurdConfig.CurrentCategory {
+			categorySelection = SelectionOption{
+				Key:   "CURRENT",
+				Label: "Currently Watching",
+			}
+		} else {
+			// Create category selection map
+			categories := map[string]string{
+				"ALL":       "Show All",
+				"CURRENT":   "Currently Watching",
+				"PAUSED":    "On Hold",
+				"PLANNING":  "Plan to Watch",
+				"COMPLETED": "Completed",
+				"DROPPED":   "Dropped",
+				"UPDATE":    "Update Anime Entry",
+				"UNTRACKED": "Untracked Watching",
+			}
+
+			// Select category using DynamicSelect
+			var err error
+			categorySelection, err = DynamicSelect(categories, false)
+			if err != nil {
+				Log(fmt.Sprintf("Failed to select category: %v", err), logFile)
+				ExitCurd(fmt.Errorf("Failed to select category"))
+			}
+
+			if categorySelection.Key == "-1" {
+				ExitCurd(nil)
+			}
+
+			// Handle UPDATE option
+			if categorySelection.Key == "UPDATE" {
+				ClearScreen()
+				UpdateAnimeEntry(userCurdConfig, user, logFile)
+				ExitCurd(nil)
+			} else if categorySelection.Key == "UNTRACKED" {
+				ClearScreen()
+				WatchUntracked(userCurdConfig, logFile)
+			}
+
+			ClearScreen()
+		}
+
+
+		if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+			animeListMapPreview = make(map[string]RofiSelectPreview)
+			for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+					Title:      title,
+					CoverImage: entry.CoverImage,
+				}
+			}
+		} else {
+			animeListMap = make(map[string]string)
+			for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListMap[strconv.Itoa(entry.Media.ID)] = title
+			}
+		}
+	}
 
     var anilistSelectedOption SelectionOption
     var selectedAllanimeAnime SelectionOption

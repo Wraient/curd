@@ -222,6 +222,9 @@ func main() {
 
 			// If not filler/recap (or skip is disabled), break and continue with playback
 			if !((anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap)) {
+				if anime.Ep.LastWasSkipped {
+					go internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
+				}
 				break
 			}
 
@@ -231,11 +234,12 @@ func main() {
 			} else {
 				internal.CurdOut(fmt.Sprint("Recap episode, skipping: ", anime.Ep.Number))
 			}
-			
+
 			anime.Ep.Number++
+			anime.Ep.LastWasSkipped = true
 			anime.Ep.Started = false
 			internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, internal.GetAnimeName(anime))
-			
+
 			// Check if we've reached the end of the series
 			if anime.Ep.Number > anime.TotalEpisodes {
 				internal.CurdOut("Reached end of series")
@@ -447,9 +451,8 @@ func main() {
 					}
 				}
 				_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
-				if err == nil && anime.Ep.Started{
+				if err == nil && anime.Ep.Started {
 					anime.Ep.Player.Speed, err = internal.GetMPVPlaybackSpeed(anime.Ep.Player.SocketPath)
-					internal.Log(anime.Ep.Player.Speed, logFile)
 					if err != nil {
 						internal.Log("Failed to get mpv speed "+err.Error(), logFile)
 					}
@@ -466,6 +469,7 @@ func main() {
 		wg = sync.WaitGroup{}
 
 		if anime.Ep.IsCompleted && !anime.Rewatching {
+			// Update progress for both regular episodes and skipped fillers
 			go func() {
 				err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
 				if err != nil {
@@ -481,7 +485,7 @@ func main() {
 				err = internal.RateAnime(user.Token, anime.AnilistId)
 				if err != nil {
 					internal.Log("Error rating anime: "+err.Error(), logFile)
-					internal.CurdOut("Error rating anime: "+err.Error())
+					internal.CurdOut("Error rating anime: " + err.Error())
 				}
 				internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 				internal.ExitCurd(nil)
@@ -499,7 +503,7 @@ func main() {
 				"yes": "Yes",
 				"no":  "No",
 			}
-			
+
 			selectedOption, err := internal.DynamicSelect(options, false)
 			if err != nil {
 				internal.ExitCurd(err)

@@ -8,13 +8,13 @@ type AnimeTitle struct {
 
 type Anime struct {
 	Title         AnimeTitle `json:"title"`
-	Ep            Episode     `json:"ep"`
-	CoverImage    string      `json:"url"` // Assuming this field corresponds to the cover image URL
-	TotalEpisodes  int        `json:"total_episodes"` // If provided by the API
+	Ep            Episode    `json:"ep"`
+	CoverImage    string     `json:"url"`            // Assuming this field corresponds to the cover image URL
+	TotalEpisodes int        `json:"total_episodes"` // If provided by the API
 	MalId         int        `json:"mal_id"`
 	AnilistId     int        `json:"anilist_id"` // Assuming you have an Anilist ID in your struct
 	Rewatching    bool
-	AllanimeId    string      // Can be populated as necessary
+	AllanimeId    string // Can be populated as necessary
 }
 
 type Skip struct {
@@ -28,34 +28,35 @@ type SkipTimes struct {
 }
 
 type Episode struct {
-	Title     AnimeTitle `json:"title"`
-	Number    int        `json:"number"`
-	SkipTimes SkipTimes   `json:"skip_times"`
-	Player    playingVideo `json:"player"`
-	Resume    bool       `json:"resume"`
-	Started   bool       `json:"started"`
-	Duration  int        `json:"duration"`
-	Links     []string   `json:"links"`
-	IsFiller  bool       `json:"filler"`
-	IsRecap   bool       `json:"recap"`
-	Aired     string     `json:"aired"`
-	Synopsis  string     `json:"synopsis"`
-	ContinueLast bool
-	IsCompleted bool 
+	Title          AnimeTitle   `json:"title"`
+	Number         int          `json:"number"`
+	SkipTimes      SkipTimes    `json:"skip_times"`
+	Player         playingVideo `json:"player"`
+	Resume         bool         `json:"resume"`
+	Started        bool         `json:"started"`
+	Duration       int          `json:"duration"`
+	Links          []string     `json:"links"`
+	IsFiller       bool         `json:"filler"`
+	IsRecap        bool         `json:"recap"`
+	Aired          string       `json:"aired"`
+	Synopsis       string       `json:"synopsis"`
+	ContinueLast   bool
+	LastWasSkipped bool // used in filler check
+	IsCompleted    bool
 }
 
 type playingVideo struct {
 	Url          string
 	Speed        float64 `json:"speed"`
 	PlaybackTime int     `json:"playback_time"`
-	SocketPath	 string
+	SocketPath   string
 }
 
 type User struct {
-	Token 		string
-	Username 	string
-	Id 			int
-	AnimeList 	AnimeList
+	Token     string
+	Username  string
+	Id        int
+	AnimeList AnimeList
 }
 
 // AniListAnime is the struct for the API response
@@ -82,29 +83,29 @@ type ResponseData struct {
 }
 
 type Media struct {
-	Duration int    `json:"duration"`
-	Episodes int    `json:"episodes"`
-	ID       int    `json:"id"`
-	Title    AnimeTitle  `json:"title"`
+	Duration int        `json:"duration"`
+	Episodes int        `json:"episodes"`
+	ID       int        `json:"id"`
+	Title    AnimeTitle `json:"title"`
 }
 
 type Entry struct {
-	Media    Media `json:"media"`
-	Progress int   `json:"progress"`
-	Score    float64 `json:"score"`
-	Status   string `json:"status"`
-	CoverImage string `json:"coverImage"`
+	Media      Media   `json:"media"`
+	Progress   int     `json:"progress"`
+	Score      float64 `json:"score"`
+	Status     string  `json:"status"`
+	CoverImage string  `json:"coverImage"`
 }
 
 type AnimeList struct {
-	Watching	[]Entry `json:"watching"`
-	Completed	[]Entry `json:"completed"`
-	Paused		[]Entry `json:"paused"`
-	Dropped 	[]Entry `json:"dropped"`
-	Planning 	[]Entry `json:"planning"`
+	Watching  []Entry `json:"watching"`
+	Completed []Entry `json:"completed"`
+	Paused    []Entry `json:"paused"`
+	Dropped   []Entry `json:"dropped"`
+	Planning  []Entry `json:"planning"`
 }
 
 type RofiSelectPreview struct {
-	Title string `json:"title"`
-	CoverImage  string `json:"coverImage"`
+	Title      string `json:"title"`
+	CoverImage string `json:"coverImage"`
 }
