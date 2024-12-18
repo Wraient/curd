@@ -59,3 +59,7 @@ func FormatTime(seconds int) string {
 	}
 	return fmt.Sprintf("%d:%02d", minutes, remainingSeconds)
 }
+
+func ConvertSecondsToMinutes(seconds int) int {
+	return seconds / 60
+}
