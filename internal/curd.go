@@ -34,8 +34,17 @@ func EditConfig(configFilePath string) {
 	// Get the user's preferred editor from the EDITOR environment variable
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
-		// If EDITOR is not set, default to "vim"
-		editor = "vim"
+		// If EDITOR is not set, use system-specific defaults
+		if runtime.GOOS == "windows" {
+			// Try Notepad++ first
+			if _, err := exec.LookPath("notepad++"); err == nil {
+				editor = "notepad++"
+			} else {
+				editor = "notepad.exe"
+			}
+		} else {
+			editor = "vim"
+		}
 	}
 
 	// Construct the command to open the config file
