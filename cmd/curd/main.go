@@ -339,6 +339,7 @@ func main() {
 							percentageWatched := internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
 							// Episode is completed
 							internal.Log(fmt.Sprint(percentageWatched), logFile)
+							internal.Log(fmt.Sprint(anime.Ep.Player.Speed), logFile)
 							internal.Log(fmt.Sprint(anime.Ep.Player.PlaybackTime), logFile)
 							internal.Log(fmt.Sprint(anime.Ep.Duration), logFile)
 							internal.Log(fmt.Sprint(userCurdConfig.PercentageToMarkComplete), logFile)
@@ -416,9 +417,13 @@ func main() {
 						internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Ed.End)
 					}
 				}
-				anime.Ep.Player.Speed, err = internal.GetMPVPlaybackSpeed(anime.Ep.Player.SocketPath)
-				if err != nil {
-					internal.Log("Failed to mpv speed"+err.Error(), logFile)
+				_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
+				if err == nil && anime.Ep.Started{
+					anime.Ep.Player.Speed, err = internal.GetMPVPlaybackSpeed(anime.Ep.Player.SocketPath)
+					internal.Log(anime.Ep.Player.Speed, logFile)
+					if err != nil {
+						internal.Log("Failed to get mpv speed "+err.Error(), logFile)
+					}
 				}
 			}
 
