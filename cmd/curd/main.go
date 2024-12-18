@@ -469,20 +469,20 @@ func main() {
 		}
 
 		if userCurdConfig.NextEpisodePrompt {
-			var answer string
-			if userCurdConfig.RofiSelection {
-				answer, err = internal.GetUserInputFromRofi("Start next episode? (yes/no)")
-				if err != nil {
-					internal.ExitCurd(err)
-				}
-			} else {
-				fmt.Println("Start next episode? (yes/no)")
-				fmt.Scanln(&answer)
+			options := map[string]string{
+				"yes": "Yes",
+				"no":  "No",
 			}
-			if answer == "y" || answer == "Y" || answer == "yes" || answer == "Yes" || answer == "YES" || answer == "" {
-			} else {
+			
+			selectedOption, err := internal.DynamicSelect(options, false)
+			if err != nil {
+				internal.ExitCurd(err)
+			}
+
+			if selectedOption.Key == "no" || selectedOption.Key == "-1" {
 				internal.ExitCurd(nil)
 			}
+			// If yes or any other case, continue with the next episode
 		}
 
 		internal.CurdOut(fmt.Sprint("Starting next episode: ", anime.Ep.Number))
