@@ -10,29 +10,26 @@ func DiscordPresence(clientId string, anime Anime, IsPaused bool) error {
 	if err != nil {
 		return err
 	}
+
 	var state string
 	if IsPaused {
-		state = fmt.Sprintf("\nEpisode %d - %d:%02d (Paused)", 
+		state = fmt.Sprintf("\nEpisode %d - %s (Paused)", 
 			anime.Ep.Number, 
-			ConvertSecondsToMinutes(anime.Ep.Player.PlaybackTime), 
-			anime.Ep.Player.PlaybackTime % 60,
+			FormatTime(anime.Ep.Player.PlaybackTime),
 		)
 	} else {
-		state = fmt.Sprintf("\nEpisode %d - %d:%02d / %d:%02d", 
+		state = fmt.Sprintf("\nEpisode %d - %s / %s", 
 			anime.Ep.Number, 
-			ConvertSecondsToMinutes(anime.Ep.Player.PlaybackTime), 
-			anime.Ep.Player.PlaybackTime % 60,
-			ConvertSecondsToMinutes(anime.Ep.Duration),
-			anime.Ep.Duration % 60,
+			FormatTime(anime.Ep.Player.PlaybackTime), 
+			FormatTime(anime.Ep.Duration),
 		)
 	}
+
 	err = client.SetActivity(client.Activity{
 		Details:    fmt.Sprintf("%s", GetAnimeName(anime)), // Large text
 		LargeImage: anime.CoverImage,
 		LargeText:  GetAnimeName(anime), // Would display while hovering over the large image
 		State:      state,
-		// SmallImage: anime.CoverImage, // Image would appear in the bottom left corner
-		// SmallText:  fmt.Sprintf("%s", anime.Ep.Title.English), // Would display while hovering over the small image
 		Buttons: []*client.Button{
 			&client.Button{
 				Label: "View on AniList", // Button label
@@ -50,6 +47,9 @@ func DiscordPresence(clientId string, anime Anime, IsPaused bool) error {
 	return nil
 }
 
-func ConvertSecondsToMinutes(seconds int) int {
-	return seconds / 60
+func FormatTime(seconds int) string {
+	hours := seconds / 3600
+	minutes := (seconds % 3600) / 60
+	remainingSeconds := seconds % 60
+	return fmt.Sprintf("%d:%02d:%02d", hours, minutes, remainingSeconds)
 }
