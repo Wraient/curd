@@ -212,15 +212,41 @@ func main() {
 		}
 
 		// Start curd
-		if !((anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap)) {
-			// fmt.Println("Not a filler episode, Starting: ", anime.Ep.Number)
-			anime.Ep.Player.SocketPath = internal.StartCurd(&userCurdConfig, &anime, logFile)
+		for {
+			// Check if current episode is filler/recap
+			err = internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime)
+			if err != nil {
+				internal.Log("Error getting episode data, assuming non-filler: "+err.Error(), logFile)
+				break // Break the loop and continue with playback
+			}
 
-			internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
-			internal.Log(anime.Ep.Player.SocketPath, logFile)
-		} else {
-			internal.CurdOut(fmt.Sprint("Filler episode, skipping: ", anime.Ep.Number))
+			// If not filler/recap (or skip is disabled), break and continue with playback
+			if !((anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap)) {
+				break
+			}
+
+			// If it is filler/recap, log it and move to next episode
+			if anime.Ep.IsFiller {
+				internal.CurdOut(fmt.Sprint("Filler episode, skipping: ", anime.Ep.Number))
+			} else {
+				internal.CurdOut(fmt.Sprint("Recap episode, skipping: ", anime.Ep.Number))
+			}
+			
+			anime.Ep.Number++
+			anime.Ep.Started = false
+			internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, internal.GetAnimeName(anime))
+			
+			// Check if we've reached the end of the series
+			if anime.Ep.Number > anime.TotalEpisodes {
+				internal.CurdOut("Reached end of series")
+				internal.ExitCurd(nil)
+			}
 		}
+
+		// Now start playback for the non-filler episode
+		anime.Ep.Player.SocketPath = internal.StartCurd(&userCurdConfig, &anime, logFile)
+		internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime), logFile)
+		internal.Log(anime.Ep.Player.SocketPath, logFile)
 
 		wg.Add(1)
 		// Get episode data

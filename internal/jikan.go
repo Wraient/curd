@@ -14,7 +14,11 @@ func GetEpisodeData(animeID int, episodeNo int, anime *Anime) error {
 	// Use the helper function for making the GET request
 	response, err := makeGetRequest(url, nil)
 	if err != nil {
-		return fmt.Errorf("error fetching data from Jikan (MyAnimeList) API: %w", err)
+		Log(fmt.Sprintf("Warning: Jikan API error: %v - continuing without filler data", err), logFile)
+		// Set default values when API fails
+		anime.Ep.IsFiller = false
+		anime.Ep.IsRecap = false
+		return nil // Return nil to allow the application to continue
 	}
 
 	Log(response, logFile)
@@ -22,7 +26,11 @@ func GetEpisodeData(animeID int, episodeNo int, anime *Anime) error {
 	// Check if the 'data' field exists and is valid
 	data, ok := response["data"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("invalid response structure: missing or invalid 'data' field")
+		Log("Warning: Invalid Jikan API response - continuing without filler data", logFile)
+		// Set default values when response is invalid
+		anime.Ep.IsFiller = false
+		anime.Ep.IsRecap = false
+		return nil // Return nil to allow the application to continue
 	}
 	// Helper function to safely get string value
 	getStringValue := func(field string) string {
