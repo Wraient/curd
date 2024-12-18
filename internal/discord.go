@@ -28,8 +28,12 @@ func DiscordPresence(clientId string, anime Anime, IsPaused bool) error {
 	err = client.SetActivity(client.Activity{
 		Details:    fmt.Sprintf("%s", GetAnimeName(anime)), // Large text
 		LargeImage: anime.CoverImage,
-		LargeText:  GetAnimeName(anime), // Would display while hovering over the large image
+		LargeText:  GetAnimeName(anime), // Displays while hovering over the large image
 		State:      state,
+
+		//SmallImage: anime.SmallCoverImage, // Image for the bottom left corner
+		//SmallText:  fmt.Sprintf("Episode: %s", anime.Ep.Title.English), // Text when hovering over the small image
+		
 		Buttons: []*client.Button{
 			&client.Button{
 				Label: "View on AniList", // Button label
