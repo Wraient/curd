@@ -748,10 +748,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
         }
     } else {
         // if anime found in database, use it
-        anime.AllanimeId = animePointer.AllanimeId
-        anime.Ep.Player.PlaybackTime = animePointer.Ep.Player.PlaybackTime
-        anime.Ep.Resume = true
-        anime.Ep.Number = animePointer.Ep.Number
+		anime.AllanimeId = animePointer.AllanimeId
+		anime.Ep.Player.PlaybackTime = animePointer.Ep.Player.PlaybackTime
+		if anime.Ep.Number == animePointer.Ep.Number {
+			anime.Ep.Resume = true
+		}
     }
 
     if selectedAllanimeAnime.Key == "-1" {

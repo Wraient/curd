@@ -187,6 +187,9 @@ func main() {
 
 	// Main loop
 	for {
+
+		internal.Log(anime, logFile)
+
 		// Create a channel to signal when to exit the skip loop
 		var wg sync.WaitGroup
 		skipLoopDone := make(chan struct{})
