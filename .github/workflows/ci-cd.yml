@@ -72,15 +72,26 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-        with:
-          lfs: true
+        # with:
+        #   lfs: true
+
+      - name: Download and extract MPV binary
+        run: |
+          # Create directory if it doesn't exist
+          New-Item -ItemType Directory -Force -Path "Build\mpv"
+          # Download the compressed MPV binary
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/${{ github.repository }}/main/Build/mpv/mpv.exe.gz" -OutFile "Build\mpv\mpv.exe.gz"
+          # Extract using 7-Zip (built into Windows runners)
+          7z x "Build\mpv\mpv.exe.gz" -o"Build\mpv"
+          Remove-Item "Build\mpv\mpv.exe.gz"
+        shell: pwsh
 
       - name: Download Artifacts
-        uses: actions/download-artifact@v4  # Updated to version 4
+        uses: actions/download-artifact@v4
         with:
           name: curd-binaries
-          path: Build  # Specify where to download the artifacts
-        
+          path: Build
+
       - name: Bump Version
         id: bump_version
         run: |
