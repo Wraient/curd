@@ -64,6 +64,11 @@ jobs:
             Build/curd
             Build/curd.exe
 
+      - name: List Build Directory
+        run: |
+          echo "Listing contents of Build directory:"
+          ls -R Build
+
   release:
     runs-on: windows-latest  # Use Windows runner for creating the installer
     needs: build  # Ensure the build job is complete before running this job
@@ -72,8 +77,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-        # with:
-        #   lfs: true
+        with:
+          lfs: true
 
       - name: Download and extract MPV binary
         run: |
