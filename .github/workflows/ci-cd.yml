@@ -80,7 +80,7 @@ jobs:
           # Create directory if it doesn't exist
           New-Item -ItemType Directory -Force -Path "Build\mpv"
           # Download the compressed MPV binary
-          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/${{ github.repository }}/main/Build/mpv/mpv.exe.gz" -OutFile "Build\mpv\mpv.exe.gz"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/${{ github.repository }}/main/Build/mpv.exe.gz" -OutFile "Build\mpv\mpv.exe.gz"
           # Extract using 7-Zip (built into Windows runners)
           7z x "Build\mpv\mpv.exe.gz" -o"Build\mpv"
           Remove-Item "Build\mpv\mpv.exe.gz"
