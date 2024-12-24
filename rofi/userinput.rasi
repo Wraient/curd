@@ -10,17 +10,19 @@ configuration {
 window {
     fullscreen: true;
     transparency: "real";
-    background-color: @background-color;
+    background-color: transparent;
 }
 
 mainbox {
     children: [ message, listview, inputbar ];
     padding: 40% 30%;
+    background-color: transparent;
 }
 
 message {
     border: 0;
     padding: 10px;
+    border-radius:20px;
     margin: 0 0 20px 0;
     font: "Sans Bold 24"; /* Increased font size and made it bold */
 }
@@ -38,6 +40,7 @@ prompt {
 
 entry {
     padding: 8px;
+    background-color: transparent;
 }
 
 listview {
@@ -48,4 +51,5 @@ listview {
 textbox {
     horizontal-align: 0.5;    /* Center the text */
     font: "Sans Bold 24";     /* Match message font */
+    background-color: transparent;
 }

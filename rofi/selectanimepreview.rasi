@@ -5,8 +5,8 @@
     background-transparent:         #1D2330A0;  /* Semi-transparent background */
     text-color:                     #BBBBBB;  /* Default text color (light gray) */
     text-color-selected:            #FFFFFF;  /* Text color when selected (white) */
-    primary:                        rgba(85, 255, 150, 0.75);  /* Greenish primary color */
-    important:                      rgba(85, 255, 150, 0.75);  /* Color used for important items */
+    primary:                        rgba(53, 132, 228, 0.75);  /* Blusish primary color */
+    important:                        rgba(53, 132, 228, 0.75);  /* Bluish primary color */
 }
 
 configuration {
@@ -86,7 +86,7 @@ element {
     orientation:                    vertical;  /* Vertical layout for element content */
     border:                         0px;  /* No border around the element */
     border-radius:                  16px;  /* Rounded corners for the element */
-    background-color:             #1D2330;  /* Default background color for the element */
+    background-color:               transparent;  /* Transparent background */
     width:                          100px;  /* Width of each element */
     height:                         50px;  /* Height of each element */
 }

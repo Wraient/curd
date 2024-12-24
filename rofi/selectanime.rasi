@@ -1,81 +1,80 @@
 configuration {
-    font: "Sans 12";  /* the font and size for the UI */
-    line-margin: 10;  /* space between lines of text */
-    display-drun: ""; /* display-drun behavior */
+    font: "Sans 12";
+    line-margin: 10;
+    display-drun: "";
 }
 
 * {
-    background:     rgba(20, 20, 20, 0.8);  /* Dark, semi-transparent background */
-    background-alt: #000000;  /* Alternative background color (solid black) */
+    background:     #000000;  /* Black background for everything */
+    background-alt: #000000;  /* Ensures no alternation */
     foreground:     #CCCCCC;
-    selected:       rgba(85, 255, 150, 0.75);  /* Highlighted item color (greenish) */
-    active:         #2E7D32;  /* Color for active items (green) */
-    urgent:         #C62828;  /* Color for urgent items (red) */
+    selected:       #3584E4;
+    active:         #2E7D32;
+    urgent:         #C62828;
 }
 
 window {
     fullscreen: false;
-    background-color: @background;  /* Window background color */
+    background-color: rgba(0, 0, 0, 0.8);  /* Solid black transparent background */
     border-radius: 50px;
 }
 
 mainbox {
-    padding: 50px 50px;  /* padding around the content */
-    background-color: transparent;  /* Transparent background */
+    padding: 50px 50px;
+    background-color: transparent;  /* Ensures black background fills entire main area */
     children: [inputbar, listview];
-    spacing: 20px;  /* space between child elements */
+    spacing: 20px;
 }
 
 inputbar {
-    background-color: #333333;  /* Dark gray background for the input bar */
-    padding: 8px;  /* padding inside the input bar */
-    border-radius: 12px;  /* Rounded corners for the input bar */
+    background-color: #333333;  /* Dark gray background for input bar */
+    padding: 8px;
+    border-radius: 8px;
     children: [prompt, entry];
 }
 
 prompt {
-    enabled: true;  /* prompt inside the input bar */
-    padding: 8px;  /* Padding inside the prompt */
-    background-color: @selected;  /* Background color for the prompt (highlighted) */
-    text-color: #000000;  /* Black text color for the prompt */
-    border-radius: 8px;  /* Rounded corners for the prompt */
+    enabled: true;
+    padding: 8px;
+    background-color: @selected;
+    text-color: #000000;
+    border-radius: 4px;
 }
 
 entry {
-    margin: 0px 0px 0px 5px;  /* margin to the left of the entry field */
-    padding: 8px;  /* padding inside the entry field */
-    background-color: #444444;  /* Slightly lighter gray for the entry field */
-    text-color: #FFFFFF;        /* White text inside the entry field */
-    placeholder: "Search...";  /* Placeholder text displayed when the entry is empty */
-    placeholder-color: rgba(255, 255, 255, 0.5);  /* Faded white color for the placeholder */
-    border-radius: 8px;  /* Rounded corners for the entry field */
+    padding: 8px;
+    background-color: transparent;  /* Slightly lighter gray for visibility */
+    text-color: #FFFFFF;        /* White text to make typing visible */
+    placeholder: "Search...";
+    placeholder-color: rgba(255, 255, 255, 0.5);
+    border-radius: 6px;
 }
 
 listview {
-    layout: vertical;  /* item list layout*/
-    spacing: 8px;  /* Space between items in the list */
-    lines: 9;  /* Limits the number of lines to display in the list */
-    background-color: transparent;  /* Transparent background for the list */
+    layout: vertical;
+    spacing: 8px;
+    lines: 9;
+    background-color: transparent;  /* Consistent black background for list items */
 }
 
 element {
-    padding: 12px;  /* Padding inside each element of the list */
-    border-radius: 12px;  /* Rounded corners for each element */
-    background-color: #444444;  /* Uniform dark gray background for list items */
-    text-color: @foreground;  /* Text color for the elements (light gray) */
+    padding: 12px;
+    border-radius: 4px;
+    background-color: transparent;  /* Uniform color for each list item */
+    text-color: @foreground;
 }
 
 element normal.normal {
-    background-color: #333333;  /* Default background color for normal list items */
+    background-color: transparent;  /* Ensures no alternating color */
 }
 
 element selected.normal {
-    background-color: @selected;  /* Background color for selected items */
-    text-color: #FFFFFF;  /* White text for selected items */
+    background-color: @selected;
+    text-color: #FFFFFF;
 }
 
 element-text {
-    background-color: transparent;  /* Transparent background for element text */
-    text-color: inherit;  /* Inherits text color from parent element */
-    vertical-align: 0.5;  /* Vertically aligns the text */
+    background-color: transparent;
+    text-color: inherit;
+    vertical-align: 0.5;
 }
