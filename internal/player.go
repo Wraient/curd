@@ -46,8 +46,8 @@ func StartVideo(link string, args []string, title string) (string, error) {
     }
 
     // Add the title to MPV arguments
-    titleArg := fmt.Sprintf("--title=%s", title)
-    args = append(args, titleArg)
+    titleArgs := []string{fmt.Sprintf("--title=%s", title),fmt.Sprintf("--force-media-title=%s", title)}
+    args = append(args, titleArgs...)
 
     // Prepare arguments for mpv
     var mpvArgs []string
