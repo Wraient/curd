@@ -1,8 +1,8 @@
 [Setup]
 AppName=Curd Installer
 AppVersion=0.0.10
-DefaultDirName={pf}\Curd
-DefaultGroupName=Curd
+DefaultDirName={userappdata}\Curd
+PrivilegesRequired=lowest
 AllowNoIcons=yes
 OutputBaseFilename=CurdInstaller
 UsePreviousAppDir=yes
