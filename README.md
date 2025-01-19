@@ -102,6 +102,43 @@ curd
 </details>
 
 <details>
+<summary>NixOS Installation</summary>
+
+Using Flake:
+
+```nix
+/* flake.nix*/
+{
+  description = "Nixos Flake";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    curd.url = "github:Wraient/curd";
+
+  };
+
+  /* ... */
+}
+
+```
+
+```nix
+
+/* configuration.nix */
+{ inputs, pkgs, ... }:
+{
+  environment.systemPackages = with pkgs; [
+    inputs.curd.packages."x86_64-linux".curd
+    mpv # Required for Curd to work
+  ];
+}
+
+```
+
+
+</details>
+
+<details>
 <summary>Generic Installation</summary>
 
 ```bash
@@ -207,7 +244,7 @@ config file is located at ```~/.config/curd/curd.conf```
 - mpv - Video player (vlc support might be added later)
 - rofi - Selection menu
 - ueberzug - Display images in rofi
-    
+
 ## API Used
 - [Anilist API](https://anilist.gitbook.io/anilist-apiv2-docs) - Update user data and download user data
 - [AniSkip API](https://api.aniskip.com/api-docs) - Get anime intro and outro timings
