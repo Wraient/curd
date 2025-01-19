@@ -129,7 +129,6 @@ Using Flake:
 {
   environment.systemPackages = with pkgs; [
     inputs.curd.packages."x86_64-linux".curd
-    mpv # Required for Curd to work
   ];
 }
 
