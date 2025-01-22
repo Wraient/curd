@@ -34,7 +34,7 @@ in
     nativeBuildInputs = [makeBinaryWrapper];
     vendorHash = null;
 
-    postPatch = optionalString (builtins.length path > 0) ''
+    postFixup = optionalString (builtins.length path > 0) ''
       wrapProgram $out/bin/curd --prefix PATH : ${lib.makeBinPath path}
     '';
 
