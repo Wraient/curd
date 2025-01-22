@@ -24,26 +24,6 @@ jobs:
       - name: Install Dependencies
         run: go mod tidy
 
-      - name: Comment go-winio for Linux Build
-        run: |
-          echo 'function toggle_winio_import() {
-              local action="$1"
-              local file="internal/player.go"
-              
-              if [ "$action" == "comment" ]; then
-                  sed -i "s|^\\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|// \\1|" "$file"
-                  sed -i "s|^\\(.*conn, err = winio.DialPipe.*\\)|// \\1|" "$file"
-              elif [ "$action" == "uncomment" ]; then
-                  sed -i "s|// \\(\\s*\\\"github.com/Microsoft/go-winio\\\"\\)|\\1|" "$file"
-                  sed -i "s|^// \\(.*conn, err = winio.DialPipe.*\\)|\\1|" "$file"
-              fi
-          }
-          toggle_winio_import comment' > toggle_winio_import.sh
-
-      - name: Execute Commenting Function for Linux Build # Comment out lines before Linux build
-        run: |
-          bash toggle_winio_import.sh
-
       - name: Build Linux binary
         run: |
           ./Build/buildlinux
@@ -57,12 +37,14 @@ jobs:
           ./Build/buildwindows
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4  # Updated to version 4
+        uses: actions/upload-artifact@v4
         with:
           name: curd-binaries
           path: |
             Build/curd
             Build/curd.exe
+          retention-days: 1  # Set retention period
+          if-no-files-found: error  # Fail if files are not found
 
       - name: List Build Directory
         run: |
@@ -96,6 +78,8 @@ jobs:
         with:
           name: curd-binaries
           path: Build
+          repository: ${{ github.repository }}  # Explicitly set repository
+          github-token: ${{ secrets.GITHUB_TOKEN }}  # Add token for authentication
 
       - name: Bump Version
         id: bump_version
