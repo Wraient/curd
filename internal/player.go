@@ -5,12 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-    "github.com/Microsoft/go-winio"
 )
 var logFile = "debug.log"
 
@@ -94,15 +92,7 @@ func joinArgs(args []string) string {
 }
 
 func MPVSendCommand(ipcSocketPath string, command []interface{}) (interface{}, error) {
-    var conn net.Conn
-    var err error
-
-    if runtime.GOOS == "windows" {
-        // Use named pipe for Windows
-        conn, err = winio.DialPipe(ipcSocketPath, nil)
-    } else {
-        conn, err = net.Dial("unix", ipcSocketPath)
-    }
+    conn, err := connectToPipe(ipcSocketPath)
     if err != nil {
         return nil, err
     }

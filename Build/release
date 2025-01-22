@@ -1,24 +1,5 @@
 #!/bin/bash
 
-# Function to comment/uncomment lines in internal/player.go
-function toggle_winio_import() {
-    local action="$1"
-    local file="internal/player.go"
-    
-    if [ "$action" == "comment" ]; then
-        # Comment out the go-winio import line
-        sed -i 's|^\(\s*"github.com/Microsoft/go-winio"\)|// \1|' "$file"
-        # Comment out the usage of winio.DialPipe
-        sed -i 's|^\(.*conn, err = winio.DialPipe.*\)|// \1|' "$file"
-    elif [ "$action" == "uncomment" ]; then
-        # Uncomment the go-winio import line
-        sed -i 's|// \(\s*"github.com/Microsoft/go-winio"\)|\1|' "$file"
-        # Uncomment the usage of winio.DialPipe
-        sed -i 's|^// \(.*conn, err = winio.DialPipe.*\)|\1|' "$file"
-    fi
-}
-
-
 # Ask for version number
 read -p "Enter the version number: " version
 release_folder="releases/curd-$version"
@@ -36,10 +17,6 @@ sed -i "s/^AppVersion=.*/AppVersion=$version/" "$installer_script"
 sed -i "s|Source: \".*curd.exe\"|Source: \"Z:$windows_folder/curd.exe\"|" "$installer_script"
 # sed -i "s|Source: \".*mpv.exe\"|Source: \"Z:$windows_folder/mpv.exe\"|" "$installer_script"
 
-# Comment out winio-related lines for Linux build
-echo "Commenting out go-winio lines for Linux build..."
-toggle_winio_import "comment"
-
 # Build Linux binary
 echo "Building Linux binary..."
 bash Build/buildlinux
@@ -51,10 +28,6 @@ else
     echo "Linux build failed. Please check Build/buildlinux."
     exit 1
 fi
-
-# Uncomment winio-related lines after Linux build
-echo "Uncommenting go-winio lines..."
-toggle_winio_import "uncomment"
 
 # Build Windows binary
 echo "Building Windows binary..."
