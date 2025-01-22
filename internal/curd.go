@@ -166,7 +166,12 @@ func CurdOut(data interface{}) {
 				if len(parts) == 3 {
 					// Remove quotes from the message
 					message := strings.Trim(parts[2], "\"")
-					cmd := exec.Command("notify-send", "-i", parts[1], message)
+          cmd := exec.Command("notify-send",
+            "-a", "Curd",
+            "-h", "string:x-canonical-private-synchronous:curd-notification",
+            "Curd",
+            "-i", parts[1],
+            message)
 					err := cmd.Run()
 					if err != nil {
 						Log(fmt.Sprintf("%v", cmd), logFile)
@@ -174,7 +179,11 @@ func CurdOut(data interface{}) {
 					}
 				}
 			} else {
-				cmd := exec.Command("notify-send", dataStr)
+				  cmd := exec.Command("notify-send",
+            "-a", "Curd",
+            "-h", "string:x-canonical-private-synchronous:curd-notification",
+            "Curd",
+            dataStr)
 				err := cmd.Run()
 				if err != nil {
 					Log(fmt.Sprintf("%v", cmd), logFile)
