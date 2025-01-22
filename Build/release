@@ -9,6 +9,11 @@ installer_script="Build/curd-windows-build.iss"
 
 # Ensure required directories exist
 mkdir -p "$windows_folder" "$linux_folder"
+mkdir -p "$windows_folder/bin"
+
+# Uncompress mpv.exe.gz
+echo "Uncompressing mpv.exe..."
+gunzip -c Build/mpv.exe.gz > "Build/mpv.exe"
 
 # Update version in the installer script
 sed -i "s/^AppVersion=.*/AppVersion=$version/" "$installer_script"
