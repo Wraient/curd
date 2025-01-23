@@ -2,17 +2,19 @@ package internal
 
 import (
 	"bytes"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-	"github.com/charmbracelet/bubbletea"
-	"crypto/md5"
-	"path/filepath"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // SelectionOption holds the label and the internal key
@@ -29,9 +31,39 @@ type Model struct {
 	selected       int
 	terminalWidth  int
 	terminalHeight int
-	scrollOffset   int // Track the topmost visible item
-	addNewOption   bool  // Add this field
+	scrollOffset   int  // Track the topmost visible item
+	addNewOption   bool // Add this field
 }
+
+var (
+	// Style definitions
+	titleStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#7CB9E8")). // Light blue
+			Bold(true)
+
+	filterLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FF69B4")). // Hot pink
+				Bold(true)
+
+	filterTextStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#98FB98")) // Pale green
+
+	selectedItemStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#000000")). // Black text
+				Background(lipgloss.Color("#7CB9E8")). // Light blue background
+				Bold(true).
+				Padding(0, 1)
+
+	regularItemStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#E6E6FA")) // Light lavender
+
+	noMatchesStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF6B6B")). // Coral red
+			Italic(true)
+
+	quitHintStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFD700")) // Gold
+)
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
@@ -108,12 +140,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	var b strings.Builder
 
-	// Display the search prompt and filter
-	b.WriteString("Search (Press Ctrl+C to quit):\n")
-	b.WriteString("Filter: " + m.filter + "\n")
+	// Display the search prompt and filter with colors
+	b.WriteString(titleStyle.Render("Search") + " (Press " +
+		quitHintStyle.Render("Ctrl+C") + " to quit):\n")
+
+	b.WriteString(filterLabelStyle.Render("Filter: ") +
+		filterTextStyle.Render(m.filter) + "\n")
 
 	if len(m.filteredKeys) == 0 {
-		b.WriteString("\nNo matches found.\n")
+		b.WriteString("\n" + noMatchesStyle.Render("No matches found.") + "\n")
 	} else {
 		visibleItems := m.visibleItemsCount()
 
@@ -127,9 +162,9 @@ func (m Model) View() string {
 		// Render the options within the visible range
 		for i := start; i < end; i++ {
 			if i == m.selected {
-				b.WriteString(fmt.Sprintf("▶ %s\n", m.filteredKeys[i].Label)) // Highlight the selected option
+				b.WriteString(selectedItemStyle.Render("▶ "+m.filteredKeys[i].Label) + "\n")
 			} else {
-				b.WriteString(fmt.Sprintf("  %s\n", m.filteredKeys[i].Label)) // Regular option
+				b.WriteString(regularItemStyle.Render("  "+m.filteredKeys[i].Label) + "\n")
 			}
 		}
 	}
@@ -177,7 +212,6 @@ func (m *Model) filterOptions() {
 	})
 }
 
-
 func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption bool) (SelectionOption, error) {
 	// Pre-download first 14 images in background
 	go preDownloadImages(options, 14)
@@ -196,7 +230,7 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 			Log(fmt.Sprintf("Error caching image: %v", err), logFile)
 			continue
 		}
-		
+
 		// Format: "Title\x00icon\x1f/path/to/cached/image\n"
 		// This tells Rofi to use the image as an icon for this entry
 		rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", option.Title, cachePath))
@@ -210,17 +244,17 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 
 	// Get the absolute path to the rasi config
 	configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanimepreview.rasi")
-	
+
 	// Create the command with explicit arguments
 	args := []string{
 		"-dmenu",
 		"-theme", configPath,
 		"-show-icons",
 		"-p", "Select Anime",
-		"-i",  // Case-insensitive matching
-		"-no-custom",  // Disable custom input
+		"-i",         // Case-insensitive matching
+		"-no-custom", // Disable custom input
 	}
-	
+
 	// Create the command
 	rofiCmd := exec.Command("rofi", args...)
 
@@ -229,7 +263,7 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 	var stdout, stderr bytes.Buffer
 	rofiCmd.Stdout = &stdout
 	rofiCmd.Stderr = &stderr
-	
+
 	// Run the command
 	err := rofiCmd.Run()
 	if err != nil {
@@ -238,7 +272,7 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 		Log(fmt.Sprintf("Rofi stdout: %s", stdout.String()), logFile)
 		return SelectionOption{}, fmt.Errorf("failed to execute rofi: %w", err)
 	}
-	
+
 	selectedTitle := strings.TrimSpace(stdout.String())
 
 	// Handle special cases
@@ -328,7 +362,6 @@ func showCachedImagePreview(imageURL string) error {
 	return nil
 }
 
-
 func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, error) {
 	userCurdConfig := GetGlobalConfig()
 	if userCurdConfig.StoragePath == "" {
@@ -340,37 +373,37 @@ func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, e
 	for _, value := range options {
 		optionsList = append(optionsList, value)
 	}
-	
+
 	// Sort the options alphabetically
 	sort.Strings(optionsList)
-	
+
 	// Add "Add new anime" and "Quit" options
 	if addanimeopt {
 		optionsList = append(optionsList, "Add new anime", "Quit")
 	} else {
 		optionsList = append(optionsList, "Quit")
 	}
-	
+
 	// Join all options into a single string, separated by newlines
 	optionsString := strings.Join(optionsList, "\n")
-	
+
 	// Prepare the Rofi command
 	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanime.rasi"), "-i", "-p", "Select an anime")
-	
+
 	// Set up pipes for input and output
 	cmd.Stdin = strings.NewReader(optionsString)
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	
+
 	// Run the command
 	err := cmd.Run()
 	if err != nil {
 		return SelectionOption{}, fmt.Errorf("failed to run Rofi: %v", err)
 	}
-	
+
 	// Get the selected option
 	selected := strings.TrimSpace(out.String())
-	
+
 	// Handle special cases
 	switch selected {
 	case "":
@@ -380,14 +413,14 @@ func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, e
 	case "Quit":
 		return SelectionOption{Label: "Quit", Key: "-1"}, nil
 	}
-	
+
 	// Find the key for the selected value
 	for key, value := range options {
 		if value == selected {
 			return SelectionOption{Label: value, Key: key}, nil
 		}
 	}
-	
+
 	// If we get here, the selected option wasn't found in the original map
 	return SelectionOption{}, fmt.Errorf("selected option not found in original list")
 }
