@@ -80,26 +80,9 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 	}
 
 	// Load the config from file
-	configMap, err := loadConfigFromFile(configPath)
+	configMap, err := loadConfigFromFile(defaultConfigMap(), configPath)
 	if err != nil {
 		return CurdConfig{}, fmt.Errorf("error loading config file: %v", err)
-	}
-
-	// Add missing fields to the config map
-	updated := false
-	defaultConfigMap := defaultConfigMap()
-	for key, defaultValue := range defaultConfigMap {
-		if _, exists := configMap[key]; !exists {
-			configMap[key] = defaultValue
-			updated = true
-		}
-	}
-
-	// Write updated config back to file if there were any missing fields
-	if updated {
-		if err := saveConfigToFile(configPath, configMap); err != nil {
-			return CurdConfig{}, fmt.Errorf("error saving updated config file: %v", err)
-		}
 	}
 
 	// Populate the CurdConfig struct from the config map
@@ -194,14 +177,13 @@ func ChangeToken(config *CurdConfig, user *User) {
 }
 
 // Load config file from disk into a map (key=value format)
-func loadConfigFromFile(path string) (map[string]string, error) {
+func loadConfigFromFile(defaults map[string]string, path string) (map[string]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	configMap := make(map[string]string)
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
@@ -214,7 +196,7 @@ func loadConfigFromFile(path string) (map[string]string, error) {
 		if len(parts) == 2 {
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
-			configMap[key] = value
+			defaults[key] = value
 		}
 	}
 
@@ -222,7 +204,7 @@ func loadConfigFromFile(path string) (map[string]string, error) {
 		return nil, err
 	}
 
-	return configMap, nil
+	return defaults, nil
 }
 
 // Save updated config map to file in key=value format
