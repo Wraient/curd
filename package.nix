@@ -43,6 +43,7 @@ in
       homepage = "https://github.com/Wraient/curd";
       license = lib.licenses.gpl3;
       platforms = lib.platforms.unix;
+      maintainers = [lib.maintainers.diniamo];
       mainProgram = "curd";
     };
   }

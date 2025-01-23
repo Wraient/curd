@@ -102,6 +102,32 @@ curd
 </details>
 
 <details>
+<summary>NixOS Installation</summary>
+
+1. Add curd as a flake input, for example:
+```nix
+{
+    inputs = {
+        nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+        curd = {
+            url = "github:Wraient/curd";
+            inputs.nixpkgs.follows = "nixpkgs";
+        };
+    }
+}
+```
+2. Install the package, for example:
+```nix
+{inputs, pkgs, ...}: {
+  environment.systemPackages = [
+    inputs.curd.packages.${pkgs.system}.default
+  ];
+}
+```
+
+</details>
+
+<details>
 <summary>Generic Installation</summary>
 
 ```bash
