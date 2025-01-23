@@ -111,6 +111,12 @@ func Log(data interface{}, logFile string) error {
 
 // ClearScreen clears the terminal screen and saves the state
 func ClearScreen() {
+	userCurdConfig := GetGlobalConfig()
+
+	if userCurdConfig.AlternateScreen == false {
+		return
+	}
+
     fmt.Print("\033[?1049h") // Switch to alternate screen buffer
     fmt.Print("\033[2J")     // Clear the entire screen
     fmt.Print("\033[H")      // Move cursor to the top left
@@ -118,6 +124,12 @@ func ClearScreen() {
 
 // RestoreScreen restores the original terminal state
 func RestoreScreen() {
+	userCurdConfig := GetGlobalConfig()
+
+	if userCurdConfig.AlternateScreen == false {
+		return
+	}
+
     fmt.Print("\033[?1049l") // Switch back to the main screen buffer
 }
 

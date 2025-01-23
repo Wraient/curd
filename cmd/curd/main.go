@@ -16,10 +16,6 @@ func main() {
 
 	discordClientId := "1287457464148820089"
 
-	// Setup
-	internal.ClearScreen()
-	defer internal.RestoreScreen()
-
 	var anime internal.Anime
 	var user internal.User
 
@@ -39,6 +35,10 @@ func main() {
 		return
 	}
 	internal.SetGlobalConfig(&userCurdConfig)
+
+	// Setup
+	internal.ClearScreen()
+	defer internal.RestoreScreen()
 
 	logFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "debug.log")
 	internal.ClearLogFile(logFile)

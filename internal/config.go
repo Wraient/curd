@@ -20,17 +20,19 @@ type CurdConfig struct {
 	StoragePath             string `config:"StoragePath"`
 	AnimeNameLanguage		string `config:"AnimeNameLanguage"`
 	PercentageToMarkComplete int    `config:"PercentageToMarkComplete"`
-	NextEpisodePrompt       bool   `config:"NextEpisodePrompt"`
-	SkipOp                  bool   `config:"SkipOp"`
-	SkipEd                  bool   `config:"SkipEd"`
-	SkipFiller              bool   `config:"SkipFiller"`
-	ImagePreview			bool   `config:"ImagePreview"`
-	SkipRecap               bool   `config:"SkipRecap"`
-	RofiSelection           bool   `config:"RofiSelection"`
-	CurrentCategory			bool   `config:"CurrentCategory"`
-	ScoreOnCompletion       bool   `config:"ScoreOnCompletion"`
-	SaveMpvSpeed            bool   `config:"SaveMpvSpeed"`
-	DiscordPresence         bool   `config:"DiscordPresence"`
+	NextEpisodePrompt        bool   `config:"NextEpisodePrompt"`
+	SkipOp                   bool   `config:"SkipOp"`
+	SkipEd                   bool   `config:"SkipEd"`
+	SkipFiller               bool   `config:"SkipFiller"`
+	ImagePreview             bool   `config:"ImagePreview"`
+	SkipRecap                bool   `config:"SkipRecap"`
+	RofiSelection            bool   `config:"RofiSelection"`
+	CurrentCategory          bool   `config:"CurrentCategory"`
+	ScoreOnCompletion        bool   `config:"ScoreOnCompletion"`
+	SaveMpvSpeed             bool   `config:"SaveMpvSpeed"`
+	AddMissingOptions        bool   `config:"AddMissingOptions"`
+	AlternateScreen          bool   `config:"AlternateScreen"`
+	DiscordPresence          bool   `config:"DiscordPresence"`
 }
 
 // Default configuration values as a map
@@ -42,16 +44,18 @@ func defaultConfigMap() map[string]string {
 		"SubsLanguage":            "english",
 		"SubOrDub":                "sub",
 		"PercentageToMarkComplete": "85",
-		"NextEpisodePrompt":       "false",
-		"SkipOp":                  "true",
-		"SkipEd":                  "true",
-		"SkipFiller":              "true",
-		"SkipRecap":               "true",
-		"RofiSelection":           "false",
-		"ImagePreview":            "false",
-		"ScoreOnCompletion":       "true",
-		"SaveMpvSpeed":            "true",
-		"DiscordPresence":         "true",
+		"NextEpisodePrompt":        "false",
+		"SkipOp":                   "true",
+		"SkipEd":                   "true",
+		"SkipFiller":               "true",
+		"SkipRecap":                "true",
+		"RofiSelection":            "false",
+		"ImagePreview":             "false",
+		"ScoreOnCompletion":        "true",
+		"SaveMpvSpeed":             "true",
+		"AddMissingOptions":        "true",
+		"AlternateScreen":          "true",
+		"DiscordPresence":          "true",
 	}
 }
 
@@ -64,7 +68,6 @@ func SetGlobalConfig(config *CurdConfig) {
 func GetGlobalConfig() *CurdConfig {
 	return globalConfig
 }
-
 
 // LoadConfig reads or creates the config file, adds missing fields, and returns the populated CurdConfig struct
 func LoadConfig(configPath string) (CurdConfig, error) {
@@ -85,6 +88,12 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 		return CurdConfig{}, fmt.Errorf("error loading config file: %v", err)
 	}
 
+	// Check AddMissingOptions setting first
+	addMissing := true
+	if val, exists := configMap["AddMissingOptions"]; exists {
+		addMissing, _ = strconv.ParseBool(val)
+	}
+
 	// Add missing fields to the config map
 	updated := false
 	defaultConfigMap := defaultConfigMap()
@@ -95,8 +104,8 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 		}
 	}
 
-	// Write updated config back to file if there were any missing fields
-	if updated {
+	// Write updated config back to file only if AddMissingOptions is true
+	if addMissing && updated {
 		if err := saveConfigToFile(configPath, configMap); err != nil {
 			return CurdConfig{}, fmt.Errorf("error saving updated config file: %v", err)
 		}
