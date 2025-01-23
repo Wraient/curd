@@ -49,13 +49,16 @@ var (
 			Foreground(lipgloss.Color("#98FB98")) // Pale green
 
 	selectedItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#000000")). // Black text
-				Background(lipgloss.Color("#7CB9E8")). // Light blue background
+				Foreground(lipgloss.Color("#FFFFFF")). // White text
+				Background(lipgloss.Color("#4A90E2")). // Softer blue background
 				Bold(true).
-				Padding(0, 1)
+				Padding(0, 1).
+				Border(lipgloss.NormalBorder(), false, false, false, true). // Left border only
+				BorderForeground(lipgloss.Color("#FFFFFF"))                 // White border
 
 	regularItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#E6E6FA")) // Light lavender
+				Foreground(lipgloss.Color("#E6E6FA")). // Light lavender
+				Padding(0, 1)
 
 	noMatchesStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FF6B6B")). // Coral red
@@ -145,14 +148,12 @@ func (m Model) View() string {
 		quitHintStyle.Render("Ctrl+C") + " to quit):\n")
 
 	b.WriteString(filterLabelStyle.Render("Filter: ") +
-		filterTextStyle.Render(m.filter) + "\n")
+		filterTextStyle.Render(m.filter) + "\n\n") // Added extra newline for spacing
 
 	if len(m.filteredKeys) == 0 {
-		b.WriteString("\n" + noMatchesStyle.Render("No matches found.") + "\n")
+		b.WriteString(noMatchesStyle.Render("No matches found.") + "\n")
 	} else {
 		visibleItems := m.visibleItemsCount()
-
-		// Determine the slice of items to display based on scroll offset
 		start := m.scrollOffset
 		end := start + visibleItems
 		if end > len(m.filteredKeys) {
@@ -162,9 +163,9 @@ func (m Model) View() string {
 		// Render the options within the visible range
 		for i := start; i < end; i++ {
 			if i == m.selected {
-				b.WriteString(selectedItemStyle.Render("▶ "+m.filteredKeys[i].Label) + "\n")
+				b.WriteString(selectedItemStyle.Render(m.filteredKeys[i].Label) + "\n")
 			} else {
-				b.WriteString(regularItemStyle.Render("  "+m.filteredKeys[i].Label) + "\n")
+				b.WriteString(regularItemStyle.Render(m.filteredKeys[i].Label) + "\n")
 			}
 		}
 	}
