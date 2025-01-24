@@ -823,6 +823,68 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
         ExitCurd(nil)
     }
 
+	// If anime is not in watching list, prompt user to add it into watching list
+	isInWatchingList := false
+	for _, entry := range user.AnimeList.Watching {
+		if entry.Media.ID == anime.AnilistId {
+			isInWatchingList = true
+			break
+		}
+	}
+
+	if !isInWatchingList {
+		// Create options for the prompt
+		options := map[string]string{
+			"yes": "Add to watching list",
+			"no":  "Continue without adding",
+		}
+
+		var selectedOption SelectionOption
+		var err error
+
+		if userCurdConfig.RofiSelection {
+			// Use rofi for selection
+			selectedOption, err = DynamicSelect(options, false)
+			if err != nil {
+				Log("Error in selection: "+err.Error(), logFile)
+				ExitCurd(err)
+			}
+		} else {
+			// Use terminal selection
+			selectedOption, err = DynamicSelect(options, false)
+			if err != nil {
+				Log("Error in selection: "+err.Error(), logFile)
+				ExitCurd(err)
+			}
+		}
+
+		if selectedOption.Key == "yes" {
+			err = AddAnimeToWatchingList(anime.AnilistId, user.Token)
+			if err != nil {
+				Log("Error adding anime to watching list: "+err.Error(), logFile)
+				ExitCurd(err)
+			}
+			// Refresh user's anime list after adding
+			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+				anilistUserDataPreview, err := GetUserDataPreview(user.Token, user.Id)
+				if err != nil {
+					Log("Error refreshing anime list: "+err.Error(), logFile)
+					ExitCurd(err)
+				}
+				user.AnimeList = ParseAnimeList(anilistUserDataPreview)
+			} else {
+				anilistUserData, err := GetUserData(user.Token, user.Id)
+				if err != nil {
+					Log("Error refreshing anime list: "+err.Error(), logFile)
+					ExitCurd(err)
+				}
+				user.AnimeList = ParseAnimeList(anilistUserData)
+			}
+		} else if selectedOption.Key == "-1" {
+			ExitCurd(nil)
+		}
+	}
+
     // If upstream is ahead, update the episode number
     if temp_anime, err := FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId)); err == nil {
         if temp_anime.Progress > anime.Ep.Number {
