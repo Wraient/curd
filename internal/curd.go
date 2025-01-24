@@ -842,20 +842,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		var selectedOption SelectionOption
 		var err error
 
-		if userCurdConfig.RofiSelection {
-			// Use rofi for selection
-			selectedOption, err = DynamicSelect(options, false)
-			if err != nil {
-				Log("Error in selection: "+err.Error(), logFile)
-				ExitCurd(err)
-			}
-		} else {
-			// Use terminal selection
-			selectedOption, err = DynamicSelect(options, false)
-			if err != nil {
-				Log("Error in selection: "+err.Error(), logFile)
-				ExitCurd(err)
-			}
+		// Use rofi for selection
+		selectedOption, err = DynamicSelect(options, false)
+		if err != nil {
+			Log("Error in selection: "+err.Error(), logFile)
+			ExitCurd(err)
 		}
 
 		if selectedOption.Key == "yes" {
