@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
+
 var logFile = "debug.log"
 
 func getMPVPath() (string, error) {
@@ -22,12 +24,36 @@ func getMPVPath() (string, error) {
     return mpvPath, nil
 }
 
-func StartVideo(link string, args []string, title string) (string, error) {
+func StartVideo(link string, args []string, title string, anime *Anime) (string, error) {
     var command *exec.Cmd
+	var mpvSocketPath string
+	var err error
 
+	// Check if we have an existing socket and if MPV is still running
+	if anime.Ep.Player.SocketPath != "" && IsMPVRunning(anime.Ep.Player.SocketPath) {
+		// Reuse existing socket
+		mpvSocketPath = anime.Ep.Player.SocketPath
+
+		// Load the new file in the existing MPV instance
+		command := []interface{}{"loadfile", link}
+		_, err = MPVSendCommand(mpvSocketPath, command)
+		if err != nil {
+			return "", fmt.Errorf("failed to load file in existing MPV instance: %w", err)
+		}
+
+		// Set the new title
+		_, err = MPVSendCommand(mpvSocketPath, []interface{}{"set_property", "force-media-title", title})
+		if err != nil {
+			Log(fmt.Sprintf("Failed to set title: %v", err), logFile)
+		}
+
+		return mpvSocketPath, nil
+	}
+
+	if anime.Ep.Player.SocketPath == "" {
     // Generate a random number for the socket path
     randomBytes := make([]byte, 4)
-    _, err := rand.Read(randomBytes)
+		_, err = rand.Read(randomBytes)
     if err != nil {
         Log("Failed to generate random number", logFile)
         return "", fmt.Errorf("failed to generate random number: %w", err)
@@ -36,15 +62,20 @@ func StartVideo(link string, args []string, title string) (string, error) {
     randomNumber := fmt.Sprintf("%x", randomBytes)
 
     // Create the mpv socket path with the random number
-    var mpvSocketPath string
     if runtime.GOOS == "windows" {
         mpvSocketPath = fmt.Sprintf(`\\.\pipe\curd_mpvsocket_%s`, randomNumber)
     } else {
         mpvSocketPath = fmt.Sprintf("/tmp/curd_mpvsocket_%s", randomNumber)
+		}
+	} else {
+		mpvSocketPath = anime.Ep.Player.SocketPath
     }
 
     // Add the title to MPV arguments
-    titleArgs := []string{fmt.Sprintf("--title=%s", title),fmt.Sprintf("--force-media-title=%s", title)}
+	titleArgs := []string{fmt.Sprintf("--title=%s", title), fmt.Sprintf("--force-media-title=%s", title)}
+
+	// Keep the window open after episode completes, new episode starts in the same mpv window
+	args = append(args, "--force-window=yes", "--idle=yes")
     args = append(args, titleArgs...)
 
     // Prepare arguments for mpv
@@ -52,7 +83,8 @@ func StartVideo(link string, args []string, title string) (string, error) {
     mpvArgs = append(mpvArgs, "--no-terminal", "--really-quiet", fmt.Sprintf("--input-ipc-server=%s", mpvSocketPath), link)
     // Add any additional arguments passed
     if len(args) > 0 {
-        mpvArgs = append(mpvArgs, args...)    }
+		mpvArgs = append(mpvArgs, args...)
+	}
 
     if runtime.GOOS == "windows" {
         // Get the path to mpv.exe for Windows
@@ -191,4 +223,42 @@ func PercentageWatched(playbackTime int, duration int) float64 {
         return percentage
     }
     return float64(0)
+}
+
+func HasActivePlayback(ipcSocketPath string) (bool, error) {
+	// Get the time-pos property from MPV
+	timePos, err := MPVSendCommand(ipcSocketPath, []interface{}{"get_property", "time-pos"})
+	if err != nil {
+		// Check specifically for "property unavailable" error
+		if strings.Contains(err.Error(), "property unavailable") {
+			// This indicates nothing is playing
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting time-pos: %w", err)
+	}
+
+	// If we got a valid response, something is playing
+	if timePos != nil {
+		return true, nil
+	}
+
+	// Default to false if we can't determine the status
+	return false, nil
+}
+
+func IsMPVRunning(socketPath string) bool {
+	if socketPath == "" {
+		return false
+	}
+
+	// Try to connect to the socket
+	conn, err := connectToPipe(socketPath)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+
+	// Send a simple command to check if MPV responds
+	_, err = MPVSendCommand(socketPath, []interface{}{"get_property", "pid"})
+	return err == nil
 }

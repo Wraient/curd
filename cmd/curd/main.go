@@ -185,7 +185,7 @@ func main() {
 
 	anime.Ep.Player.Speed = 1.0
 
-	// Main loop
+	// Main loop (loop to keep starting new episodes)
 	for {
 
 		internal.Log(anime, logFile)
@@ -211,7 +211,7 @@ func main() {
 			}
 		}
 
-		// Start curd
+		// Start curd (loop while episode is playing)
 		for {
 			// Check if current episode is filler/recap
 			err = internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime)
@@ -428,6 +428,21 @@ func main() {
 							// anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime), logFile)
 						}
 					}
+
+					// Check if anything is playing, if nothing is playing and episode was started, start next episode
+					hasPlayback, err := internal.HasActivePlayback(anime.Ep.Player.SocketPath)
+					if err != nil {
+						internal.Log("Error checking playback status: "+err.Error(), logFile)
+					} else if !hasPlayback && anime.Ep.Started {
+						// Nothing is playing, start next episode
+						internal.Log("Nothing playing in MPV, starting next episode", logFile)
+						anime.Ep.Number++
+						anime.Ep.Started = false
+						anime.Ep.IsCompleted = true
+						close(skipLoopDone)
+						return
+					}
+
 				}
 			}
 		}()
