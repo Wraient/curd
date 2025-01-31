@@ -15,6 +15,7 @@ type Anime struct {
 	AnilistId     int        `json:"anilist_id"` // Assuming you have an Anilist ID in your struct
 	Rewatching    bool
 	AllanimeId    string // Can be populated as necessary
+	FillerEpisodes	  []int
 }
 
 type Skip struct {
