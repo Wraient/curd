@@ -185,6 +185,28 @@ func main() {
 
 	anime.Ep.Player.Speed = 1.0
 
+	// Get filler list concurrently
+	go func() {
+		// Get MAL ID first if not already set
+		if anime.MalId == 0 {
+			malID, err := internal.GetAnimeMalID(anime.AnilistId)
+			if err != nil {
+				internal.Log("Error getting MAL ID: "+err.Error(), logFile)
+				return
+			}
+			anime.MalId = malID
+		}
+
+		fillerList, err := internal.FetchFillerEpisodes(anime.MalId)
+		if err != nil {
+			internal.Log("Error getting filler list: "+err.Error(), logFile)
+		} else {
+			anime.FillerEpisodes = fillerList
+			internal.Log("Filler list fetched successfully", logFile)
+			fmt.Println("Filler episodes: ", anime.FillerEpisodes)
+		}
+	}()
+
 	// Main loop (loop to keep starting new episodes)
 	for {
 
@@ -204,7 +226,7 @@ func main() {
 			if err != nil {
 				internal.Log("Error setting Discord presence: "+err.Error(), logFile)
 			}
-		} else {
+		} else if anime.MalId == 0 {
 			anime.MalId, err = internal.GetAnimeMalID(anime.AnilistId)
 			if err != nil {
 				internal.Log("Error getting anime MAL ID: "+err.Error(), logFile)
@@ -220,6 +242,9 @@ func main() {
 				break // Break the loop and continue with playback
 			}
 
+			// Check if episode is filler
+			anime.Ep.IsFiller = internal.IsEpisodeFiller(anime.FillerEpisodes, anime.Ep.Number)
+
 			// If not filler/recap (or skip is disabled), break and continue with playback
 			if !((anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap)) {
 				if anime.Ep.LastWasSkipped {
@@ -231,11 +256,13 @@ func main() {
 			// If it is filler/recap, log it and move to next episode
 			if anime.Ep.IsFiller {
 				internal.CurdOut(fmt.Sprint("Filler episode, skipping: ", anime.Ep.Number))
+				// Get next canon episode
+				anime.Ep.Number = internal.GetNextCanonEpisode(anime.FillerEpisodes, anime.Ep.Number)
 			} else {
 				internal.CurdOut(fmt.Sprint("Recap episode, skipping: ", anime.Ep.Number))
+				anime.Ep.Number++
 			}
 
-			anime.Ep.Number++
 			anime.Ep.LastWasSkipped = true
 			anime.Ep.Started = false
 			internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, internal.GetAnimeName(anime))
