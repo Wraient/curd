@@ -514,6 +514,8 @@ func main() {
 		}
 
 		if userCurdConfig.NextEpisodePrompt {
+			internal.CurdOut(fmt.Sprintf("Start next episode (%d)?", anime.Ep.Number))
+
 			options := map[string]string{
 				"yes": "Yes",
 				"no":  "No",
