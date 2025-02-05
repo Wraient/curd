@@ -37,6 +37,7 @@ type Episode struct {
 	Started        bool         `json:"started"`
 	Duration       int          `json:"duration"`
 	Links          []string     `json:"links"`
+	NextEpisode	   NextEpisode  `json:"next_episode"`
 	IsFiller       bool         `json:"filler"`
 	IsRecap        bool         `json:"recap"`
 	Aired          string       `json:"aired"`
@@ -44,6 +45,11 @@ type Episode struct {
 	ContinueLast   bool
 	LastWasSkipped bool // used in filler check
 	IsCompleted    bool
+}
+
+type NextEpisode struct {
+	Number			int
+	Links			[]string
 }
 
 type playingVideo struct {

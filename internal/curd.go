@@ -979,6 +979,10 @@ func WriteTokenToFile(token string, filePath string) error {
 
 func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string {
 
+	if anime.Ep.NextEpisode.Number == anime.Ep.Number {
+		anime.Ep.Links = anime.Ep.NextEpisode.Links
+		fmt.Println("using prefetched next episode link")
+	} else {
 	// Get episode link
 	link, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
 	if err != nil {
@@ -1008,6 +1012,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 		// anime.Ep.Links = link
 	}
 	anime.Ep.Links = link
+	}
 
 	if len(anime.Ep.Links) == 0 {
 		CurdOut("No episode links found")
@@ -1015,6 +1020,28 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime, logFile string) string 
 	}
 
 	Log(anime, logFile)
+
+	// Modify the goroutine in main.go where next episode links are fetched
+	// Get next episode link in parallel
+	go func() {
+		nextEpNum := anime.Ep.Number + 1
+		if nextEpNum <= anime.TotalEpisodes {
+			// Get next canon episode number if filler skip is enabled
+			if userCurdConfig.SkipFiller && IsEpisodeFiller(anime.FillerEpisodes, anime.Ep.Number) {
+				nextEpNum = GetNextCanonEpisode(anime.FillerEpisodes, nextEpNum)
+			}
+			nextLinks, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, nextEpNum)
+			if err != nil {
+				Log("Error getting next episode link: "+err.Error(), logFile)
+			} else {
+				anime.Ep.NextEpisode = NextEpisode{
+					Number: nextEpNum,
+					Links:  nextLinks,
+				}
+				Log(fmt.Sprintf("Next episode link fetched for ep %d", nextEpNum), logFile)
+			}
+		}
+	}()
 
 	// Write anime.AnilistId to curd_id in the storage path
 	idFilePath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_id")
