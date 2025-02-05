@@ -30,6 +30,13 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	var mpvSocketPath string
 	var err error
 
+	userConfig := GetGlobalConfig()
+
+	// Add custom MPV arguments from config if they exist
+	if userConfig.MpvArgs != nil {
+		args = append(args, userConfig.MpvArgs...)
+	}
+
 	// Check if we have an existing socket and if MPV is still running
 	if anime.Ep.Player.SocketPath != "" && IsMPVRunning(anime.Ep.Player.SocketPath) {
 		// Reuse existing socket
