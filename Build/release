@@ -12,10 +12,6 @@ installer_script="Build/curd-windows-build.iss"
 mkdir -p "$windows_folder" "$linux_folder" "$macos_folder"
 mkdir -p "$windows_folder/bin"
 
-# Uncompress mpv.exe.gz
-echo "Uncompressing mpv.exe..."
-gunzip -c Build/mpv.exe.gz > "Build/mpv.exe"
-
 # Update version in the installer script
 sed -i "s/^AppVersion=.*/AppVersion=$version/" "$installer_script"
 
@@ -29,7 +25,7 @@ bash Build/buildlinux
 
 # Move the Linux binary to the release folder
 if [ -f "curd" ]; then
-    mv curd "$linux_folder/"
+    mv curd "$linux_folder/curd-linux-x86_64"
 else
     echo "Linux build failed. Please check Build/buildlinux."
     exit 1
@@ -39,7 +35,7 @@ fi
 echo "Building macOS binaries..."
 bash Build/buildmac
 if [ -f "curd" ]; then
-    mv curd "$macos_folder/curd-amd64"
+    mv curd "$macos_folder/curd-macos-x86_64"
 else
     echo "macOS Intel build failed. Please check Build/buildmac."
     exit 1
@@ -47,7 +43,7 @@ fi
 
 bash Build/buildmac-arm64
 if [ -f "curd" ]; then
-    mv curd "$macos_folder/curd-arm64"
+    mv curd "$macos_folder/curd-macos-arm64"
 else
     echo "macOS ARM build failed. Please check Build/buildmac-arm64."
     exit 1
@@ -55,16 +51,20 @@ fi
 
 # Create Universal binary for macOS
 echo "Creating macOS Universal binary..."
-lipo -create "$macos_folder/curd-amd64" "$macos_folder/curd-arm64" -output "$macos_folder/curd"
+llvm-lipo -create "$macos_folder/curd-amd64" "$macos_folder/curd-arm64" -output "$macos_folder/curd"
 rm "$macos_folder/curd-amd64" "$macos_folder/curd-arm64"
 
 # Build Windows binary
 echo "Building Windows binary..."
 bash Build/buildwindows
 
+# Uncompress mpv.exe.gz
+echo "Uncompressing mpv.exe..."
+gunzip -c Build/mpv.exe.gz > "Build/mpv.exe"
+
 # Move the Windows binary to the release folder
 if [ -f "curd.exe" ]; then
-    mv curd.exe "$windows_folder/"
+    mv curd.exe "$windows_folder/curd-windows.exe"
 else
     echo "Windows build failed. Please check Build/buildwindows."
     exit 1
@@ -84,9 +84,11 @@ wine "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "$installer_script"
 # Move installer to the release folder
 installer_output="Build/Output/CurdInstaller.exe"  # Replace with actual output location if different
 if [ -f "$installer_output" ]; then
-    mv "$installer_output" "$windows_folder/CurdInstaller.exe"
+    mv "$installer_output" "$windows_folder/Curd-Windows-Installer.exe"
 else
     echo "Installer creation failed. Please check Inno Setup script output."
 fi
+
+rm "Build/mpv.exe"
 
 echo "Release build completed in $release_folder."

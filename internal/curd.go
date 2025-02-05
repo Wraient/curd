@@ -8,13 +8,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-    "github.com/gen2brain/beeep"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gen2brain/beeep"
 )
 
 func GetTokenFromFile(filePath string) (string, error) {
@@ -438,13 +439,34 @@ func UpdateCurd(repo, fileName string) error {
         return fmt.Errorf("unable to find current executable: %v", err)
     }
 
-    // Adjust file name for Windows
-    if runtime.GOOS == "windows" {
-        fileName += ".exe"
+	// Determine the correct binary name based on OS and architecture
+	var binaryName string
+	switch runtime.GOOS {
+	case "windows":
+		if strings.HasSuffix(executablePath, "curd.exe") {
+			binaryName = "curd-windows.exe"
+		}
+	case "darwin": // macOS
+		switch runtime.GOARCH {
+		case "amd64":
+			binaryName = "curd-macos-x86_64"
+		case "arm64":
+			binaryName = "curd-macos-arm64"
+		default:
+			binaryName = "curd-macos-universal"
+		}
+	case "linux":
+		if runtime.GOARCH == "amd64" {
+			binaryName = "curd-linux-x86_64"
+		} else {
+			return fmt.Errorf("unsupported Linux architecture: %s", runtime.GOARCH)
+		}
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
     }
 
     // GitHub release URL for curd
-    url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, fileName)
+	url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, binaryName)
 
     // Temporary path for the downloaded curd executable
     tmpPath := executablePath + ".tmp"
