@@ -203,7 +203,7 @@ func main() {
 		} else {
 			anime.FillerEpisodes = fillerList
 			internal.Log("Filler list fetched successfully", logFile)
-			fmt.Println("Filler episodes: ", anime.FillerEpisodes)
+			// fmt.Println("Filler episodes: ", anime.FillerEpisodes)
 		}
 	}()
 

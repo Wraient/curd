@@ -14,35 +14,37 @@ import (
 
 // CurdConfig struct with field names that match the config keys
 type CurdConfig struct {
-	Player                  string `config:"Player"`
-	SubsLanguage            string `config:"SubsLanguage"`
-	SubOrDub                string `config:"SubOrDub"`
-	StoragePath             string `config:"StoragePath"`
-	AnimeNameLanguage		string `config:"AnimeNameLanguage"`
-	PercentageToMarkComplete int    `config:"PercentageToMarkComplete"`
-	NextEpisodePrompt        bool   `config:"NextEpisodePrompt"`
-	SkipOp                   bool   `config:"SkipOp"`
-	SkipEd                   bool   `config:"SkipEd"`
-	SkipFiller               bool   `config:"SkipFiller"`
-	ImagePreview             bool   `config:"ImagePreview"`
-	SkipRecap                bool   `config:"SkipRecap"`
-	RofiSelection            bool   `config:"RofiSelection"`
-	CurrentCategory          bool   `config:"CurrentCategory"`
-	ScoreOnCompletion        bool   `config:"ScoreOnCompletion"`
-	SaveMpvSpeed             bool   `config:"SaveMpvSpeed"`
-	AddMissingOptions        bool   `config:"AddMissingOptions"`
-	AlternateScreen          bool   `config:"AlternateScreen"`
-	DiscordPresence          bool   `config:"DiscordPresence"`
+	Player                   string   `config:"Player"`
+	MpvArgs                  []string `config:MpvArgs`
+	SubsLanguage             string   `config:"SubsLanguage"`
+	SubOrDub                 string   `config:"SubOrDub"`
+	StoragePath              string   `config:"StoragePath"`
+	AnimeNameLanguage        string   `config:"AnimeNameLanguage"`
+	PercentageToMarkComplete int      `config:"PercentageToMarkComplete"`
+	NextEpisodePrompt        bool     `config:"NextEpisodePrompt"`
+	SkipOp                   bool     `config:"SkipOp"`
+	SkipEd                   bool     `config:"SkipEd"`
+	SkipFiller               bool     `config:"SkipFiller"`
+	ImagePreview             bool     `config:"ImagePreview"`
+	SkipRecap                bool     `config:"SkipRecap"`
+	RofiSelection            bool     `config:"RofiSelection"`
+	CurrentCategory          bool     `config:"CurrentCategory"`
+	ScoreOnCompletion        bool     `config:"ScoreOnCompletion"`
+	SaveMpvSpeed             bool     `config:"SaveMpvSpeed"`
+	AddMissingOptions        bool     `config:"AddMissingOptions"`
+	AlternateScreen          bool     `config:"AlternateScreen"`
+	DiscordPresence          bool     `config:"DiscordPresence"`
 }
 
 // Default configuration values as a map
 func defaultConfigMap() map[string]string {
 	return map[string]string{
-		"Player":                  "mpv",
-		"StoragePath":             "$HOME/.local/share/curd",
-		"AnimeNameLanguage":	   "english",
-		"SubsLanguage":            "english",
-		"SubOrDub":                "sub",
+		"Player":                   "mpv",
+		"MpvArgs":                  "[]",
+		"StoragePath":              "$HOME/.local/share/curd",
+		"AnimeNameLanguage":        "english",
+		"SubsLanguage":             "english",
+		"SubOrDub":                 "sub",
 		"PercentageToMarkComplete": "85",
 		"NextEpisodePrompt":        "false",
 		"SkipOp":                   "true",
@@ -67,6 +69,29 @@ func SetGlobalConfig(config *CurdConfig) {
 
 func GetGlobalConfig() *CurdConfig {
 	return globalConfig
+}
+
+// Helper function to parse string array from config
+func parseStringArray(value string) []string {
+	// Remove brackets and split by comma
+	value = strings.TrimPrefix(value, "[")
+	value = strings.TrimSuffix(value, "]")
+	if value == "" {
+		return nil
+	}
+
+	// Split by comma and trim spaces and quotes from each element
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		// Trim spaces and quotes
+		part = strings.TrimSpace(part)
+		part = strings.Trim(part, "\"")
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 // LoadConfig reads or creates the config file, adds missing fields, and returns the populated CurdConfig struct
@@ -109,6 +134,11 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 		if err := saveConfigToFile(configPath, configMap); err != nil {
 			return CurdConfig{}, fmt.Errorf("error saving updated config file: %v", err)
 		}
+	}
+
+	// Parse string arrays
+	if mpvArgs, exists := configMap["MpvArgs"]; exists {
+		configMap["MpvArgs"] = mpvArgs
 	}
 
 	// Populate the CurdConfig struct from the config map
@@ -277,6 +307,11 @@ func populateConfig(configMap map[string]string) CurdConfig {
 				}
 			}
 		}
+	}
+
+	// Handle MpvArgs specially
+	if mpvArgs, exists := configMap["MpvArgs"]; exists {
+		config.MpvArgs = parseStringArray(mpvArgs)
 	}
 
 	return config
