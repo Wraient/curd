@@ -177,59 +177,74 @@ func createDefaultConfig(path string) error {
 	return nil
 }
 
+func getTokenFromTempFile(isWindowsPlatform bool) (string, error) {
+    // Create a temporary file for the token
+    tempFile, err := os.CreateTemp("", "curd-token-*.txt")
+    if err != nil {
+        return "", fmt.Errorf("error creating temp file: %v", err)
+    }
+    tempPath := tempFile.Name()
+    tempFile.Close()
+
+    // Write instructions to the temp file
+    instructions := "Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token\n" +
+        "Replace this text with your token and save the file.\n"
+    if err := os.WriteFile(tempPath, []byte(instructions), 0644); err != nil {
+        return "", fmt.Errorf("error writing instructions: %v", err)
+    }
+
+    // Open the file with appropriate editor
+    var cmd *exec.Cmd
+    if isWindowsPlatform {
+        cmd = exec.Command("notepad.exe", tempPath)
+    } else {
+        editor := os.Getenv("EDITOR")
+        if editor == "" {
+            editor = "nano" // Default to nano if $EDITOR is not set
+        }
+        cmd = exec.Command(editor, tempPath)
+        cmd.Stdin = os.Stdin
+        cmd.Stdout = os.Stdout
+        cmd.Stderr = os.Stderr
+    }
+
+    if err := cmd.Run(); err != nil {
+        return "", fmt.Errorf("error opening editor: %v", err)
+    }
+
+    // Read the token from the file
+    content, err := os.ReadFile(tempPath)
+    if err != nil {
+        return "", fmt.Errorf("error reading token: %v", err)
+    }
+
+    // Clean up the temp file
+    os.Remove(tempPath)
+
+    // Extract token (remove instructions and whitespace)
+    return strings.TrimSpace(string(content)), nil
+}
+
 func ChangeToken(config *CurdConfig, user *User) {
-	var err error
-	tokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "token")
+    var err error
+    tokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "token")
 
-	if runtime.GOOS == "windows" {
-		// Create a temporary file for the token
-		tempFile, err := os.CreateTemp("", "curd-token-*.txt")
-		if err != nil {
-			Log("Error creating temp file: "+err.Error(), logFile)
-			ExitCurd(err)
-		}
-		tempPath := tempFile.Name()
-		tempFile.Close()
+    switch {
+    case runtime.GOOS == "darwin" || runtime.GOOS == "windows":
+        user.Token, err = getTokenFromTempFile(runtime.GOOS == "windows")
+    case config.RofiSelection:
+        user.Token, err = GetTokenFromRofi()
+    default:
+        fmt.Println("Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
+        fmt.Scanln(&user.Token)
+    }
 
-		// Write instructions to the temp file
-		instructions := "Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token\n" +
-			"Replace this text with your token and save the file.\n"
-		if err := os.WriteFile(tempPath, []byte(instructions), 0644); err != nil {
-			Log("Error writing instructions: "+err.Error(), logFile)
-			ExitCurd(err)
-		}
+    if err != nil {
+        Log("Error getting user input: "+err.Error(), logFile)
+        ExitCurd(err)
+    }
 
-		// Open notepad with the temp file
-		cmd := exec.Command("notepad.exe", tempPath)
-		if err := cmd.Run(); err != nil {
-			Log("Error opening notepad: "+err.Error(), logFile)
-			ExitCurd(err)
-		}
-
-		// Read the token from the file
-		content, err := os.ReadFile(tempPath)
-		if err != nil {
-			Log("Error reading token: "+err.Error(), logFile)
-			ExitCurd(err)
-		}
-
-		// Clean up the temp file
-		os.Remove(tempPath)
-
-		// Extract token (remove instructions and whitespace)
-		user.Token = strings.TrimSpace(string(content))
-	} else if config.RofiSelection {
-		user.Token, err = GetTokenFromRofi()
-	} else {
-		fmt.Println("Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
-		fmt.Scanln(&user.Token)
-	}
-
-	if err != nil {
-		Log("Error getting user input: "+err.Error(), logFile)
-		ExitCurd(err)
-	}
-	WriteTokenToFile(user.Token, tokenPath)
+    WriteTokenToFile(user.Token, tokenPath)
 }
 
 // Load config file from disk into a map (key=value format)
