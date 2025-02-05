@@ -45,7 +45,7 @@ fi
 # Create Universal binary for macOS
 echo "Creating macOS Universal binary..."
 llvm-lipo -create "$macos_folder/curd-macos-x86_64" "$macos_folder/curd-macos-arm64" -output "$macos_folder/curd-macos-universal"
-rm "$macos_folder/curd-macos-x86_64" "$macos_folder/curd-macos-arm64"
+# rm "$macos_folder/curd-macos-x86_64" "$macos_folder/curd-macos-arm64"
 
 
 # Update version in the installer script
