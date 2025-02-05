@@ -28,6 +28,22 @@ jobs:
         run: |
           ./Build/buildlinux
 
+      - name: Build macOS Intel binary
+        run: |
+          ./Build/buildmac
+
+      - name: Build macOS ARM64 binary
+        run: |
+          ./Build/buildmac-arm64
+
+      - name: Create Universal macOS binary
+        run: |
+          mkdir -p Build/macos
+          mv curd Build/macos/curd-amd64
+          mv curd-arm64 Build/macos/curd-arm64
+          lipo -create Build/macos/curd-amd64 Build/macos/curd-arm64 -output Build/macos/curd
+          rm Build/macos/curd-amd64 Build/macos/curd-arm64
+
       - name: Revert Changes in player.go
         run: |
           git checkout -- internal/player.go
@@ -43,8 +59,9 @@ jobs:
           path: |
             Build/curd
             Build/curd.exe
-          retention-days: 1  # Set retention period
-          if-no-files-found: error  # Fail if files are not found
+            Build/macos/curd
+          retention-days: 1
+          if-no-files-found: error
 
       - name: List Build Directory
         run: |
@@ -121,6 +138,7 @@ jobs:
           files: |
             Build/curd
             Build/curd.exe
+            Build/macos/curd
             Build/Output/CurdInstaller.exe
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}

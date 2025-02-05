@@ -5,10 +5,11 @@ read -p "Enter the version number: " version
 release_folder="releases/curd-$version"
 windows_folder="$release_folder/windows"
 linux_folder="$release_folder/linux"
+macos_folder="$release_folder/macos"
 installer_script="Build/curd-windows-build.iss"
 
 # Ensure required directories exist
-mkdir -p "$windows_folder" "$linux_folder"
+mkdir -p "$windows_folder" "$linux_folder" "$macos_folder"
 mkdir -p "$windows_folder/bin"
 
 # Uncompress mpv.exe.gz
@@ -33,6 +34,29 @@ else
     echo "Linux build failed. Please check Build/buildlinux."
     exit 1
 fi
+
+# Build macOS binaries
+echo "Building macOS binaries..."
+bash Build/buildmac
+if [ -f "curd" ]; then
+    mv curd "$macos_folder/curd-amd64"
+else
+    echo "macOS Intel build failed. Please check Build/buildmac."
+    exit 1
+fi
+
+bash Build/buildmac-arm64
+if [ -f "curd" ]; then
+    mv curd "$macos_folder/curd-arm64"
+else
+    echo "macOS ARM build failed. Please check Build/buildmac-arm64."
+    exit 1
+fi
+
+# Create Universal binary for macOS
+echo "Creating macOS Universal binary..."
+lipo -create "$macos_folder/curd-amd64" "$macos_folder/curd-arm64" -output "$macos_folder/curd"
+rm "$macos_folder/curd-amd64" "$macos_folder/curd-arm64"
 
 # Build Windows binary
 echo "Building Windows binary..."
