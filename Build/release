@@ -12,13 +12,6 @@ installer_script="Build/curd-windows-build.iss"
 mkdir -p "$windows_folder" "$linux_folder" "$macos_folder"
 mkdir -p "$windows_folder/bin"
 
-# Update version in the installer script
-sed -i "s/^AppVersion=.*/AppVersion=$version/" "$installer_script"
-
-# Update Source paths in the installer script
-sed -i "s|Source: \".*curd.exe\"|Source: \"Z:$windows_folder/curd.exe\"|" "$installer_script"
-# sed -i "s|Source: \".*mpv.exe\"|Source: \"Z:$windows_folder/mpv.exe\"|" "$installer_script"
-
 # Build Linux binary
 echo "Building Linux binary..."
 bash Build/buildlinux
@@ -51,8 +44,16 @@ fi
 
 # Create Universal binary for macOS
 echo "Creating macOS Universal binary..."
-llvm-lipo -create "$macos_folder/curd-amd64" "$macos_folder/curd-arm64" -output "$macos_folder/curd"
-rm "$macos_folder/curd-amd64" "$macos_folder/curd-arm64"
+llvm-lipo -create "$macos_folder/curd-macos-x86_64" "$macos_folder/curd-macos-arm64" -output "$macos_folder/curd-macos-universal"
+rm "$macos_folder/curd-macos-x86_64" "$macos_folder/curd-macos-arm64"
+
+
+# Update version in the installer script
+sed -i "s/^AppVersion=.*/AppVersion=$version/" "$installer_script"
+
+# Update Source paths in the installer script
+sed -i "s|Source: \".*curd.exe\"|Source: \"Z:$windows_folder/curd.exe\"|" "$installer_script"
+# sed -i "s|Source: \".*mpv.exe\"|Source: \"Z:$windows_folder/mpv.exe\"|" "$installer_script"
 
 # Build Windows binary
 echo "Building Windows binary..."
