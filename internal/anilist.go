@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,7 +32,7 @@ func GetAnimeMap(animeList AnimeList) map[string]string {
 		for _, entry := range entries {
 			// Only include entries with a non-empty English title
 
-			if entry.Media.Title.English != ""  && userCurdConfig.AnimeNameLanguage == "english" {
+			if entry.Media.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
 				animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.English
 			} else {
 				animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.Romaji
@@ -63,12 +62,12 @@ func GetAnimeMapPreview(animeList AnimeList) map[string]RofiSelectPreview {
 			Log(fmt.Sprintf("AnimeNameLanguage: ", userCurdConfig.AnimeNameLanguage), logFile)
 			if entry.Media.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
 				animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-					Title: entry.Media.Title.English,
+					Title:      entry.Media.Title.English,
 					CoverImage: entry.CoverImage,
 				}
 			} else {
 				animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-					Title: entry.Media.Title.Romaji,
+					Title:      entry.Media.Title.Romaji,
 					CoverImage: entry.CoverImage,
 				}
 			}
@@ -459,9 +458,9 @@ func SearchAnimeByTitle(jsonData map[string]interface{}, searchTitle string) []m
 
 			if strings.Contains(strings.ToLower(romajiTitle), strings.ToLower(searchTitle)) || strings.Contains(strings.ToLower(englishTitle), strings.ToLower(searchTitle)) {
 				result := map[string]interface{}{
-					"id":           media["id"],
-					"progress":     entry.(map[string]interface{})["progress"],
-					"romaji_title": romajiTitle,
+					"id":            media["id"],
+					"progress":      entry.(map[string]interface{})["progress"],
+					"romaji_title":  romajiTitle,
 					"english_title": englishTitle,
 					"episodes":      episodes,
 					"duration":      duration,
@@ -609,7 +608,7 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")  // <-- Important!
+	req.Header.Set("Content-Type", "application/json") // <-- Important!
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
@@ -691,9 +690,9 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 					Episodes: toInt(media["episodes"]),
 					ID:       toInt(media["id"]),
 					Title: AnimeTitle{
-						English: safeString(media["title"].(map[string]interface{})["english"]),
-						Romaji:  safeString(media["title"].(map[string]interface{})["romaji"]),
-						Japanese:  safeString(media["title"].(map[string]interface{})["native"]),
+						English:  safeString(media["title"].(map[string]interface{})["english"]),
+						Romaji:   safeString(media["title"].(map[string]interface{})["romaji"]),
+						Japanese: safeString(media["title"].(map[string]interface{})["native"]),
 					},
 				},
 				Progress: toInt(entryData["progress"]),
@@ -763,78 +762,62 @@ func FindAnimeByAnilistIDInAnimes(animes []Anime, anilistID int) (*Anime, error)
 }
 
 // GetAnimeDataByID retrieves detailed anime data from AniList using the anime's ID and user token
-func GetAnimeDataByID(anilistID int, token string) (Anime, error) {
+func GetAnimeDataByID(id int, token string) (Anime, error) {
+	url := "https://graphql.anilist.co"
 	query := `
 	query ($id: Int) {
-		Media (id: $id, type: ANIME) {
+		Media(id: $id, type: ANIME) {
 			id
-			title {
-				romaji
-				english
-				native
-			}
 			episodes
-			duration
 			status
+			nextAiringEpisode {
+				episode
+			}
 		}
-	}
-	`
-	
+	}`
+
 	variables := map[string]interface{}{
-		"id": anilistID,
+		"id": id,
 	}
 
-	jsonValue, _ := json.Marshal(map[string]interface{}{
-		"query":     query,
-		"variables": variables,
-	})
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
 
-	req, err := http.NewRequest("POST", "https://graphql.anilist.co", bytes.NewBuffer(jsonValue))
+	response, err := makePostRequest(url, query, variables, headers)
 	if err != nil {
-		return Anime{}, fmt.Errorf("error creating request: %v", err)
+		return Anime{}, fmt.Errorf("failed to get anime data: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return Anime{}, fmt.Errorf("error sending request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return Anime{}, fmt.Errorf("error reading response: %v", err)
+	data, ok := response["data"].(map[string]interface{})
+	if !ok {
+		return Anime{}, fmt.Errorf("invalid response format: data field missing")
 	}
 
-	var result struct {
-		Data struct {
-			Media struct {
-				ID          int    `json:"id"`
-				Title       AnimeTitle  `json:"title"`
-				Episodes    int    `json:"episodes"`
-				Duration    int    `json:"duration"`
-				Status      string `json:"status"`
-				CoverImage  struct {
-					Large string `json:"large"`
-				} `json:"coverImage"`
-				Genres       []string `json:"genres"`
-				AverageScore int      `json:"averageScore"`
-			} `json:"Media"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(body, &result); err != nil {
-		return Anime{}, fmt.Errorf("error unmarshaling JSON: %v", err)
+	media, ok := data["Media"].(map[string]interface{})
+	if !ok {
+		return Anime{}, fmt.Errorf("invalid response format: Media field missing")
 	}
 
 	anime := Anime{
-		AnilistId:     result.Data.Media.ID,
-		Title:         result.Data.Media.Title,
-		TotalEpisodes: result.Data.Media.Episodes,
-		CoverImage:    result.Data.Media.CoverImage.Large,
+		AnilistId: id,
+		IsAiring:  false,
+	}
+
+	// Safely handle episodes field which might be nil for currently airing shows
+	if episodes, ok := media["episodes"].(float64); ok {
+		anime.TotalEpisodes = int(episodes)
+	}
+
+	// Check status
+	if status, ok := media["status"].(string); ok {
+		anime.IsAiring = status == "RELEASING"
+	}
+
+	// Double check with nextAiringEpisode
+	if nextEp, ok := media["nextAiringEpisode"].(map[string]interface{}); ok && nextEp != nil {
+		anime.IsAiring = true
 	}
 
 	return anime, nil

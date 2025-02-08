@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
+
 	"github.com/wraient/curd/internal"
 )
 
@@ -475,7 +476,7 @@ func main() {
 		}()
 
 		// Skip OP and ED and Save MPV Speed
-		skipLoop:
+	skipLoop:
 		for {
 			select {
 			case <-skipLoopDone:
@@ -520,17 +521,24 @@ func main() {
 			}()
 
 			anime.Ep.IsCompleted = false
-			// internal.CurdOut(anime.Ep.Number, anime.TotalEpisodes, &userCurdConfig)
-			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion {
-				anime.Ep.Number = anime.Ep.Number - 1
-				internal.CurdOut("Completed anime.")
-				err = internal.RateAnime(user.Token, anime.AnilistId)
+			// Only mark as complete and prompt for rating if we've reached the total episodes
+			// AND the anime is not currently airing (total episodes > 0)
+			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 {
+				// Get updated anime data to check if it's still airing
+				updatedAnime, err := internal.GetAnimeDataByID(anime.AnilistId, user.Token)
 				if err != nil {
-					internal.Log("Error rating anime: "+err.Error(), logFile)
-					internal.CurdOut("Error rating anime: " + err.Error())
+					internal.Log("Error getting updated anime data: "+err.Error(), logFile)
+				} else if !updatedAnime.IsAiring {
+					anime.Ep.Number = anime.Ep.Number - 1
+					internal.CurdOut("Completed anime.")
+					err = internal.RateAnime(user.Token, anime.AnilistId)
+					if err != nil {
+						internal.Log("Error rating anime: "+err.Error(), logFile)
+						internal.CurdOut("Error rating anime: " + err.Error())
+					}
+					internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
+					internal.ExitCurd(nil)
 				}
-				internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
-				internal.ExitCurd(nil)
 			}
 		}
 		if anime.Rewatching && anime.Ep.IsCompleted && anime.Ep.Number-1 == anime.TotalEpisodes {
