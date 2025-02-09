@@ -234,7 +234,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 			CurdOut(fmt.Sprintf("Error writing record: %v", err))
 		}
 	}
-	
+
 	return nil
 }
 
@@ -259,7 +259,7 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 		userInput, err := GetUserInputFromRofi("Enter the anime name")
 		if err != nil {
 			Log("Error getting user input: "+err.Error(), logFile)
-			ExitCurd(fmt.Errorf("Error getting user input: "+err.Error()))
+			ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 		}
 		query = userInput
 	} else {
@@ -298,7 +298,7 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 		userInput, err := GetUserInputFromRofi("Enter the episode number")
 		if err != nil {
 			Log("Error getting episode number: "+err.Error(), logFile)
-			ExitCurd(fmt.Errorf("Error getting episode number: "+err.Error()))
+			ExitCurd(fmt.Errorf("Error getting episode number: " + err.Error()))
 		}
 		episodeNumber, err = strconv.Atoi(userInput)
 		if err != nil {
@@ -311,7 +311,7 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 	}
 
 	anime.Ep.Number = episodeNumber
-	
+
 	for {
 		// Get episode link
 		link, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
@@ -335,8 +335,8 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 
 		anime.Ep.Player.SocketPath = mpvSocketPath
 		anime.Ep.Started = false
-		
-		Log(fmt.Sprintf("Started mpvsocketpath ", anime.Ep.Player.SocketPath), logFile)
+
+		Log(fmt.Sprintf("Started mpv with socket path: %s", anime.Ep.Player.SocketPath), logFile)
 
 		// Get video duration
 		go func() {
