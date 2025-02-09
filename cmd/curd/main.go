@@ -543,17 +543,12 @@ func main() {
 		if userCurdConfig.NextEpisodePrompt {
 			internal.CurdOut(fmt.Sprintf("Start next episode (%d)?", anime.Ep.Number))
 
-			options := map[string]string{
-				"yes": "Yes",
-				"no":  "No",
-			}
-
-			selectedOption, err := internal.DynamicSelect(options, false)
+			selectedOption, err := internal.DynamicSelect(map[string]string{"yes": "Yes"}, false)
 			if err != nil {
 				internal.ExitCurd(err)
 			}
 
-			if selectedOption.Key == "no" || selectedOption.Key == "-1" {
+			if selectedOption.Key != "yes" {
 				internal.ExitCurd(nil)
 			}
 			// If yes or any other case, continue with the next episode
