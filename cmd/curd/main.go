@@ -549,6 +549,11 @@ func main() {
 			}
 
 			if selectedOption.Key != "yes" {
+				// Send command to close MPV
+				_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
+				if err != nil {
+					internal.Log("Error closing MPV: "+err.Error(), logFile)
+				}
 				internal.ExitCurd(nil)
 			}
 			// If yes or any other case, continue with the next episode
