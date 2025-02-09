@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 )
-
 
 type allanimeResponse struct {
 	Data struct {
@@ -94,7 +94,7 @@ func extractLinks(provider_id string) map[string]interface{} {
 	return videoData
 }
 
-// Get anime episode url respective to given config 
+// Get anime episode url respective to given config
 // If the link is found, it returns a list of links. Otherwise, it returns an error.
 //
 // Parameters:
@@ -145,35 +145,141 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 		return nil, err
 	}
 
-	responseStr := string(body)
-
-	// Unmarshal the JSON data into the struct
 	var response allanimeResponse
-	err = json.Unmarshal([]byte(responseStr), &response)
+	err = json.Unmarshal(body, &response)
 	if err != nil {
 		Log(fmt.Sprint("Error parsing JSON: ", err), logFile)
+		return nil, err
 	}
 
-	var allinks []string // This will be returned
+	type result struct {
+		index int
+		links []string
+		err   error
+	}
 
-	// Iterate through the SourceUrls and print each URL
+	// Pre-count valid URLs and create slice to preserve order
+	validURLs := make([]string, 0)
 	for _, url := range response.Data.Episode.SourceUrls {
-		if len(url.SourceUrl) > 2 && unicode.IsDigit(rune(url.SourceUrl[2])) { // Source Url 3rd letter is a number (it stars as --32f23k31jk)
-			decodedProviderID := decodeProviderID(url.SourceUrl[2:]) // Decode the source url to get the provider id
-			extractedLinks := extractLinks(decodedProviderID) // Extract the links using provider id
-			if linksInterface, ok := extractedLinks["links"].([]interface{}); ok {
-				for _, linkInterface := range linksInterface {
-					if linkMap, ok := linkInterface.(map[string]interface{}); ok {
-						if link, ok := linkMap["link"].(string); ok {
-							allinks = append(allinks, link) // Add all extracted links into allinks 
-						}
-					}
-				}
-			} else {
-				Log("Links field is not of the expected type []interface{}", logFile)
-			}
+		if len(url.SourceUrl) > 2 && unicode.IsDigit(rune(url.SourceUrl[2])) {
+			validURLs = append(validURLs, url.SourceUrl)
 		}
 	}
 
-	return allinks, nil
+	if len(validURLs) == 0 {
+		return nil, fmt.Errorf("no valid source URLs found in response")
+	}
+
+	// Create channels for results and a slice to store ordered results
+	results := make(chan result, len(validURLs))
+	orderedResults := make([][]string, len(validURLs))
+
+	// Create rate limiter
+	rateLimiter := time.NewTicker(50 * time.Millisecond)
+	defer rateLimiter.Stop()
+
+	// Launch goroutines
+	for i, sourceUrl := range validURLs {
+		go func(idx int, url string) {
+			<-rateLimiter.C // Rate limit the requests
+
+			decodedProviderID := decodeProviderID(url[2:])
+			Log(fmt.Sprintf("Processing URL %d/%d with provider ID: %s", idx+1, len(validURLs), decodedProviderID), logFile)
+
+			extractedLinks := extractLinks(decodedProviderID)
+
+			if extractedLinks == nil {
+				results <- result{
+					index: idx,
+					err:   fmt.Errorf("failed to extract links for provider %s", decodedProviderID),
+				}
+				return
+			}
+
+			linksInterface, ok := extractedLinks["links"].([]interface{})
+			if !ok {
+				results <- result{
+					index: idx,
+					err:   fmt.Errorf("links field is not []interface{} for provider %s", decodedProviderID),
+				}
+				return
+			}
+
+			var links []string
+			for _, linkInterface := range linksInterface {
+				linkMap, ok := linkInterface.(map[string]interface{})
+				if !ok {
+					Log(fmt.Sprintf("Warning: invalid link format for provider %s", decodedProviderID), logFile)
+					continue
+				}
+
+				link, ok := linkMap["link"].(string)
+				if !ok {
+					Log(fmt.Sprintf("Warning: link field is not string for provider %s", decodedProviderID), logFile)
+					continue
+				}
+
+				links = append(links, link)
+			}
+
+			results <- result{
+				index: idx,
+				links: links,
+			}
+		}(i, sourceUrl)
+	}
+
+	// Collect results with timeout
+	timeout := time.After(10 * time.Second)
+	var collectedErrors []error
+	successCount := 0
+
+	// Collect results maintaining order
+	for successCount < len(validURLs) {
+		select {
+		case res := <-results:
+			if res.err != nil {
+				Log(fmt.Sprintf("Error processing URL %d: %v", res.index+1, res.err), logFile)
+				collectedErrors = append(collectedErrors, fmt.Errorf("URL %d: %w", res.index+1, res.err))
+			} else {
+				orderedResults[res.index] = res.links
+				successCount++
+				Log(fmt.Sprintf("Successfully processed URL %d/%d", res.index+1, len(validURLs)), logFile)
+			}
+		case <-timeout:
+			if successCount > 0 {
+				Log(fmt.Sprintf("Timeout reached with %d/%d successful results", successCount, len(validURLs)), logFile)
+				// Flatten available results
+				return flattenResults(orderedResults), nil
+			}
+			return nil, fmt.Errorf("timeout waiting for results after %d successful responses", successCount)
+		}
+	}
+
+	// If we have any errors but also some successes, log errors but continue
+	if len(collectedErrors) > 0 {
+		Log(fmt.Sprintf("Completed with %d errors: %v", len(collectedErrors), collectedErrors), logFile)
+	}
+
+	// Flatten and return results
+	allLinks := flattenResults(orderedResults)
+	if len(allLinks) == 0 {
+		return nil, fmt.Errorf("no valid links found from %d URLs: %v", len(validURLs), collectedErrors)
+	}
+
+	return allLinks, nil
+}
+
+// converts the ordered slice of link slices into a single slice
+func flattenResults(results [][]string) []string {
+	var totalLen int
+	for _, r := range results {
+		totalLen += len(r)
+	}
+
+	allLinks := make([]string, 0, totalLen)
+	for _, links := range results {
+		allLinks = append(allLinks, links...)
+	}
+	return allLinks
 }
