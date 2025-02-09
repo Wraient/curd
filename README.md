@@ -128,6 +128,36 @@ curd
 </details>
 
 <details>
+<summary>macOS Installation</summary>
+
+Install required dependencies
+```bash
+brew install mpv curl
+```
+
+Download the appropriate binary for your system:
+
+- For Apple Silicon (M1/M2) Macs:
+```bash
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-arm64 
+```
+
+- For Intel Macs:
+```bash
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-x86_64
+```
+
+Then complete the installation:
+
+```bash
+chmod +x curd
+sudo mv curd /usr/local/bin/
+curd
+```
+
+</details>
+
+<details>
 <summary>Generic Installation</summary>
 
 ```bash
