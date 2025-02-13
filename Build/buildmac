@@ -1,1 +1,5 @@
-CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o curd -ldflags="-s -w" -trimpath cmd/curd/main.go
+#!/bin/bash
+
+./Build/buildmac-arm64
+./Build/buildmac-x86_64
+

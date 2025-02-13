@@ -1,10 +1,10 @@
 [Setup]
 AppName=Curd Installer
-AppVersion=1.0.5
+AppVersion=1.0.8
 DefaultDirName={userappdata}\Curd
 PrivilegesRequired=lowest
 AllowNoIcons=yes
-OutputBaseFilename=CurdInstaller
+OutputBaseFilename=curd-windows-installer
 UsePreviousAppDir=yes
 Compression=lzma2
 SolidCompression=yes
@@ -15,11 +15,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; Copy the Curd executable to the install directory
-Source: "Z:releases/curd-1.0.5/windows/curd.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "Z:/home/wraient/Projects/curd/Build/mpv.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "..\releases\curd-{#SetupSetting("AppVersion")}\windows\curd-windows.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "mpv\mpv.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 [Icons]
 ; Create the application icon in the Start Menu
-Name: "{group}\Curd"; Filename: "{app}\curd.exe"
+Name: "{group}\Curd"; Filename: "{app}\curd-windows.exe"
 ; Create a desktop shortcut if the user checked the option
-Name: "{userdesktop}\Curd"; Filename: "{app}\curd.exe"; Tasks: desktopicon
+Name: "{userdesktop}\Curd"; Filename: "{app}\curd-windows.exe"; Tasks: desktopicon
