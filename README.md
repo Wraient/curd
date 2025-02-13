@@ -128,6 +128,36 @@ curd
 </details>
 
 <details>
+<summary>macOS Installation</summary>
+
+Install required dependencies
+```bash
+brew install mpv curl
+```
+
+Download the appropriate binary for your system:
+
+- For Apple Silicon (M1/M2) Macs:
+```bash
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-arm64 
+```
+
+- For Intel Macs:
+```bash
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-x86_64
+```
+
+Then complete the installation:
+
+```bash
+chmod +x curd
+sudo mv curd /usr/local/bin/
+curd
+```
+
+</details>
+
+<details>
 <summary>Generic Installation</summary>
 
 ```bash
@@ -232,26 +262,27 @@ You can quit it anytime and the resume time would be saved in the history file
 more settings can be found at config file.
 config file is located at ```~/.config/curd/curd.conf```
 
-| **Option**               | **Type**   | **Valid Values**                  | **Description**                                                                                   |
-|---------------------------|------------|----------------------------------|---------------------------------------------------------------------------------------------------|
-| `DiscordPresence`         | Boolean    | `true`, `false`                  | Enables or disables Discord Rich Presence integration.                                            |
-| `AnimeNameLanguage`       | Enum       | `english`, `romaji`              | Sets the preferred language for anime names.                                                      |
-| `AddMissingOptions`       | Boolean    | `true`, `false`                  | Automatically adds missing configuration options with default values to the config file.          |
-| `AlternateScreen`         | Boolean    | `true`, `false`                  | Toggles the use of an alternate screen buffer for cleaner UI.                                     |
-| `RofiSelection`           | Boolean    | `true`, `false`                  | Enables or disables anime selection via Rofi.                                                     |
-| `PercentageToMarkComplete`| Integer    | `0` to `100`                     | Sets the percentage of an episode watched to consider it as completed.                            |
-| `StoragePath`             | String     | Any valid path (Environment variables accepted)  | Specifies the directory where Curd stores its data.                               |
-| `SubOrDub`                | Enum       | `sub`, `dub`                     | Sets the preferred format for anime audio.                                                        |
-| `NextEpisodePrompt`       | Boolean    | `true`, `false`                  | Prompts the user before automatically playing the next episode.                                   |
-| `SubsLanguage`            | String     | `english` (redundant rn)         | Sets the preferred subtitle language.                                                             |
-| `ScoreOnCompletion`       | Boolean    | `true`, `false`                  | Automatically prompts the user to rate the anime upon completion.                                 |
-| `SkipOp`                  | Boolean    | `true`, `false`                  | Automatically skips the opening of episodes when supported.                                       |
-| `SkipEd`                  | Boolean    | `true`, `false`                  | Automatically skips the ending of episodes when supported.                                        |
-| `SkipRecap`               | Boolean    | `true`, `false`                  | Skips recap sections in episodes when supported.                                                  |
-| `ImagePreview`            | Boolean    | `true`, `false`                  | Enables or disables image previews during anime selection (only for rofi).                        |
-| `Player`                  | String     | `mpv` (redundant rn)             | Specifies the media player used for streaming or playing anime.                                   |
-| `SaveMpvSpeed`            | Boolean    | `true`, `false`                  | Retains the playback speed set in MPV for next episode.                                           |
-| `SkipFiller`              | Boolean    | `true`, `false`                  | Skips filler episodes when supported.                                                             |
+| **Option**               | **Type**   | **Valid Values**                           | **Description**                                                                                   |
+|---------------------------|------------|-------------------------------------------|---------------------------------------------------------------------------------------------------|
+| `DiscordPresence`         | Boolean    | `true`, `false`                           | Enables or disables Discord Rich Presence integration.                                            |
+| `AnimeNameLanguage`       | Enum       | `english`, `romaji`                       | Sets the preferred language for anime names.                                                      |
+| `MpvArgs`                 | List       | all mpv args eg ["--fullscreen=yes", "--mute=yes"]     | Add args to mpv player                                                               | 
+| `AddMissingOptions`       | Boolean    | `true`, `false`                           | Automatically adds missing configuration options with default values to the config file.          |
+| `AlternateScreen`         | Boolean    | `true`, `false`                           | Toggles the use of an alternate screen buffer for cleaner UI.                                     |
+| `RofiSelection`           | Boolean    | `true`, `false`                           | Enables or disables anime selection via Rofi.                                                     |
+| `PercentageToMarkComplete`| Integer    | `0` to `100`                              | Sets the percentage of an episode watched to consider it as completed.                            |
+| `StoragePath`             | String     | Any valid path (Environment variables accepted)  | Specifies the directory where Curd stores its data.                                        |
+| `SubOrDub`                | Enum       | `sub`, `dub`                              | Sets the preferred format for anime audio.                                                        |
+| `NextEpisodePrompt`       | Boolean    | `true`, `false`                           | Prompts the user before automatically playing the next episode.                                   |
+| `SubsLanguage`            | String     | `english` (redundant rn)                  | Sets the preferred subtitle language.                                                             |
+| `ScoreOnCompletion`       | Boolean    | `true`, `false`                           | Automatically prompts the user to rate the anime upon completion.                                 |
+| `SkipOp`                  | Boolean    | `true`, `false`                           | Automatically skips the opening of episodes when supported.                                       |
+| `SkipEd`                  | Boolean    | `true`, `false`                           | Automatically skips the ending of episodes when supported.                                        |
+| `SkipRecap`               | Boolean    | `true`, `false`                           | Skips recap sections in episodes when supported.                                                  |
+| `ImagePreview`            | Boolean    | `true`, `false`                           | Enables or disables image previews during anime selection (only for rofi).                        |
+| `Player`                  | String     | `mpv` (redundant rn)                      | Specifies the media player used for streaming or playing anime.                                   |
+| `SaveMpvSpeed`            | Boolean    | `true`, `false`                           | Retains the playback speed set in MPV for next episode.                                           |
+| `SkipFiller`              | Boolean    | `true`, `false`                           | Skips filler episodes when supported.                                                             |
 
 ## Dependencies
 - mpv - Video player (vlc support might be added later)
