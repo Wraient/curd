@@ -7,15 +7,16 @@ type AnimeTitle struct {
 }
 
 type Anime struct {
-	Title         AnimeTitle `json:"title"`
-	Ep            Episode    `json:"ep"`
-	CoverImage    string     `json:"url"`            // Assuming this field corresponds to the cover image URL
-	TotalEpisodes int        `json:"total_episodes"` // If provided by the API
-	MalId         int        `json:"mal_id"`
-	AnilistId     int        `json:"anilist_id"` // Assuming you have an Anilist ID in your struct
-	Rewatching    bool
-	AllanimeId    string // Can be populated as necessary
-	FillerEpisodes	  []int
+	Title          AnimeTitle `json:"title"`
+	Ep             Episode    `json:"ep"`
+	CoverImage     string     `json:"url"`            // Assuming this field corresponds to the cover image URL
+	TotalEpisodes  int        `json:"total_episodes"` // If provided by the API
+	MalId          int        `json:"mal_id"`
+	AnilistId      int        `json:"anilist_id"` // Assuming you have an Anilist ID in your struct
+	Rewatching     bool
+	AllanimeId     string // Can be populated as necessary
+	FillerEpisodes []int
+	IsAiring       bool
 }
 
 type Skip struct {
@@ -37,7 +38,7 @@ type Episode struct {
 	Started        bool         `json:"started"`
 	Duration       int          `json:"duration"`
 	Links          []string     `json:"links"`
-	NextEpisode	   NextEpisode  `json:"next_episode"`
+	NextEpisode    NextEpisode  `json:"next_episode"`
 	IsFiller       bool         `json:"filler"`
 	IsRecap        bool         `json:"recap"`
 	Aired          string       `json:"aired"`
@@ -48,8 +49,8 @@ type Episode struct {
 }
 
 type NextEpisode struct {
-	Number			int
-	Links			[]string
+	Number int
+	Links  []string
 }
 
 type playingVideo struct {
