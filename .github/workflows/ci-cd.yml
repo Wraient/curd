@@ -38,6 +38,11 @@ jobs:
           ./Build/buildlinux
           mkdir -p release/linux
           mv curd-linux-x86_64 release/linux/
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_EVENT_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          UPX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'release:') }}
 
       - name: Build macOS x86_64 binary
         run: |
@@ -68,6 +73,11 @@ jobs:
           ./Build/buildwindows
           mkdir -p release/windows
           mv curd-windows.exe release/windows
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_EVENT_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          UPX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'release:') }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
