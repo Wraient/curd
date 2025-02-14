@@ -15,11 +15,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; Copy the Curd executable to the install directory
-Source: "..\releases\curd-{#SetupSetting("AppVersion")}\windows\curd-windows.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\releases\curd-{#SetupSetting("AppVersion")}\windows\curd-windows.exe"; DestDir: "{app}"; DestName: "curd.exe"; Flags: ignoreversion
 Source: "mpv\mpv.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 [Icons]
 ; Create the application icon in the Start Menu
-Name: "{group}\Curd"; Filename: "{app}\curd-windows.exe"
+Name: "{group}\Curd"; Filename: "{app}\curd.exe"
 ; Create a desktop shortcut if the user checked the option
-Name: "{userdesktop}\Curd"; Filename: "{app}\curd-windows.exe"; Tasks: desktopicon
+Name: "{userdesktop}\Curd"; Filename: "{app}\curd.exe"; Tasks: desktopicon
