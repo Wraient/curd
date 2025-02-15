@@ -1,1 +1,1 @@
-CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o curd -ldflags="-s -w" -trimpath cmd/curd/main.go
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o curd-macos-arm64 -ldflags="-s -w" -trimpath cmd/curd/main.go

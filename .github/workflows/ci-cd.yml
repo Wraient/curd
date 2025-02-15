@@ -7,6 +7,12 @@ on:
   pull_request:
     branches:
       - main  # Trigger on pull requests targeting the main branch
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request Number'
+        required: false
+        type: string
 
 jobs:
   build:
@@ -14,12 +20,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history and tags
+          ref: ${{ github.event.pull_request.head.sha || (github.event.inputs.pr_number && format('refs/pull/{0}/head', github.event.inputs.pr_number)) || github.sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: '1.23.2'
+          go-version: '1.24.0'
 
       - name: Install Dependencies
         run: go mod tidy
@@ -27,57 +36,78 @@ jobs:
       - name: Build Linux binary
         run: |
           ./Build/buildlinux
+          mkdir -p release/linux
+          mv curd-linux-x86_64 release/linux/
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_EVENT_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          UPX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'release:') }}
 
-      - name: Build macOS Intel binary
+      - name: Build macOS x86_64 binary
         run: |
-          ./Build/buildmac
+          ./Build/buildmac-x86_64
 
       - name: Build macOS ARM64 binary
         run: |
           ./Build/buildmac-arm64
 
+      - name: Install LLVM
+        run: |
+          sudo apt-get update && sudo apt-get install -y llvm
+          # Find the llvm-lipo command
+          LIPO_CMD=$(find /usr/bin -name "llvm-lipo*" | head -n 1)
+          echo "Found lipo command: $LIPO_CMD"
+          echo "LIPO_CMD=$LIPO_CMD" >> $GITHUB_ENV
+
       - name: Create Universal macOS binary
         run: |
-          mkdir -p Build/macos
-          mv curd Build/macos/curd-amd64
-          mv curd-arm64 Build/macos/curd-arm64
-          lipo -create Build/macos/curd-amd64 Build/macos/curd-arm64 -output Build/macos/curd
-          rm Build/macos/curd-amd64 Build/macos/curd-arm64
-
-      - name: Revert Changes in player.go
-        run: |
-          git checkout -- internal/player.go
+          ${{ env.LIPO_CMD }} -create "curd-macos-x86_64" "curd-macos-arm64" -output "curd-macos-universal"
+          mkdir -p release/macos
+          mv curd-macos-x86_64 release/macos
+          mv curd-macos-arm64 release/macos
+          mv curd-macos-universal release/macos
 
       - name: Build Windows binary (cross-compile)
         run: |
           ./Build/buildwindows
+          mkdir -p release/windows
+          mv curd-windows.exe release/windows
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_EVENT_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          UPX: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'release:') }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: curd-binaries
           path: |
-            Build/curd
-            Build/curd.exe
-            Build/macos/curd
+            release/linux/curd-linux-x86_64
+            release/macos/curd-macos-x86_64
+            release/macos/curd-macos-arm64
+            release/macos/curd-macos-universal
+            release/windows/curd-windows.exe
           retention-days: 1
           if-no-files-found: error
 
-      - name: List Build Directory
-        run: |
-          echo "Listing contents of Build directory:"
-          ls -R Build
-
   release:
-    runs-on: windows-latest  # Use Windows runner for creating the installer
-    needs: build  # Ensure the build job is complete before running this job
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'  # Only run on pushes to main
+    runs-on: windows-latest
+    needs: build
+    permissions:
+      contents: write
+      actions: read
+    if: |
+      github.ref == 'refs/heads/main' && 
+      github.event_name == 'push' && 
+      (contains(github.event.head_commit.message, 'release:'))
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
-          lfs: true
+          fetch-depth: 0
 
       - name: Download and extract MPV binary
         run: |
@@ -95,32 +125,39 @@ jobs:
         with:
           name: curd-binaries
           path: Build
-          repository: ${{ github.repository }}  # Explicitly set repository
-          github-token: ${{ secrets.GITHUB_TOKEN }}  # Add token for authentication
 
-      - name: Bump Version
-        id: bump_version
+      - name: Organize Release Files
         run: |
-          $current_version = Get-Content VERSION.txt
-          $version_parts = $current_version -split '\.'
-          $major = $version_parts[0]
-          $minor = $version_parts[1]
-          $patch = [int]$version_parts[2] + 1
-          $new_version = "$major.$minor.$patch"
-          $new_version | Set-Content VERSION.txt
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add VERSION.txt
-          git commit -m "Bump version to $new_version"
-          git tag "v$new_version"
-          echo "::set-output name=new_version::$new_version"
+          $version = Get-Content VERSION.txt
+          echo "CURD_VERSION=$version" >> $env:GITHUB_ENV
+          $release_dir = "releases/curd-$version"
+          
+          # Create directory structure
+          New-Item -ItemType Directory -Force -Path "$release_dir/windows"
+          New-Item -ItemType Directory -Force -Path "$release_dir/macos"
+          New-Item -ItemType Directory -Force -Path "$release_dir/linux"
+          
+          # List contents of Build directory to debug
+          Write-Host "Contents of Build directory:"
+          Get-ChildItem -Path "Build" -Recurse
+          
+          # Move files to their respective directories
+          Move-Item "Build/windows/curd-windows.exe" "$release_dir/windows/"
+          Move-Item "Build/macos/curd-macos-universal" "$release_dir/macos/"
+          Move-Item "Build/macos/curd-macos-x86_64" "$release_dir/macos/"
+          Move-Item "Build/macos/curd-macos-arm64" "$release_dir/macos/"
+          Move-Item "Build/linux/curd-linux-x86_64" "$release_dir/linux/"
+          Copy-Item "Build/mpv/mpv.exe" "$release_dir/windows/"
+        shell: pwsh
 
       - name: Update Inno Setup Script with New Version
         run: |
-          $new_version = Get-Content VERSION.txt
           $iss_path = "Build/curd-windows-build.iss"
-          (Get-Content $iss_path) -replace "AppVersion=.*", "AppVersion=$new_version" | Set-Content $iss_path
-  
+          $content = Get-Content $iss_path
+          $content = $content -replace '^AppVersion=.*', "AppVersion=$env:CURD_VERSION"
+          Set-Content $iss_path $content
+        shell: pwsh
+
       - name: Create Windows Installer
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "Build\curd-windows-build.iss"  
@@ -130,15 +167,17 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: "v${{ steps.bump_version.outputs.new_version }}"  # Use the bumped version as tag
-          name: "Curd v${{ steps.bump_version.outputs.new_version }}"  # Use new version in release name
+          tag_name: "v${{ env.CURD_VERSION }}"
+          name: "Curd v${{ env.CURD_VERSION }}"
           draft: false
           prerelease: false
           generate_release_notes: true 
           files: |
-            Build/curd
-            Build/curd.exe
-            Build/macos/curd
-            Build/Output/CurdInstaller.exe
+            releases/curd-${{ env.CURD_VERSION }}/linux/curd-linux-x86_64
+            releases/curd-${{ env.CURD_VERSION }}/macos/curd-macos-x86_64
+            releases/curd-${{ env.CURD_VERSION }}/macos/curd-macos-arm64
+            releases/curd-${{ env.CURD_VERSION }}/macos/curd-macos-universal
+            releases/curd-${{ env.CURD_VERSION }}/windows/curd-windows.exe
+            Build/Output/curd-windows-installer.exe
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
