@@ -10,8 +10,8 @@ import (
 
 // skipTimesResponse struct to hold the response from the AniSkip API
 type skipTimesResponse struct {
-	Found   bool          `json:"found"`
-	Results []skipResult  `json:"results"`
+	Found   bool         `json:"found"`
+	Results []skipResult `json:"results"`
 }
 
 // skipResult struct to hold individual skip result data
@@ -32,7 +32,7 @@ func GetAniSkipData(animeMalId int, episode int) (string, error) {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		Log(fmt.Sprintf("error fetching data from AniSkip API: %w", err), logFile)
+		Log(fmt.Errorf("error fetching data from AniSkip API: %w", err), logFile)
 		return "", fmt.Errorf("error fetching data from AniSkip API: %w", err)
 	}
 	defer resp.Body.Close()
@@ -44,7 +44,7 @@ func GetAniSkipData(animeMalId int, episode int) (string, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Log(fmt.Sprintf("failed to read response body: %w", err), logFile)
+		Log(fmt.Errorf("failed to read response body %w", err), logFile)
 		return "", fmt.Errorf("failed to read response body %w", err)
 	}
 

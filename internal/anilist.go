@@ -59,7 +59,7 @@ func GetAnimeMapPreview(animeList AnimeList) map[string]RofiSelectPreview {
 	populateMap := func(entries []Entry) {
 		for _, entry := range entries {
 			// Only include entries with a non-empty English title
-			Log(fmt.Sprintf("AnimeNameLanguage: ", userCurdConfig.AnimeNameLanguage), logFile)
+			Log(fmt.Errorf("AnimeNameLanguage: %v", userCurdConfig.AnimeNameLanguage), logFile)
 			if entry.Media.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
 				animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
 					Title:      entry.Media.Title.English,
