@@ -4,12 +4,28 @@ import (
 	"time"
 )
 
+// ActivityType represents the type of Discord rich presence activity
+type ActivityType int
+
+const (
+	// ActivityTypePlaying represents "Playing ..." status
+	ActivityTypePlaying ActivityType = 0
+	// ActivityTypeListening represents "Listening to ..." status
+	ActivityTypeListening ActivityType = 2
+	// ActivityTypeWatching represents "Watching ..." status
+	ActivityTypeWatching ActivityType = 3
+	// ActivityTypeCompeting represents "Competing in ..." status
+	ActivityTypeCompeting ActivityType = 5
+)
+
 // Activity holds the data for discord rich presence
 type Activity struct {
 	// What the player is currently doing
 	Details string
 	// The user's current party status
 	State string
+	// The activity type, defaults to Playing if not specified
+	Type ActivityType
 	// The id for a large asset of the activity, usually a snowflake
 	LargeImage string
 	// Text displayed when hovering over the large image of the activity

@@ -1,10 +1,12 @@
+//go:build windows
 // +build windows
 
 package ipc
 
 import (
-	npipe "gopkg.in/natefinch/npipe.v2"
 	"time"
+
+	npipe "gopkg.in/natefinch/npipe.v2"
 )
 
 // OpenSocket opens the discord-ipc-0 named pipe
