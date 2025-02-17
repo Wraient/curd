@@ -32,19 +32,19 @@ func GetAniSkipData(animeMalId int, episode int) (string, error) {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		Log(fmt.Errorf("error fetching data from AniSkip API: %w", err), logFile)
+		Log(fmt.Errorf("error fetching data from AniSkip API: %w", err))
 		return "", fmt.Errorf("error fetching data from AniSkip API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		Log(fmt.Sprintf("failed with status %d", resp.StatusCode), logFile)
+		Log(fmt.Sprintf("failed with status %d", resp.StatusCode))
 		return "", fmt.Errorf("failed with status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Log(fmt.Errorf("failed to read response body %w", err), logFile)
+		Log(fmt.Errorf("failed to read response body %w", err))
 		return "", fmt.Errorf("failed to read response body %w", err)
 	}
 

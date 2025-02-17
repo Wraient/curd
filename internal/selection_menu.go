@@ -228,7 +228,7 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 		// Download and get cache path for the image
 		cachePath, err := downloadToCache(option.CoverImage)
 		if err != nil {
-			Log(fmt.Sprintf("Error caching image: %v", err), logFile)
+			Log(fmt.Sprintf("Error caching image: %v", err))
 			continue
 		}
 
@@ -269,8 +269,8 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 	err := rofiCmd.Run()
 	if err != nil {
 		// Log both stdout and stderr for debugging
-		Log(fmt.Sprintf("Rofi stderr: %s", stderr.String()), logFile)
-		Log(fmt.Sprintf("Rofi stdout: %s", stdout.String()), logFile)
+		Log(fmt.Sprintf("Rofi stderr: %s", stderr.String()))
+		Log(fmt.Sprintf("Rofi stdout: %s", stdout.String()))
 		return SelectionOption{}, fmt.Errorf("failed to execute rofi: %w", err)
 	}
 

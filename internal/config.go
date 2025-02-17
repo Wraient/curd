@@ -240,7 +240,7 @@ func ChangeToken(config *CurdConfig, user *User) {
     }
 
     if err != nil {
-        Log("Error getting user input: "+err.Error(), logFile)
+        Log("Error getting user input: "+err.Error())
         ExitCurd(err)
     }
 

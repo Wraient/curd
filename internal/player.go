@@ -56,14 +56,14 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 		titleCommand := []interface{}{"set_property", "force-media-title", title}
 		_, err = MPVSendCommand(mpvSocketPath, titleCommand)
 		if err != nil {
-			Log(fmt.Sprintf("Failed to update title: %v", err), logFile)
+			Log(fmt.Sprintf("Failed to update title: %v", err))
 		}
 
 		// Also update the window title property
 		windowTitleCommand := []interface{}{"set_property", "title", title}
 		_, err = MPVSendCommand(mpvSocketPath, windowTitleCommand)
 		if err != nil {
-			Log(fmt.Sprintf("Failed to update window title: %v", err), logFile)
+			Log(fmt.Sprintf("Failed to update window title: %v", err))
 		}
 
 		return mpvSocketPath, nil
@@ -74,7 +74,7 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 		randomBytes := make([]byte, 4)
 		_, err = rand.Read(randomBytes)
 		if err != nil {
-			Log("Failed to generate random number", logFile)
+			Log("Failed to generate random number")
 			return "", fmt.Errorf("failed to generate random number: %w", err)
 		}
 
@@ -110,7 +110,7 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 		mpvPath, err := getMPVPath()
 		if err != nil {
 			CurdOut("Error: Failed to get MPV path")
-			Log("Failed to get mpv path.", logFile)
+			Log("Failed to get mpv path.")
 			return "", err
 		}
 
@@ -202,7 +202,7 @@ func GetMPVPausedStatus(ipcSocketPath string) (bool, error) {
 func GetMPVPlaybackSpeed(ipcSocketPath string) (float64, error) {
 	speed, err := MPVSendCommand(ipcSocketPath, []interface{}{"get_property", "speed"})
 	if err != nil || speed == nil {
-		Log("Failed to get playback speed.", logFile)
+		Log("Failed to get playback speed.")
 		return 0, err
 	}
 
