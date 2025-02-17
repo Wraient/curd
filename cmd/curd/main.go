@@ -13,8 +13,9 @@ import (
 	"github.com/wraient/curd/internal"
 )
 
-func main() {
+var version string // Will be set by ldflags during build
 
+func main() {
 	discordClientId := "1287457464148820089"
 
 	var anime internal.Anime
@@ -74,6 +75,7 @@ func main() {
 	editConfig := flag.Bool("e", false, "Edit config")
 	subFlag := flag.Bool("sub", false, "Watch sub version")
 	dubFlag := flag.Bool("dub", false, "Watch dub version")
+	versionFlag := flag.Bool("v", false, "Print version information")
 
 	// Custom help/usage function
 	flag.Usage = func() {
@@ -84,6 +86,16 @@ func main() {
 	}
 
 	flag.Parse()
+
+	// Check version before screen clearing
+	if *versionFlag {
+		internal.RestoreScreen()
+		if version == "" {
+			version = "1.0.8"
+		}
+		fmt.Printf("Curd version: %s\n", version)
+		os.Exit(0)
+	}
 
 	anime.Ep.ContinueLast = *continueLast
 

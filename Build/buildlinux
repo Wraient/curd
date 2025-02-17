@@ -1,4 +1,5 @@
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o curd-linux-x86_64 -ldflags="-s -w" -trimpath cmd/curd/main.go
+VERSION=$(cat VERSION.txt)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o curd-linux-x86_64 -ldflags="-X main.version=${VERSION} -s -w" -trimpath cmd/curd/main.go
 if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" && "$GITHUB_EVENT_HEAD_COMMIT_MESSAGE" == *"release:"* ]] || [[ "$UPX" == "true" ]]; then
     upx --best --ultra-brute curd-linux-x86_64
 fi
