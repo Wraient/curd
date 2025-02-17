@@ -60,7 +60,7 @@ func extractLinks(provider_id string) map[string]interface{} {
 	req, err := http.NewRequest("GET", url, nil)
 	var videoData map[string]interface{}
 	if err != nil {
-		Log(fmt.Sprint("Error creating request:", err), logFile)
+		Log(fmt.Sprint("Error creating request:", err))
 		return videoData
 	}
 
@@ -71,7 +71,7 @@ func extractLinks(provider_id string) map[string]interface{} {
 	// Send the request
 	resp, err := client.Do(req)
 	if err != nil {
-		Log(fmt.Sprint("Error sending request:", err), logFile)
+		Log(fmt.Sprint("Error sending request:", err))
 		return videoData
 	}
 	defer resp.Body.Close()
@@ -79,14 +79,14 @@ func extractLinks(provider_id string) map[string]interface{} {
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Log(fmt.Sprint("Error reading response:", err), logFile)
+		Log(fmt.Sprint("Error reading response:", err))
 		return videoData
 	}
 
 	// Parse the JSON response
 	err = json.Unmarshal(body, &videoData)
 	if err != nil {
-		Log(fmt.Sprint("Error parsing JSON:", err), logFile)
+		Log(fmt.Sprint("Error parsing JSON:", err))
 		return videoData
 	}
 
@@ -148,7 +148,7 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	var response allanimeResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		Log(fmt.Sprint("Error parsing JSON: ", err), logFile)
+		Log(fmt.Sprint("Error parsing JSON: ", err))
 		return nil, err
 	}
 
@@ -184,7 +184,7 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 			<-rateLimiter.C // Rate limit the requests
 
 			decodedProviderID := decodeProviderID(url[2:])
-			Log(fmt.Sprintf("Processing URL %d/%d with provider ID: %s", idx+1, len(validURLs), decodedProviderID), logFile)
+			Log(fmt.Sprintf("Processing URL %d/%d with provider ID: %s", idx+1, len(validURLs), decodedProviderID))
 
 			extractedLinks := extractLinks(decodedProviderID)
 
@@ -209,13 +209,13 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 			for _, linkInterface := range linksInterface {
 				linkMap, ok := linkInterface.(map[string]interface{})
 				if !ok {
-					Log(fmt.Sprintf("Warning: invalid link format for provider %s", decodedProviderID), logFile)
+					Log(fmt.Sprintf("Warning: invalid link format for provider %s", decodedProviderID))
 					continue
 				}
 
 				link, ok := linkMap["link"].(string)
 				if !ok {
-					Log(fmt.Sprintf("Warning: link field is not string for provider %s", decodedProviderID), logFile)
+					Log(fmt.Sprintf("Warning: link field is not string for provider %s", decodedProviderID))
 					continue
 				}
 
@@ -239,16 +239,16 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 		select {
 		case res := <-results:
 			if res.err != nil {
-				Log(fmt.Sprintf("Error processing URL %d: %v", res.index+1, res.err), logFile)
+				Log(fmt.Sprintf("Error processing URL %d: %v", res.index+1, res.err))
 				collectedErrors = append(collectedErrors, fmt.Errorf("URL %d: %w", res.index+1, res.err))
 			} else {
 				orderedResults[res.index] = res.links
 				successCount++
-				Log(fmt.Sprintf("Successfully processed URL %d/%d", res.index+1, len(validURLs)), logFile)
+				Log(fmt.Sprintf("Successfully processed URL %d/%d", res.index+1, len(validURLs)))
 			}
 		case <-timeout:
 			if successCount > 0 {
-				Log(fmt.Sprintf("Timeout reached with %d/%d successful results", successCount, len(validURLs)), logFile)
+				Log(fmt.Sprintf("Timeout reached with %d/%d successful results", successCount, len(validURLs)))
 				// Flatten available results
 				return flattenResults(orderedResults), nil
 			}
@@ -258,7 +258,7 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 
 	// If we have any errors but also some successes, log errors but continue
 	if len(collectedErrors) > 0 {
-		Log(fmt.Sprintf("Completed with %d errors: %v", len(collectedErrors), collectedErrors), logFile)
+		Log(fmt.Sprintf("Completed with %d errors: %v", len(collectedErrors), collectedErrors))
 	}
 
 	// Flatten and return results

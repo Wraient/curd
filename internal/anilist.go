@@ -59,7 +59,8 @@ func GetAnimeMapPreview(animeList AnimeList) map[string]RofiSelectPreview {
 	populateMap := func(entries []Entry) {
 		for _, entry := range entries {
 			// Only include entries with a non-empty English title
-			Log(fmt.Errorf("AnimeNameLanguage: %v", userCurdConfig.AnimeNameLanguage), logFile)
+			Log(fmt.Errorf("AnimeNameLanguage: %v", userCurdConfig.AnimeNameLanguage))
+
 			if entry.Media.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
 				animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
 					Title:      entry.Media.Title.English,
@@ -670,7 +671,7 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 
 	// Access the list entries in the input map
 	if input["data"] == nil {
-		Log("Anilist request failed", logFile)
+		Log("Anilist request failed")
 		CurdOut("Anilist request failed")
 		ExitCurd(fmt.Errorf("Anilist request failed"))
 		return animeList

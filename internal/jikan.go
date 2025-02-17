@@ -14,19 +14,19 @@ func GetEpisodeData(animeID int, episodeNo int, anime *Anime) error {
 	// Use the helper function for making the GET request
 	response, err := makeGetRequest(url, nil)
 	if err != nil {
-		Log(fmt.Sprintf("Warning: Jikan API error: %v - continuing without filler data", err), logFile)
+		Log(fmt.Sprintf("Warning: Jikan API error: %v - continuing without filler data", err))
 		// Set default values when API fails
 		anime.Ep.IsFiller = false
 		anime.Ep.IsRecap = false
 		return nil // Return nil to allow the application to continue
 	}
 
-	Log(response, logFile)
+	Log(response)
 
 	// Check if the 'data' field exists and is valid
 	data, ok := response["data"].(map[string]interface{})
 	if !ok {
-		Log("Warning: Invalid Jikan API response - continuing without filler data", logFile)
+		Log("Warning: Invalid Jikan API response - continuing without filler data")
 		// Set default values when response is invalid
 		anime.Ep.IsFiller = false
 		anime.Ep.IsRecap = false

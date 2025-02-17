@@ -48,7 +48,7 @@ func EpisodesList(showID, mode string) ([]string, error) {
 	// Make the HTTP request
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		Log(fmt.Sprint("Error creating HTTP request:", err), logFile)
+		Log(fmt.Sprint("Error creating HTTP request:", err))
 		return episodes, err
 	}
 	req.Header.Set("User-Agent", agent)
@@ -57,14 +57,14 @@ func EpisodesList(showID, mode string) ([]string, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		Log(fmt.Sprint("Error making HTTP request:", err), logFile)
+		Log(fmt.Sprint("Error making HTTP request:", err))
 		return episodes, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Log(fmt.Sprint("Error reading response body:", err), logFile)
+		Log(fmt.Sprint("Error reading response body:", err))
 		return episodes, err
 	}
 
@@ -72,7 +72,7 @@ func EpisodesList(showID, mode string) ([]string, error) {
 	var response episodesResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		Log(fmt.Sprint("Error parsing JSON:", err), logFile)
+		Log(fmt.Sprint("Error parsing JSON:", err))
 		return episodes, err
 	}
 

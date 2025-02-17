@@ -248,7 +248,7 @@ func LocalFindAnime(animeList []Anime, anilistID int, allanimeID string) *Anime 
 	return nil
 }
 
-func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
+func WatchUntracked(userCurdConfig *CurdConfig) {
 	var query string
 	var animeList map[string]string
 	var err error
@@ -258,7 +258,7 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 	if userCurdConfig.RofiSelection {
 		userInput, err := GetUserInputFromRofi("Enter the anime name")
 		if err != nil {
-			Log("Error getting user input: "+err.Error(), logFile)
+			Log("Error getting user input: "+err.Error())
 			ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 		}
 		query = userInput
@@ -270,7 +270,7 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 	// Search for the anime
 	animeList, err = SearchAnime(query, userCurdConfig.SubOrDub)
 	if err != nil {
-		Log(fmt.Sprintf("Failed to search anime: %v", err), logFile)
+		Log(fmt.Sprintf("Failed to search anime: %v", err))
 		ExitCurd(fmt.Errorf("Failed to search anime"))
 	}
 
@@ -281,7 +281,7 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 	// Select anime from search results
 	selectedAnime, err := DynamicSelect(animeList, false)
 	if err != nil {
-		Log(fmt.Sprintf("Failed to select anime: %v", err), logFile)
+		Log(fmt.Sprintf("Failed to select anime: %v", err))
 		ExitCurd(fmt.Errorf("Failed to select anime"))
 	}
 
@@ -297,12 +297,12 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 	if userCurdConfig.RofiSelection {
 		userInput, err := GetUserInputFromRofi("Enter the episode number")
 		if err != nil {
-			Log("Error getting episode number: "+err.Error(), logFile)
+			Log("Error getting episode number: "+err.Error())
 			ExitCurd(fmt.Errorf("Error getting episode number: " + err.Error()))
 		}
 		episodeNumber, err = strconv.Atoi(userInput)
 		if err != nil {
-			Log(fmt.Sprintf("Invalid episode number: %v", err), logFile)
+			Log(fmt.Sprintf("Invalid episode number: %v", err))
 			ExitCurd(fmt.Errorf("Invalid episode number"))
 		}
 	} else {
@@ -316,7 +316,7 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 		// Get episode link
 		link, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
 		if err != nil {
-			Log(fmt.Sprintf("Failed to get episode link: %v", err), logFile)
+			Log(fmt.Sprintf("Failed to get episode link: %v", err))
 			ExitCurd(fmt.Errorf("Failed to get episode link"))
 		}
 
@@ -329,14 +329,14 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 		// Start video playback
 		mpvSocketPath, err := StartVideo(PrioritizeLink(link), []string{}, fmt.Sprintf("%s - Episode %d", GetAnimeName(anime), anime.Ep.Number), &anime)
 		if err != nil {
-			Log("Failed to start mpv", logFile)
+			Log("Failed to start mpv")
 			os.Exit(1)
 		}
 
 		anime.Ep.Player.SocketPath = mpvSocketPath
 		anime.Ep.Started = false
 
-		Log(fmt.Sprintf("Started mpv with socket path: %s", anime.Ep.Player.SocketPath), logFile)
+		Log(fmt.Sprintf("Started mpv with socket path: %s", anime.Ep.Player.SocketPath))
 
 		// Get video duration
 		go func() {
@@ -346,13 +346,13 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 						// Get video duration
 						durationPos, err := MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "duration"})
 						if err != nil {
-							Log("Error getting video duration: "+err.Error(), logFile)
+							Log("Error getting video duration: "+err.Error())
 						} else if durationPos != nil {
 							if duration, ok := durationPos.(float64); ok {
 								anime.Ep.Duration = int(duration + 0.5) // Round to nearest integer
-								Log(fmt.Sprintf("Video duration: %d seconds", anime.Ep.Duration), logFile)
+								Log(fmt.Sprintf("Video duration: %d seconds", anime.Ep.Duration))
 							} else {
-								Log("Error: duration is not a float64", logFile)
+								Log("Error: duration is not a float64")
 							}
 						}
 						break
@@ -366,28 +366,28 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 		for {
 			timePos, err := MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
 			if err != nil {
-				Log("Error getting playback time: "+err.Error(), logFile)
+				Log("Error getting playback time: "+err.Error())
 
 				// Check if the error is due to invalid JSON
 				// User closed the video
 				if anime.Ep.Started {
 					percentageWatched := PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
 					// Episode is completed
-					Log(fmt.Sprint(percentageWatched), logFile)
-					Log(fmt.Sprint(anime.Ep.Player.PlaybackTime), logFile)
-					Log(fmt.Sprint(anime.Ep.Duration), logFile)
-					Log(fmt.Sprint(userCurdConfig.PercentageToMarkComplete), logFile)
+					Log(fmt.Sprint(percentageWatched))
+					Log(fmt.Sprint(anime.Ep.Player.PlaybackTime))
+					Log(fmt.Sprint(anime.Ep.Duration))
+					Log(fmt.Sprint(userCurdConfig.PercentageToMarkComplete))
 					if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 						anime.Ep.Number++
 						anime.Ep.Started = false
-						Log("Completed episode, starting next.", logFile)
+						Log("Completed episode, starting next.")
 						anime.Ep.IsCompleted = true
 						// Exit the skip loop
 						break
 					} else if fmt.Sprintf("%v", err) == "invalid character '{' after top-level value" { // Episode is not completed
-						Log("Received invalid JSON response, continuing...", logFile)
+						Log("Received invalid JSON response, continuing...")
 					} else {
-						Log("Episode is not completed, exiting", logFile)
+						Log("Episode is not completed, exiting")
 						ExitCurd(nil)
 					}
 				}
@@ -401,7 +401,7 @@ func WatchUntracked(userCurdConfig *CurdConfig, logFile string) {
 
 				animePosition, ok := timePos.(float64)
 				if !ok {
-					Log("Error: timePos is not a float64", logFile)
+					Log("Error: timePos is not a float64")
 					continue
 				}
 
