@@ -229,6 +229,7 @@ curd [options]
 | `-storage-path`           | Path to the storage directory                                          | `"$HOME/.local/share/curd"` |
 | `-subs-lang`              | Set the language for subtitles                                         | `"english"`   |
 | `-u`                      | Update the script                                                      | -             |
+| `-v`                      | Show curd version                                                      | -             |
 
 ### Examples
 
