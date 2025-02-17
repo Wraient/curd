@@ -1,4 +1,5 @@
-GOOS=windows GOARCH=amd64 go build -o curd-windows.exe -ldflags "-s -w" ./cmd/curd/main.go
+VERSION=$(cat VERSION.txt)
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o curd-windows.exe -ldflags="-X main.version=${VERSION}" cmd/curd/main.go
 if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" && "$GITHUB_EVENT_HEAD_COMMIT_MESSAGE" == *"release:"* ]] || [[ "$UPX" == "true" ]]; then
     upx --best --ultra-brute curd-windows.exe
 fi
