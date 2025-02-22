@@ -428,64 +428,69 @@ func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, e
 
 // DynamicSelect displays a simple selection prompt without extra features
 func DynamicSelect(options map[string]string, addnewoption bool) (SelectionOption, error) {
-    if GetGlobalConfig().RofiSelection {
-        return RofiSelect(options, addnewoption)
-    }
+	if GetGlobalConfig().RofiSelection {
+		return RofiSelect(options, addnewoption)
+	}
 
-    // Create a slice to maintain order
-    var orderedOptions []SelectionOption
-    
-    // If this is a category selection (contains menu items), use the ordered keys
-    if _, hasMenu := options["ALL"]; hasMenu {
-        // Get ordered keys from the options map
-        for key, value := range options {
-            orderedOptions = append(orderedOptions, SelectionOption{
-                Key:   key,
-                Label: value,
-            })
-        }
-    } else {
-        // For other selections, maintain alphabetical order
-        for key, value := range options {
-            orderedOptions = append(orderedOptions, SelectionOption{
-                Key:   key,
-                Label: value,
-            })
-        }
-    }
+	// Create a slice to maintain order
+	var orderedOptions []SelectionOption
 
-    model := &Model{
-        options:      options,
-        filteredKeys: orderedOptions,
-        addNewOption: addnewoption,
-    }
+	// If this is a category selection (contains menu items), use the ordered keys
+	if _, hasMenu := options["ALL"]; hasMenu {
+		// Get the menu order from config
+		menuOrder := strings.Split(GetGlobalConfig().MenuOrder, ",")
 
-    if addnewoption {
-        model.filteredKeys = append(model.filteredKeys, SelectionOption{
-            Label: "Add new anime",
-            Key:   "add_new",
-        })
-    }
+		// Add options in the specified order
+		for _, key := range menuOrder {
+			if value, exists := options[key]; exists {
+				orderedOptions = append(orderedOptions, SelectionOption{
+					Key:   key,
+					Label: value,
+				})
+			}
+		}
+	} else {
+		// For other selections, maintain alphabetical order
+		for key, value := range options {
+			orderedOptions = append(orderedOptions, SelectionOption{
+				Key:   key,
+				Label: value,
+			})
+		}
+	}
 
-    model.filteredKeys = append(model.filteredKeys, SelectionOption{
-        Label: "Quit",
-        Key:   "-1",
-    })
+	model := &Model{
+		options:      options,
+		filteredKeys: orderedOptions,
+		addNewOption: addnewoption,
+	}
 
-    p := tea.NewProgram(model)
+	if addnewoption {
+		model.filteredKeys = append(model.filteredKeys, SelectionOption{
+			Label: "Add new anime",
+			Key:   "add_new",
+		})
+	}
 
-    finalModel, err := p.Run()
-    if err != nil {
-        return SelectionOption{}, err
-    }
+	model.filteredKeys = append(model.filteredKeys, SelectionOption{
+		Label: "Quit",
+		Key:   "-1",
+	})
 
-    finalSelectionModel, ok := finalModel.(*Model)
-    if !ok {
-        return SelectionOption{}, fmt.Errorf("unexpected model type")
-    }
+	p := tea.NewProgram(model)
 
-    if finalSelectionModel.selected < len(finalSelectionModel.filteredKeys) {
-        return finalSelectionModel.filteredKeys[finalSelectionModel.selected], nil
-    }
-    return SelectionOption{}, nil
+	finalModel, err := p.Run()
+	if err != nil {
+		return SelectionOption{}, err
+	}
+
+	finalSelectionModel, ok := finalModel.(*Model)
+	if !ok {
+		return SelectionOption{}, fmt.Errorf("unexpected model type")
+	}
+
+	if finalSelectionModel.selected < len(finalSelectionModel.filteredKeys) {
+		return finalSelectionModel.filteredKeys[finalSelectionModel.selected], nil
+	}
+	return SelectionOption{}, nil
 }
