@@ -531,8 +531,6 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	var animeMapPreview map[string]RofiSelectPreview
 	var err error
 	var anilistSelectedOption SelectionOption
-	var anilistUserData map[string]interface{}
-	var anilistUserDataPreview map[string]interface{}
 
 	if userCurdConfig.RofiSelection {
 		userInput, err := GetUserInputFromRofi("Enter the anime name")
@@ -573,30 +571,49 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 		Log(fmt.Sprintf("Failed to convert anime ID to integer: %v", err))
 		ExitCurd(fmt.Errorf("Failed to convert anime ID to integer"))
 	}
-	err = AddAnimeToWatchingList(animeID, user.Token)
-	if err != nil {
-		Log(fmt.Sprintf("Failed to add anime to watching list: %v", err))
-		ExitCurd(fmt.Errorf("Failed to add anime to watching list"))
+
+	// Add category selection before adding to list
+	categories := map[string]string{
+		"CURRENT":   "Currently Watching",
+		"COMPLETED": "Completed",
+		"PAUSED":    "On Hold",
+		"DROPPED":   "Dropped",
+		"PLANNING":  "Plan to Watch",
 	}
-	if user.Id == 0 {
-		user.Id, user.Username, err = GetAnilistUserID(user.Token)
+
+	ClearScreen()
+	CurdOut("Select which list to add the anime to:")
+
+	categorySelection, err := DynamicSelect(categories, false)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to select category: %v", err))
+		ExitCurd(fmt.Errorf("Failed to select category"))
+	}
+
+	if categorySelection.Key == "-1" {
+		ExitCurd(nil)
+	}
+
+	err = UpdateAnimeStatus(user.Token, animeID, categorySelection.Key)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to add anime to list: %v", err))
+		ExitCurd(fmt.Errorf("Failed to add anime to list"))
+	}
+
+	// Refresh user's anime list after adding
+	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+		anilistUserDataPreview, err := GetUserDataPreview(user.Token, user.Id)
 		if err != nil {
-			Log(fmt.Sprintf("Failed to get user ID: %v", err))
-			ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
+			Log(fmt.Sprintf("Failed to refresh anime list: %v", err))
+			ExitCurd(fmt.Errorf("Failed to refresh anime list"))
 		}
-	}
-	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-		anilistUserDataPreview, err = GetUserDataPreview(user.Token, user.Id)
-	} else {
-		anilistUserData, err = GetUserData(user.Token, user.Id)
-	}
-	if err != nil {
-		Log(fmt.Sprintf("Failed to get user data: %v", err))
-		ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
-	}
-	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		user.AnimeList = ParseAnimeList(anilistUserDataPreview)
 	} else {
+		anilistUserData, err := GetUserData(user.Token, user.Id)
+		if err != nil {
+			Log(fmt.Sprintf("Failed to refresh anime list: %v", err))
+			ExitCurd(fmt.Errorf("Failed to refresh anime list"))
+		}
 		user.AnimeList = ParseAnimeList(anilistUserData)
 	}
 
