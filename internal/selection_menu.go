@@ -428,18 +428,37 @@ func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, e
 
 // DynamicSelect displays a simple selection prompt without extra features
 func DynamicSelect(options map[string]string, addnewoption bool) (SelectionOption, error) {
-
 	if GetGlobalConfig().RofiSelection {
 		return RofiSelect(options, addnewoption)
 	}
 
+	// Create a slice to maintain order
+	var orderedOptions []SelectionOption
+	for key, value := range options {
+		orderedOptions = append(orderedOptions, SelectionOption{
+			Key:   key,
+			Label: value,
+		})
+	}
+
 	model := &Model{
 		options:      options,
-		filteredKeys: make([]SelectionOption, 0),
+		filteredKeys: orderedOptions,
 		addNewOption: addnewoption,
 	}
 
-	model.filterOptions()
+	if addnewoption {
+		model.filteredKeys = append(model.filteredKeys, SelectionOption{
+			Label: "Add new anime",
+			Key:   "add_new",
+		})
+	}
+
+	model.filteredKeys = append(model.filteredKeys, SelectionOption{
+		Label: "Quit",
+		Key:   "-1",
+	})
+
 	p := tea.NewProgram(model)
 
 	finalModel, err := p.Run()

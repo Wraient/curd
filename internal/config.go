@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
-	"strconv"
-	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +20,7 @@ type CurdConfig struct {
 	SubOrDub                 string   `config:"SubOrDub"`
 	StoragePath              string   `config:"StoragePath"`
 	AnimeNameLanguage        string   `config:"AnimeNameLanguage"`
+	MenuOrder                string   `config:"MenuOrder"`
 	PercentageToMarkComplete int      `config:"PercentageToMarkComplete"`
 	NextEpisodePrompt        bool     `config:"NextEpisodePrompt"`
 	SkipOp                   bool     `config:"SkipOp"`
@@ -44,6 +45,7 @@ func defaultConfigMap() map[string]string {
 		"StoragePath":              "$HOME/.local/share/curd",
 		"AnimeNameLanguage":        "english",
 		"SubsLanguage":             "english",
+		"MenuOrder":                "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST",
 		"SubOrDub":                 "sub",
 		"PercentageToMarkComplete": "85",
 		"NextEpisodePrompt":        "false",
@@ -178,73 +180,73 @@ func createDefaultConfig(path string) error {
 }
 
 func getTokenFromTempFile(isWindowsPlatform bool) (string, error) {
-    // Create a temporary file for the token
-    tempFile, err := os.CreateTemp("", "curd-token-*.txt")
-    if err != nil {
-        return "", fmt.Errorf("error creating temp file: %v", err)
-    }
-    tempPath := tempFile.Name()
-    tempFile.Close()
+	// Create a temporary file for the token
+	tempFile, err := os.CreateTemp("", "curd-token-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("error creating temp file: %v", err)
+	}
+	tempPath := tempFile.Name()
+	tempFile.Close()
 
-    // Write instructions to the temp file
-    instructions := "Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token\n" +
-        "Replace this text with your token and save the file.\n"
-    if err := os.WriteFile(tempPath, []byte(instructions), 0644); err != nil {
-        return "", fmt.Errorf("error writing instructions: %v", err)
-    }
+	// Write instructions to the temp file
+	instructions := "Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token\n" +
+		"Replace this text with your token and save the file.\n"
+	if err := os.WriteFile(tempPath, []byte(instructions), 0644); err != nil {
+		return "", fmt.Errorf("error writing instructions: %v", err)
+	}
 
-    // Open the file with appropriate editor
-    var cmd *exec.Cmd
-    if isWindowsPlatform {
-        cmd = exec.Command("notepad.exe", tempPath)
-    } else {
-        editor := os.Getenv("EDITOR")
-        if editor == "" {
-            editor = "nano" // Default to nano if $EDITOR is not set
-        }
-        cmd = exec.Command(editor, tempPath)
-        cmd.Stdin = os.Stdin
-        cmd.Stdout = os.Stdout
-        cmd.Stderr = os.Stderr
-    }
+	// Open the file with appropriate editor
+	var cmd *exec.Cmd
+	if isWindowsPlatform {
+		cmd = exec.Command("notepad.exe", tempPath)
+	} else {
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "nano" // Default to nano if $EDITOR is not set
+		}
+		cmd = exec.Command(editor, tempPath)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 
-    if err := cmd.Run(); err != nil {
-        return "", fmt.Errorf("error opening editor: %v", err)
-    }
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("error opening editor: %v", err)
+	}
 
-    // Read the token from the file
-    content, err := os.ReadFile(tempPath)
-    if err != nil {
-        return "", fmt.Errorf("error reading token: %v", err)
-    }
+	// Read the token from the file
+	content, err := os.ReadFile(tempPath)
+	if err != nil {
+		return "", fmt.Errorf("error reading token: %v", err)
+	}
 
-    // Clean up the temp file
-    os.Remove(tempPath)
+	// Clean up the temp file
+	os.Remove(tempPath)
 
-    // Extract token (remove instructions and whitespace)
-    return strings.TrimSpace(string(content)), nil
+	// Extract token (remove instructions and whitespace)
+	return strings.TrimSpace(string(content)), nil
 }
 
 func ChangeToken(config *CurdConfig, user *User) {
-    var err error
-    tokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "token")
+	var err error
+	tokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "token")
 
-    switch {
-    case runtime.GOOS == "darwin" || runtime.GOOS == "windows":
-        user.Token, err = getTokenFromTempFile(runtime.GOOS == "windows")
-    case config.RofiSelection:
-        user.Token, err = GetTokenFromRofi()
-    default:
-        fmt.Println("Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
-        fmt.Scanln(&user.Token)
-    }
+	switch {
+	case runtime.GOOS == "darwin" || runtime.GOOS == "windows":
+		user.Token, err = getTokenFromTempFile(runtime.GOOS == "windows")
+	case config.RofiSelection:
+		user.Token, err = GetTokenFromRofi()
+	default:
+		fmt.Println("Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
+		fmt.Scanln(&user.Token)
+	}
 
-    if err != nil {
-        Log("Error getting user input: "+err.Error())
-        ExitCurd(err)
-    }
+	if err != nil {
+		Log("Error getting user input: " + err.Error())
+		ExitCurd(err)
+	}
 
-    WriteTokenToFile(user.Token, tokenPath)
+	WriteTokenToFile(user.Token, tokenPath)
 }
 
 // Load config file from disk into a map (key=value format)
@@ -330,4 +332,51 @@ func populateConfig(configMap map[string]string) CurdConfig {
 	}
 
 	return config
+}
+
+func getOrderedCategories(userCurdConfig *CurdConfig) map[string]string {
+	// Define the default categories and their labels
+	defaultOrder := []string{"CURRENT", "ALL", "UNTRACKED", "UPDATE", "CONTINUE_LAST"}
+	defaultLabels := map[string]string{
+		"CURRENT":       "Currently Watching",
+		"ALL":           "Show All",
+		"UNTRACKED":     "Untracked Watching",
+		"UPDATE":        "Update (Episode, Status, Score)",
+		"CONTINUE_LAST": "Continue Last Session",
+	}
+
+	// Create ordered map to store final result
+	finalOrder := make([]string, 0)
+	seen := make(map[string]bool)
+
+	// If no menu order specified, use default order
+	if userCurdConfig.MenuOrder == "" {
+		finalOrder = defaultOrder
+	} else {
+		// First, process user-specified order
+		menuItems := strings.Split(userCurdConfig.MenuOrder, ",")
+		for _, key := range menuItems {
+			key = strings.TrimSpace(key)
+			if _, exists := defaultLabels[key]; exists && !seen[key] {
+				finalOrder = append(finalOrder, key)
+				seen[key] = true
+			}
+		}
+
+		// Add remaining default items at the end
+		for _, key := range defaultOrder {
+			if !seen[key] {
+				finalOrder = append(finalOrder, key)
+				seen[key] = true
+			}
+		}
+	}
+
+	// Create the final ordered map
+	orderedMap := make(map[string]string)
+	for _, key := range finalOrder {
+		orderedMap[key] = defaultLabels[key]
+	}
+
+	return orderedMap
 }

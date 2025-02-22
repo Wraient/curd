@@ -693,13 +693,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 		} else {
 			// Create category selection map
-			categories := map[string]string{
-				"CURRENT":       "Currently Watching",
-				"ALL":           "Show All",
-				"UNTRACKED":     "Untracked Watching",
-				"UPDATE":        "Update (Episode, Status, Score)",
-				"CONTINUE_LAST": "Continue Last Session",
-			}
+			categories := getOrderedCategories(userCurdConfig)
 
 			// Select category using DynamicSelect
 			var err error
