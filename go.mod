@@ -1,13 +1,15 @@
 module github.com/wraient/curd
 
-go 1.24.0
+go 1.23
+
+toolchain go1.24.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/charmbracelet/bubbletea v1.3.3
 	github.com/charmbracelet/lipgloss v1.0.0
 	github.com/gen2brain/beeep v0.0.0-20240516210008-9c006672e7f4
-	github.com/wraient/rich-go v0.0.0-20250215175626-21ded92fb65a
+	github.com/hugolgst/rich-go v0.0.0-20240715122152-74618cc1ace2
 )
 
 require (

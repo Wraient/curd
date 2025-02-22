@@ -528,17 +528,31 @@ func main() {
 
 		if anime.Ep.IsCompleted && !anime.Rewatching {
 			// Update progress for both regular episodes and skipped fillers
-			go func() {
+			if anime.TotalEpisodes > 0 && anime.Ep.Number-1 != anime.TotalEpisodes {
+				go func() {
+					// Update progress for regular episodes
+					err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
+					if err != nil {
+						internal.Log("Error updating Anilist progress: " + err.Error())
+					}
+				}()
+			} else {
+				// Update progress for last episode
+				
+				// Exit MPV
+				internal.ExitMPV(anime.Ep.Player.SocketPath)
+
 				err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
 				if err != nil {
-					internal.Log("Error updating Anilist progress: "+err.Error())
-				}
-			}()
+					internal.Log("Error updating Anilist progress: " + err.Error())
+				}				
+			}
 
 			anime.Ep.IsCompleted = false
 			// Only mark as complete and prompt for rating if we've reached the total episodes
 			// AND the anime is not currently airing (total episodes > 0)
 			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 {
+
 				// Get updated anime data to check if it's still airing
 				updatedAnime, err := internal.GetAnimeDataByID(anime.AnilistId, user.Token)
 				if err != nil {
@@ -572,11 +586,7 @@ func main() {
 			}
 
 			if selectedOption.Key != "yes" {
-				// Send command to close MPV
-				_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
-				if err != nil {
-					internal.Log("Error closing MPV: "+err.Error())
-				}
+				internal.ExitMPV(anime.Ep.Player.SocketPath)
 				internal.ExitCurd(nil)
 			}
 			// If yes or any other case, continue with the next episode

@@ -19,7 +19,6 @@ type Args struct {
 type PayloadActivity struct {
 	Details    string             `json:"details,omitempty"`
 	State      string             `json:"state,omitempty"`
-	Type       ActivityType       `json:"type,omitempty"`	
 	Assets     PayloadAssets      `json:"assets,omitempty"`
 	Party      *PayloadParty      `json:"party,omitempty"`
 	Timestamps *PayloadTimestamps `json:"timestamps,omitempty"`

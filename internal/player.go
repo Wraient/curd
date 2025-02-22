@@ -281,3 +281,12 @@ func IsMPVRunning(socketPath string) bool {
 	_, err = MPVSendCommand(socketPath, []interface{}{"get_property", "pid"})
 	return err == nil
 }
+
+func ExitMPV(ipcSocketPath string) error {
+	// Send command to close MPV
+	_, err := MPVSendCommand(ipcSocketPath, []interface{}{"quit"})
+	if err != nil {
+		Log("Error closing MPV: " + err.Error())
+	}
+	return err
+}
