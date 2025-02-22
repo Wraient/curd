@@ -428,51 +428,64 @@ func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, e
 
 // DynamicSelect displays a simple selection prompt without extra features
 func DynamicSelect(options map[string]string, addnewoption bool) (SelectionOption, error) {
-	if GetGlobalConfig().RofiSelection {
-		return RofiSelect(options, addnewoption)
-	}
+    if GetGlobalConfig().RofiSelection {
+        return RofiSelect(options, addnewoption)
+    }
 
-	// Create a slice to maintain order
-	var orderedOptions []SelectionOption
-	for key, value := range options {
-		orderedOptions = append(orderedOptions, SelectionOption{
-			Key:   key,
-			Label: value,
-		})
-	}
+    // Create a slice to maintain order
+    var orderedOptions []SelectionOption
+    
+    // If this is a category selection (contains menu items), use the ordered keys
+    if _, hasMenu := options["ALL"]; hasMenu {
+        // Get ordered keys from the options map
+        for key, value := range options {
+            orderedOptions = append(orderedOptions, SelectionOption{
+                Key:   key,
+                Label: value,
+            })
+        }
+    } else {
+        // For other selections, maintain alphabetical order
+        for key, value := range options {
+            orderedOptions = append(orderedOptions, SelectionOption{
+                Key:   key,
+                Label: value,
+            })
+        }
+    }
 
-	model := &Model{
-		options:      options,
-		filteredKeys: orderedOptions,
-		addNewOption: addnewoption,
-	}
+    model := &Model{
+        options:      options,
+        filteredKeys: orderedOptions,
+        addNewOption: addnewoption,
+    }
 
-	if addnewoption {
-		model.filteredKeys = append(model.filteredKeys, SelectionOption{
-			Label: "Add new anime",
-			Key:   "add_new",
-		})
-	}
+    if addnewoption {
+        model.filteredKeys = append(model.filteredKeys, SelectionOption{
+            Label: "Add new anime",
+            Key:   "add_new",
+        })
+    }
 
-	model.filteredKeys = append(model.filteredKeys, SelectionOption{
-		Label: "Quit",
-		Key:   "-1",
-	})
+    model.filteredKeys = append(model.filteredKeys, SelectionOption{
+        Label: "Quit",
+        Key:   "-1",
+    })
 
-	p := tea.NewProgram(model)
+    p := tea.NewProgram(model)
 
-	finalModel, err := p.Run()
-	if err != nil {
-		return SelectionOption{}, err
-	}
+    finalModel, err := p.Run()
+    if err != nil {
+        return SelectionOption{}, err
+    }
 
-	finalSelectionModel, ok := finalModel.(*Model)
-	if !ok {
-		return SelectionOption{}, fmt.Errorf("unexpected model type")
-	}
+    finalSelectionModel, ok := finalModel.(*Model)
+    if !ok {
+        return SelectionOption{}, fmt.Errorf("unexpected model type")
+    }
 
-	if finalSelectionModel.selected < len(finalSelectionModel.filteredKeys) {
-		return finalSelectionModel.filteredKeys[finalSelectionModel.selected], nil
-	}
-	return SelectionOption{}, nil
+    if finalSelectionModel.selected < len(finalSelectionModel.filteredKeys) {
+        return finalSelectionModel.filteredKeys[finalSelectionModel.selected], nil
+    }
+    return SelectionOption{}, nil
 }
