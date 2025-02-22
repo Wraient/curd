@@ -142,7 +142,7 @@ func ExitCurd(err error) {
 	if anime != nil && anime.Ep.Player.SocketPath != "" {
 		_, err = MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
 		if err != nil {
-			Log("Error closing MPV: "+err.Error())
+			Log("Error closing MPV: " + err.Error())
 		}
 	}
 
@@ -537,7 +537,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	if userCurdConfig.RofiSelection {
 		userInput, err := GetUserInputFromRofi("Enter the anime name")
 		if err != nil {
-			Log("Error getting user input: "+err.Error())
+			Log("Error getting user input: " + err.Error())
 			ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 		}
 		query = userInput
@@ -642,13 +642,13 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		idFilePath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_id")
 		idBytes, err := os.ReadFile(idFilePath)
 		if err != nil {
-			Log("Error reading curd_id file: "+err.Error())
+			Log("Error reading curd_id file: " + err.Error())
 			ExitCurd(fmt.Errorf("No last watched anime found"))
 		}
 
 		anilistID, err := strconv.Atoi(string(idBytes))
 		if err != nil {
-			Log("Error converting anilist ID: "+err.Error())
+			Log("Error converting anilist ID: " + err.Error())
 			ExitCurd(fmt.Errorf("Invalid anime ID in curd_id file"))
 		}
 
@@ -874,28 +874,28 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		// Use rofi for selection
 		selectedOption, err = DynamicSelect(options, false)
 		if err != nil {
-			Log("Error in selection: "+err.Error())
+			Log("Error in selection: " + err.Error())
 			ExitCurd(err)
 		}
 
 		if selectedOption.Key == "yes" {
 			err = AddAnimeToWatchingList(anime.AnilistId, user.Token)
 			if err != nil {
-				Log("Error adding anime to watching list: "+err.Error())
+				Log("Error adding anime to watching list: " + err.Error())
 				ExitCurd(err)
 			}
 			// Refresh user's anime list after adding
 			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 				anilistUserDataPreview, err := GetUserDataPreview(user.Token, user.Id)
 				if err != nil {
-					Log("Error refreshing anime list: "+err.Error())
+					Log("Error refreshing anime list: " + err.Error())
 					ExitCurd(err)
 				}
 				user.AnimeList = ParseAnimeList(anilistUserDataPreview)
 			} else {
 				anilistUserData, err := GetUserData(user.Token, user.Id)
 				if err != nil {
-					Log("Error refreshing anime list: "+err.Error())
+					Log("Error refreshing anime list: " + err.Error())
 					ExitCurd(err)
 				}
 				user.AnimeList = ParseAnimeList(anilistUserData)
@@ -952,7 +952,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			if userCurdConfig.RofiSelection {
 				userInput, err := GetUserInputFromRofi("Enter the episode you want to start from")
 				if err != nil {
-					Log("Error getting user input: "+err.Error())
+					Log("Error getting user input: " + err.Error())
 					ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 				}
 				episodeNumber, err = strconv.Atoi(userInput)
@@ -970,7 +970,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		if userCurdConfig.RofiSelection {
 			userInput, err := GetUserInputFromRofi("Would like to start the anime from beginning? (y/n)")
 			if err != nil {
-				Log("Error getting user input: "+err.Error())
+				Log("Error getting user input: " + err.Error())
 				ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 			}
 			answer = userInput
@@ -1025,7 +1025,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 			if userCurdConfig.RofiSelection {
 				userInput, err := GetUserInputFromRofi(fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
 				if err != nil {
-					Log("Error getting user input: "+err.Error())
+					Log("Error getting user input: " + err.Error())
 					ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 				}
 				anime.Ep.Number, err = strconv.Atoi(userInput)
@@ -1061,7 +1061,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 			}
 			nextLinks, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, nextEpNum)
 			if err != nil {
-				Log("Error getting next episode link: "+err.Error())
+				Log("Error getting next episode link: " + err.Error())
 			} else {
 				anime.Ep.NextEpisode = NextEpisode{
 					Number: nextEpNum,
