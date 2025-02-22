@@ -183,7 +183,7 @@ yay -R curd
 ```
 </details>
 
-### [Windows Installer](https://github.com/Wraient/curd/releases/latest/download/CurdInstaller.exe)
+### [Windows Installer](https://github.com/Wraient/curd/releases/latest/download/curd-windows-installer.exe)
 
 ## Usage
 
