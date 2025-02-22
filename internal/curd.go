@@ -677,14 +677,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		} else {
 			// Create category selection map
 			categories := map[string]string{
-				"ALL":       "Show All",
-				"CURRENT":   "Currently Watching",
-				"PAUSED":    "On Hold",
-				"PLANNING":  "Plan to Watch",
-				"COMPLETED": "Completed",
-				"DROPPED":   "Dropped",
-				"UPDATE":    "Update Anime Entry",
-				"UNTRACKED": "Untracked Watching",
+				"CURRENT":       "Currently Watching",
+				"ALL":           "Show All",
+				"UNTRACKED":     "Untracked Watching",
+				"UPDATE":        "Update (Episode, Status, Score)",
+				"CONTINUE_LAST": "Continue Last Session",
 			}
 
 			// Select category using DynamicSelect
@@ -699,7 +696,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				ExitCurd(nil)
 			}
 
-			// Handle UPDATE option
+			// Handle options
 			if categorySelection.Key == "UPDATE" {
 				ClearScreen()
 				UpdateAnimeEntry(userCurdConfig, user)
@@ -707,6 +704,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			} else if categorySelection.Key == "UNTRACKED" {
 				ClearScreen()
 				WatchUntracked(userCurdConfig)
+			} else if categorySelection.Key == "CONTINUE_LAST" {
+				anime.Ep.ContinueLast = true
 			}
 
 			ClearScreen()
