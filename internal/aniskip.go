@@ -101,3 +101,44 @@ func GetAndParseAniSkipData(animeMalId int, episode int, timePrecision int, anim
 	}
 	return ParseAniSkipResponse(responseText, anime, timePrecision)
 }
+
+// Function to send OP and ED timings to MPV
+func SendSkipTimesToMPV(anime *Anime) error {
+	chapterList := []map[string]interface{}{
+		{
+			"title": "Pre-Opening",
+			"time":  0.0,
+			"end":   float64(anime.Ep.SkipTimes.Op.Start),
+		},
+		{
+			"title": "Opening",
+			"time":  float64(anime.Ep.SkipTimes.Op.Start),
+			"end":   float64(anime.Ep.SkipTimes.Op.End),
+		},
+		{
+			"title": "Main",
+			"time":  float64(anime.Ep.SkipTimes.Op.End),
+			"end":   float64(anime.Ep.SkipTimes.Ed.Start),
+		},
+		{
+			"title": "Ending",
+			"time":  float64(anime.Ep.SkipTimes.Ed.Start),
+			"end":   float64(anime.Ep.SkipTimes.Ed.End),
+		},
+		{
+			"title": "Post-Credits",
+			"time":  float64(anime.Ep.SkipTimes.Ed.End),
+		},
+	}
+
+	_, err := MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{
+		"set_property",
+		"chapter-list",
+		chapterList,
+	})
+	if err != nil {
+		return fmt.Errorf("error sending command to MPV: %w", err)
+	}
+
+	return nil
+}

@@ -447,6 +447,13 @@ func main() {
 									internal.Log("Error setting playback speed: "+err.Error())
 								}
 							}
+
+							// Apply OP/ED Chapters
+							err = internal.SendSkipTimesToMPV(&anime)
+							if err != nil {
+								internal.Log("Error sending skip times to MPV: " + err.Error())
+							}
+							fmt.Println("Skip times sent!") // TODO: REMOVE
 						}
 
 						// If resume is true, seek to the playback time
