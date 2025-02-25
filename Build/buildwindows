@@ -1,4 +1,13 @@
 #!/bin/bash
 
-./Build/buildwindows-arm64
-./Build/buildwindows-x86_64
+# Set required Windows build environment variables
+export CGO_ENABLED=1
+export GOOS=windows
+
+# Build for ARM64
+export GOARCH=arm64
+CC=x86_64-w64-mingw32-gcc ./Build/buildwindows-arm64
+
+# Build for x86_64
+export GOARCH=amd64
+CC=x86_64-w64-mingw32-gcc ./Build/buildwindows-x86_64
