@@ -4,9 +4,9 @@
 export CGO_ENABLED=1
 export GOOS=windows
 
-# Build for ARM64
-export GOARCH=arm64
-CC=x86_64-w64-mingw32-gcc ./Build/buildwindows-arm64
+# Build for ARM64 (Broken due to npipe and rich-go)
+# export GOARCH=arm64
+# CC=x86_64-w64-mingw32-gcc ./Build/buildwindows-arm64
 
 # Build for x86_64
 export GOARCH=amd64
