@@ -1,5 +1,13 @@
-VERSION=$(cat VERSION.txt)
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o curd-windows.exe -ldflags="-X main.version=${VERSION}" cmd/curd/main.go
-if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" && "$GITHUB_EVENT_HEAD_COMMIT_MESSAGE" == *"release:"* ]] || [[ "$COMPRESS" == "true" ]]; then
-    upx --best --ultra-brute curd-windows.exe
-fi
+#!/bin/bash
+
+# Set required Windows build environment variables
+export CGO_ENABLED=1
+export GOOS=windows
+
+# Build for ARM64 (Broken due to npipe and rich-go)
+# export GOARCH=arm64
+# CC=x86_64-w64-mingw32-gcc ./Build/buildwindows-arm64
+
+# Build for x86_64
+export GOARCH=amd64
+CC=x86_64-w64-mingw32-gcc ./Build/buildwindows-x86_64

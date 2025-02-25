@@ -457,8 +457,10 @@ func UpdateCurd(repo, fileName string) error {
 	var binaryName string
 	switch runtime.GOOS {
 	case "windows":
-		if strings.HasSuffix(executablePath, "curd.exe") {
-			binaryName = "curd-windows.exe"
+		if runtime.GOARCH == "arm64" {
+			binaryName = "curd-windows-arm64.exe"
+		} else {
+			binaryName = "curd-windows-x86_64.exe"
 		}
 	case "darwin": // macOS
 		switch runtime.GOARCH {
@@ -470,9 +472,12 @@ func UpdateCurd(repo, fileName string) error {
 			binaryName = "curd-macos-universal"
 		}
 	case "linux":
-		if runtime.GOARCH == "amd64" {
+		switch runtime.GOARCH {
+		case "amd64":
 			binaryName = "curd-linux-x86_64"
-		} else {
+		case "arm64":
+			binaryName = "curd-linux-arm64"
+		default:
 			return fmt.Errorf("unsupported Linux architecture: %s", runtime.GOARCH)
 		}
 	default:
@@ -504,25 +509,38 @@ func UpdateCurd(repo, fileName string) error {
 	}
 	defer out.Close()
 
-	// Write the downloaded content to the temporary file
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to save downloaded file: %v", err)
+	// Set file permissions
+	if err := out.Chmod(0755); err != nil {
+		return fmt.Errorf("failed to set file permissions: %v", err)
 	}
 
-	// Close and rename the temporary file to replace the current executable
+	// Copy the downloaded content to the temporary file
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		return fmt.Errorf("failed to write to temporary file: %v", err)
+	}
+
+	// Close the file before renaming
 	out.Close()
 
-	// Replace the current executable with the downloaded curd
-	if err := os.Rename(tmpPath, executablePath); err != nil {
-		return fmt.Errorf("failed to replace the current executable: %v", err)
-	}
-	CurdOut(fmt.Sprintf("Downloaded curd executable to %v", executablePath))
-
-	if runtime.GOOS != "windows" {
-		// Ensure the new file has executable permissions
-		if err := os.Chmod(executablePath, 0755); err != nil {
-			return fmt.Errorf("failed to set permissions on the new file: %v", err)
+	// Replace the old executable with the new one
+	if runtime.GOOS == "windows" {
+		// On Windows, we need to rename the old file first
+		oldPath := executablePath + ".old"
+		err = os.Rename(executablePath, oldPath)
+		if err != nil {
+			return fmt.Errorf("failed to rename old executable: %v", err)
+		}
+		err = os.Rename(tmpPath, executablePath)
+		if err != nil {
+			// Try to restore the old executable if the rename fails
+			os.Rename(oldPath, executablePath)
+			return fmt.Errorf("failed to rename new executable: %v", err)
+		}
+		os.Remove(oldPath)
+	} else {
+		// On Unix systems, we can directly rename
+		if err := os.Rename(tmpPath, executablePath); err != nil {
+			return fmt.Errorf("failed to replace executable: %v", err)
 		}
 	}
 

@@ -15,7 +15,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; Copy the Curd executable to the install directory
-Source: "..\releases\curd-{#SetupSetting("AppVersion")}\windows\curd-windows.exe"; DestDir: "{app}"; DestName: "curd.exe"; Flags: ignoreversion
+Source: "..\releases\curd-{#SetupSetting("AppVersion")}\windows\curd-windows-x86_64.exe"; DestDir: "{app}"; DestName: "curd.exe"; Flags: ignoreversion
 Source: "mpv\mpv.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 [Icons]

@@ -1,0 +1,2 @@
+mingw-w64-gcc # Build arm64 windows binary
+llvm-lipo # Build universal macos binary

@@ -23,6 +23,13 @@ else
     exit 1
 fi
 
+if [ -f "curd-linux-arm64" ]; then
+    mv curd-linux-arm64 "$linux_folder"
+else
+    echo "Linux build failed. Please check Build/buildlinux-arm64."
+    exit 1
+fi
+
 # Build macOS binaries
 echo "Building macOS binaries..."
 bash Build/buildmac
@@ -63,12 +70,20 @@ mkdir -p "Build/mpv"
 gunzip -c Build/mpv.exe.gz > "Build/mpv/mpv.exe"
 
 # Move the Windows binary to the release folder
-if [ -f "curd-windows.exe" ]; then
-    mv curd-windows.exe "$windows_folder"
+if [ -f "curd-windows-x86_64.exe" ]; then
+    mv curd-windows-x86_64.exe "$windows_folder"
 else
-    echo "Windows build failed. Please check Build/buildwindows."
+    echo "Windows build failed. Please check Build/buildwindows-x86_64."
     exit 1
 fi
+
+# NOTE: Broken due to npipe and rich-go
+# if [ -f "curd-windows-arm64.exe" ]; then
+#     mv curd-windows-arm64.exe "$windows_folder"
+# else
+#     echo "Windows build failed. Please check Build/buildwindows-arm64."
+#     exit 1
+# fi
 
 # Create Windows installer with Inno Setup
 echo "Creating Windows installer..."
