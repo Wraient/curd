@@ -44,7 +44,11 @@ func EditConfig(configFilePath string) {
 				editor = "notepad.exe"
 			}
 		} else {
-			editor = "vim"
+			if _, err := exec.LookPath("vim"); err == nil {
+				editor = "vim"
+			} else {
+				editor = "nano"
+			}
 		}
 	}
 
