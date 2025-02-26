@@ -363,7 +363,7 @@ func showCachedImagePreview(imageURL string) error {
 	return nil
 }
 
-func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, error) {
+func RofiSelect(options map[string]string) (SelectionOption, error) {
 	userCurdConfig := GetGlobalConfig()
 	if userCurdConfig.StoragePath == "" {
 		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
@@ -378,13 +378,9 @@ func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, e
 	// Sort the options alphabetically
 	sort.Strings(optionsList)
 
-	// Add "Add new anime" and "Quit" options
-	if addanimeopt {
-		optionsList = append(optionsList, "Add new anime", "Quit")
-	} else {
-		optionsList = append(optionsList, "Quit")
-	}
-
+	// Add "Quit" options
+	optionsList = append(optionsList, "Quit")
+	
 	// Join all options into a single string, separated by newlines
 	optionsString := strings.Join(optionsList, "\n")
 
@@ -409,8 +405,6 @@ func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, e
 	switch selected {
 	case "":
 		return SelectionOption{}, fmt.Errorf("no selection made")
-	case "Add new anime":
-		return SelectionOption{Label: "Add new anime", Key: "add_new"}, nil
 	case "Quit":
 		return SelectionOption{Label: "Quit", Key: "-1"}, nil
 	}
@@ -427,9 +421,9 @@ func RofiSelect(options map[string]string, addanimeopt bool) (SelectionOption, e
 }
 
 // DynamicSelect displays a simple selection prompt without extra features
-func DynamicSelect(options map[string]string, addnewoption bool) (SelectionOption, error) {
+func DynamicSelect(options map[string]string) (SelectionOption, error) {
 	if GetGlobalConfig().RofiSelection {
-		return RofiSelect(options, addnewoption)
+		return RofiSelect(options)
 	}
 
 	// Create a slice to maintain order
@@ -462,15 +456,8 @@ func DynamicSelect(options map[string]string, addnewoption bool) (SelectionOptio
 	model := &Model{
 		options:      options,
 		filteredKeys: orderedOptions,
-		addNewOption: addnewoption,
 	}
 
-	if addnewoption {
-		model.filteredKeys = append(model.filteredKeys, SelectionOption{
-			Label: "Add new anime",
-			Key:   "add_new",
-		})
-	}
 
 	model.filteredKeys = append(model.filteredKeys, SelectionOption{
 		Label: "Quit",

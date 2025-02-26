@@ -279,7 +279,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 	}
 
 	// Select anime from search results
-	selectedAnime, err := DynamicSelect(animeList, false)
+	selectedAnime, err := DynamicSelect(animeList)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to select anime: %v", err))
 		ExitCurd(fmt.Errorf("Failed to select anime"))

@@ -230,7 +230,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	}
 
 	// Select update option
-	updateSelection, err := DynamicSelect(updateOptions, false)
+	updateSelection, err := DynamicSelect(updateOptions)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to select update option: %v", err))
 		ExitCurd(fmt.Errorf("Failed to select update option"))
@@ -342,7 +342,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		selectedAnime, err = DynamicSelectPreview(animeListMapPreview, false)
 	} else {
-		selectedAnime, err = DynamicSelect(animeListMap, false)
+		selectedAnime, err = DynamicSelect(animeListMap)
 	}
 	if err != nil {
 		Log(fmt.Sprintf("Failed to select anime: %v", err))
@@ -382,7 +382,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 		}
 		CurdOut(fmt.Sprintf("Current category: %s", currentStatus))
 
-		categorySelection, err := DynamicSelect(categories, false)
+		categorySelection, err := DynamicSelect(categories)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to select category: %v", err))
 			ExitCurd(fmt.Errorf("Failed to select category"))
@@ -577,7 +577,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		anilistSelectedOption, err = DynamicSelectPreview(animeMapPreview, false)
 	} else {
-		anilistSelectedOption, err = DynamicSelect(animeMap, false)
+		anilistSelectedOption, err = DynamicSelect(animeMap)
 	}
 
 	if anilistSelectedOption.Key == "-1" {
@@ -606,7 +606,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	ClearScreen()
 	CurdOut("Select which list to add the anime to:")
 
-	categorySelection, err := DynamicSelect(categories, false)
+	categorySelection, err := DynamicSelect(categories)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to select category: %v", err))
 		ExitCurd(fmt.Errorf("Failed to select category"))
@@ -719,7 +719,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 			// Select category using DynamicSelect
 			var err error
-			categorySelection, err = DynamicSelect(categories, false)
+			categorySelection, err = DynamicSelect(categories)
 			if err != nil {
 				Log(fmt.Sprintf("Failed to select category: %v", err))
 				ExitCurd(fmt.Errorf("Failed to select category"))
@@ -795,7 +795,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 			anilistSelectedOption, err = DynamicSelectPreview(animeListMapPreview, true)
 		} else {
-			anilistSelectedOption, err = DynamicSelect(animeListMap, true)
+			// Add "Add new anime" option to the map
+			animeListMap["add_new"] = "Add new anime"
+
+			anilistSelectedOption, err = DynamicSelect(animeListMap)
 		}
 		if err != nil {
 			Log(fmt.Sprintf("Error selecting anime: %v", err))
@@ -860,7 +863,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		// If unable to get Allanime id automatically get manually
 		if anime.AllanimeId == "" {
 			CurdOut("Failed to automatically select anime")
-			selectedAllanimeAnime, err := DynamicSelect(animeList, false)
+			selectedAllanimeAnime, err := DynamicSelect(animeList)
 
 			if selectedAllanimeAnime.Key == "-1" {
 				ExitCurd(nil)
@@ -905,7 +908,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		var err error
 
 		// Use rofi for selection
-		selectedOption, err = DynamicSelect(options, false)
+		selectedOption, err = DynamicSelect(options)
 		if err != nil {
 			Log("Error in selection: " + err.Error())
 			ExitCurd(err)
