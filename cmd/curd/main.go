@@ -484,6 +484,14 @@ func main() {
 					if err != nil {
 						internal.Log("Error checking playback status: "+err.Error())
 					} else if !hasPlayback && anime.Ep.Started {
+						// Wait for a moment to allow playback to start
+						time.Sleep(2 * time.Second) // Wait for 2 seconds
+
+						// Check playback status again
+						hasPlayback, err = internal.HasActivePlayback(anime.Ep.Player.SocketPath)
+						if err != nil {
+							internal.Log("Error checking playback status: " + err.Error())
+						} else if !hasPlayback {
 						// Nothing is playing, start next episode
 						internal.Log("Nothing playing in MPV, starting next episode")
 						anime.Ep.Number++
@@ -491,6 +499,7 @@ func main() {
 						anime.Ep.IsCompleted = true
 						close(skipLoopDone)
 						return
+						}
 					}
 
 				}
