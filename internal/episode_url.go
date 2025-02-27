@@ -22,6 +22,12 @@ type allanimeResponse struct {
 	} `json:"data"`
 }
 
+type result struct {
+	index int
+	links []string
+	err   error
+}
+
 func decodeProviderID(encoded string) string {
 	// Split the string into pairs of characters (.. equivalent of 'sed s/../&\n/g')
 	re := regexp.MustCompile("..")
@@ -152,11 +158,6 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 		return nil, err
 	}
 
-	type result struct {
-		index int
-		links []string
-		err   error
-	}
 
 	// Pre-count valid URLs and create slice to preserve order
 	validURLs := make([]string, 0)
@@ -174,11 +175,15 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	results := make(chan result, len(validURLs))
 	orderedResults := make([][]string, len(validURLs))
 
+	// Add a channel for high priority links
+	highPriorityLink := make(chan []string, 1)
+
 	// Create rate limiter
 	rateLimiter := time.NewTicker(50 * time.Millisecond)
 	defer rateLimiter.Stop()
 
 	// Launch goroutines
+	remainingURLs := len(validURLs)
 	for i, sourceUrl := range validURLs {
 		go func(idx int, url string) {
 			<-rateLimiter.C // Rate limit the requests
@@ -222,6 +227,21 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 				links = append(links, link)
 			}
 
+			// Check if any of the extracted links are high priority
+			for _, link := range links {
+				for _, domain := range LinkPriorities[:3] { // Check only top 3 priority domains
+					if strings.Contains(link, domain) {
+						// Found high priority link, send it immediately
+						select {
+						case highPriorityLink <- []string{link}:
+						default:
+							// Channel already has a high priority link
+						}
+						break
+					}
+				}
+			}
+
 			results <- result{
 				index: idx,
 				links: links,
@@ -234,6 +254,17 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	var collectedErrors []error
 	successCount := 0
 
+	// First, try to get a high priority link
+	select {
+	case links := <-highPriorityLink:
+		// Continue extracting other links in background
+		go collectRemainingResults(results, orderedResults, &successCount, &collectedErrors, remainingURLs)
+		return links, nil
+	case <-time.After(2 * time.Second): // Wait only briefly for high priority link
+		// No high priority link found quickly, proceed with normal collection
+	}
+
+	// Continue with existing result collection logic
 	// Collect results maintaining order
 	for successCount < len(validURLs) {
 		select {
@@ -268,6 +299,25 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	}
 
 	return allLinks, nil
+}
+
+// Helper function to collect remaining results in background
+func collectRemainingResults(results chan result, orderedResults [][]string, successCount *int, collectedErrors *[]error, remainingURLs int) {
+	for *successCount < remainingURLs {
+		select {
+		case res := <-results:
+			if res.err != nil {
+				Log(fmt.Sprintf("Error processing URL %d: %v", res.index+1, res.err))
+				*collectedErrors = append(*collectedErrors, fmt.Errorf("URL %d: %w", res.index+1, res.err))
+			} else {
+				orderedResults[res.index] = res.links
+				*successCount++
+				Log(fmt.Sprintf("Successfully processed URL %d/%d", res.index+1, remainingURLs))
+			}
+		case <-time.After(10 * time.Second):
+			return
+		}
+	}
 }
 
 // converts the ordered slice of link slices into a single slice
