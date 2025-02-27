@@ -11,7 +11,8 @@
 }: let
   inherit (lib) optional optionalString;
 
-  path = optional withMpv mpv
+  path =
+    optional withMpv mpv
     ++ optional withRofi rofi
     ++ optional withUeberzugpp ueberzugpp;
 in

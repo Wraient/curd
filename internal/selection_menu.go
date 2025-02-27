@@ -95,7 +95,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filter = m.filter[:len(m.filter)-1]
 				updateFilter = true
 			}
-		case "down":
+		case "down", "tab":
 			// Move the selection cursor down
 			if m.selected < len(m.filteredKeys)-1 {
 				m.selected++
@@ -105,7 +105,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected >= m.scrollOffset+m.visibleItemsCount() {
 				m.scrollOffset++
 			}
-		case "up":
+		case "up", "shift+tab":
 			// Move the selection cursor up
 			if m.selected > 0 {
 				m.selected--
