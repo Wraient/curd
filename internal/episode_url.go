@@ -161,12 +161,29 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 
 	// Pre-count valid URLs and create slice to preserve order
 	validURLs := make([]string, 0)
+	highestPriority := -1
+	var highestPriorityURL string
+
 	for _, url := range response.Data.Episode.SourceUrls {
 		if len(url.SourceUrl) > 2 && unicode.IsDigit(rune(url.SourceUrl[2])) {
-			validURLs = append(validURLs, url.SourceUrl)
+			decodedURL := decodeProviderID(url.SourceUrl[2:])
+			if strings.Contains(decodedURL, LinkPriorities[0]) {
+				priority := int(url.SourceUrl[2] - '0')
+				if priority > highestPriority {
+					highestPriority = priority
+					highestPriorityURL = url.SourceUrl
+				}
+			} else {
+				validURLs = append(validURLs, url.SourceUrl)
+			}
 		}
 	}
 
+	// If we found a highest priority URL, use only that
+	if highestPriorityURL != "" {
+		validURLs = []string{highestPriorityURL}
+	}
+	
 	if len(validURLs) == 0 {
 		return nil, fmt.Errorf("no valid source URLs found in response")
 	}
