@@ -1221,3 +1221,25 @@ func getEntriesByCategory(list AnimeList, category string) []Entry {
 		return []Entry{}
 	}
 }
+
+func NextEpisodePrompt(userCurdConfig *CurdConfig) {
+	anime := GetGlobalAnime()
+	// If in CLI mode (not Rofi), we need to show the next episode number
+	episodeNum := anime.Ep.Number
+	if !userCurdConfig.RofiSelection {
+		episodeNum++
+	}
+
+	CurdOut(fmt.Sprintf("Start next episode (%d)?", episodeNum))
+
+	selectedOption, err := DynamicSelect(map[string]string{"yes": "Yes"})
+	if err != nil {
+		ExitCurd(err)
+	}
+
+	if selectedOption.Key != "yes" {
+		ExitMPV(anime.Ep.Player.SocketPath)
+		ExitCurd(nil)
+	}
+	// If yes or any other case, continue with the next episode
+}

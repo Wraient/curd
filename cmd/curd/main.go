@@ -392,6 +392,19 @@ func main() {
 			}
 		}()
 
+		// Thread to prompt for next episode in CLI Mode
+		go func() {
+			if !userCurdConfig.RofiSelection && userCurdConfig.NextEpisodePrompt {
+				internal.NextEpisodePrompt(&userCurdConfig)
+				anime.Ep.Number++
+				anime.Ep.Started = false
+				internal.Log("Completed episode, starting next.")
+				anime.Ep.IsCompleted = true
+				// Exit the skip loop
+				close(skipLoopDone)
+			}
+		}()
+
 		wg.Add(1)
 		// Thread to update playback time in database
 		go func() {
@@ -453,7 +466,6 @@ func main() {
 							if err != nil {
 								internal.Log("Error sending skip times to MPV: " + err.Error())
 							}
-							fmt.Println("Skip times sent!") // TODO: REMOVE
 						}
 
 						// If resume is true, seek to the playback time
@@ -593,19 +605,8 @@ func main() {
 			internal.ExitCurd(nil)
 		}
 
-		if userCurdConfig.NextEpisodePrompt {
-			internal.CurdOut(fmt.Sprintf("Start next episode (%d)?", anime.Ep.Number))
-
-			selectedOption, err := internal.DynamicSelect(map[string]string{"yes": "Yes"})
-			if err != nil {
-				internal.ExitCurd(err)
-			}
-
-			if selectedOption.Key != "yes" {
-				internal.ExitMPV(anime.Ep.Player.SocketPath)
-				internal.ExitCurd(nil)
-			}
-			// If yes or any other case, continue with the next episode
+		if userCurdConfig.RofiSelection && userCurdConfig.NextEpisodePrompt {
+			internal.NextEpisodePrompt(&userCurdConfig)
 		}
 
 		internal.CurdOut(fmt.Sprint("Starting next episode: ", anime.Ep.Number))
