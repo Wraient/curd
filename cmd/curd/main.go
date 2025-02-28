@@ -466,7 +466,6 @@ func main() {
 							if err != nil {
 								internal.Log("Error sending skip times to MPV: " + err.Error())
 							}
-							fmt.Println("Skip times sent!") // TODO: REMOVE
 						}
 
 						// If resume is true, seek to the playback time
