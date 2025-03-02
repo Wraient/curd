@@ -57,8 +57,8 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 
 	// Prepare the anime list
 	animeList := make(map[string]string)
-	
-	searchGql := `query($search: SearchInput, $limit: Int, $page: Int, $translationType: VaildTranslationTypeEnumType, $countryOrigin: VaildCountryOriginEnumType) {
+
+	searchGql := `query($search: SearchInput, $limit: Int, $page: Int, $translationType: ValidTranslationTypeEnumType, $countryOrigin: ValidCountryOriginEnumType) {
 		shows(search: $search, limit: $limit, page: $page, translationType: $translationType, countryOrigin: $countryOrigin) {
 			edges {
 				_id
@@ -139,13 +139,13 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 				episodesStr = "Unknown"
 			}
 		}
-		
+
 		// Use English name if available and configured, otherwise use default name
 		displayName := anime.Name
 		if anime.EnglishName != "" && userCurdConfig.AnimeNameLanguage == "english" {
 			displayName = anime.EnglishName
 		}
-		
+
 		animeList[anime.ID] = fmt.Sprintf("%s (%s episodes)", displayName, episodesStr)
 	}
 	return animeList, nil
