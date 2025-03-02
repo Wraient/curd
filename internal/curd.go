@@ -153,7 +153,7 @@ func ExitCurd(err error) {
 	CurdOut("Have a great day!")
 	// If the error is not about the connection refused, print the error
 	if err != nil && !strings.Contains(err.Error(), "dial unix "+anime.Ep.Player.SocketPath+": connect: connection refused") {
-		CurdOut(fmt.Sprintf("Erorr: %v", err))
+		CurdOut(fmt.Sprintf("Error: %v", err))
 		if runtime.GOOS == "windows" {
 			fmt.Println("Press Enter to exit")
 			var wait string

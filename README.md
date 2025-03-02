@@ -193,7 +193,7 @@ Run `curd` with the following options:
 curd [options]
 ```
 
-### Arugments would always take precendence over configuration
+### Arguments would always take precedence over configuration
 
 > **Note**:
 > - To use rofi you need rofi and ueberzug installed.
