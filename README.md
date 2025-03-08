@@ -1,4 +1,3 @@
-
 # Curd
 
 A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC written in golang.
@@ -68,7 +67,13 @@ sudo pacman -S rofi ueberzugpp
 ```bash
 sudo apt update
 sudo apt install mpv curl rofi ueberzugpp
-curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
+
+# For x86_64 systems:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-x86_64
+
+# For ARM64 systems:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-arm64
+
 chmod +x curd
 sudo mv curd /usr/bin/
 curd
@@ -81,7 +86,13 @@ curd
 ```bash
 sudo dnf update
 sudo dnf install mpv curl rofi ueberzugpp
-curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
+
+# For x86_64 systems:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-x86_64
+
+# For ARM64 systems:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-arm64
+
 chmod +x curd
 sudo mv curd /usr/bin/
 curd
@@ -94,7 +105,13 @@ curd
 ```bash
 sudo zypper refresh
 sudo zypper install mpv curl rofi ueberzugpp
-curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
+
+# For x86_64 systems:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-x86_64
+
+# For ARM64 systems:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-arm64
+
 chmod +x curd
 sudo mv curd /usr/bin/
 curd
@@ -139,12 +156,17 @@ Download the appropriate binary for your system:
 
 - For Apple Silicon (M1/M2) Macs:
 ```bash
-curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-arm64 
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-arm64
 ```
 
 - For Intel Macs:
 ```bash
 curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-x86_64
+```
+
+- For Universal Binary (works on both architectures):
+```bash
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-universal
 ```
 
 Then complete the installation:
@@ -158,11 +180,29 @@ curd
 </details>
 
 <details>
+<summary>Windows Installation</summary>
+
+Option 1: Using the installer
+- Download and run the [Windows Installer](https://github.com/Wraient/curd/releases/latest/download/curd-windows-installer.exe)
+
+Option 2: Standalone executable
+- Download [curd-windows-x86_64.exe](https://github.com/Wraient/curd/releases/latest/download/curd-windows-x86_64.exe)
+</details>
+
+<details>
 <summary>Generic Installation</summary>
 
+Choose the appropriate binary for your system:
 ```bash
-# Install mpv, curl, rofi, and ueberzugpp (required for image preview)
-curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd
+# For Linux x86_64:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-x86_64
+
+# For Linux ARM64:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-arm64
+
+# For macOS Universal:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-universal
+
 chmod +x curd
 sudo mv curd /usr/bin/
 curd
