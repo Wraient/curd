@@ -112,7 +112,7 @@ func extractLinks(provider_id string) map[string]interface{} {
 // - []string: a list of links for specified episode.
 // - error: an error if the episode is not found or if there is an issue during the search.
 func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
-	query := `query($showId:String!,$translationType:ValidTranslationTypeEnumType!,$episodeString:String!){episode(showId:$showId,translationType:$translationType,episodeString:$episodeString){episodeString sourceUrls}}`
+	query := `query($showId:String!,$translationType:VaildTranslationTypeEnumType!,$episodeString:String!){episode(showId:$showId,translationType:$translationType,episodeString:$episodeString){episodeString sourceUrls}}`
 
 	variables := map[string]string{
 		"showId":          id,
