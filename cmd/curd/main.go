@@ -605,7 +605,7 @@ func main() {
 			internal.ExitCurd(nil)
 		}
 
-		if userCurdConfig.RofiSelection && userCurdConfig.NextEpisodePrompt {
+		if anime.Ep.IsCompleted && userCurdConfig.RofiSelection && userCurdConfig.NextEpisodePrompt {
 			internal.NextEpisodePrompt(&userCurdConfig)
 		}
 
