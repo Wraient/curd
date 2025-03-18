@@ -234,11 +234,13 @@ func main() {
 
 		// Get MalId and CoverImage (only if discord presence is enabled)
 		if userCurdConfig.DiscordPresence {
+			internal.LoginClient(discordClientId)
+
 			anime.MalId, anime.CoverImage, err = internal.GetAnimeIDAndImage(anime.AnilistId)
 			if err != nil {
 				internal.Log("Error getting anime ID and image: " + err.Error())
 			}
-			err = internal.DiscordPresence(discordClientId, anime, false)
+			err = internal.DiscordPresence(anime, false)
 			if err != nil {
 				internal.Log("Error setting Discord presence: " + err.Error())
 			}
@@ -349,7 +351,7 @@ func main() {
 						} else {
 							isPaused = isPaused.(bool)
 						}
-						err = internal.DiscordPresence(discordClientId, anime, isPaused.(bool))
+						err = internal.DiscordPresence(anime, isPaused.(bool))
 						if err != nil {
 							// internal.Log("Error setting Discord presence: "+err.Error())
 						}

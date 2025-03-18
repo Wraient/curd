@@ -5,11 +5,15 @@ import (
 	"github.com/hugolgst/rich-go/client"
 )
 
-func DiscordPresence(clientId string, anime Anime, IsPaused bool) error {
+func LoginClient(clientId string) error {
 	err := client.Login(clientId)
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func DiscordPresence(anime Anime, IsPaused bool) error {
 
 	var state string
 	if IsPaused {
@@ -25,7 +29,7 @@ func DiscordPresence(clientId string, anime Anime, IsPaused bool) error {
 		)
 	}
 
-	err = client.SetActivity(client.Activity{
+	err := client.SetActivity(client.Activity{
 		Details:    fmt.Sprintf("%s", GetAnimeName(anime)), // Large text
 		LargeImage: anime.CoverImage,
 		LargeText:  GetAnimeName(anime), // Would display while hovering over the large image
