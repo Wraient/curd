@@ -1243,3 +1243,26 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 	}
 	// If yes or any other case, continue with the next episode
 }
+
+// StartNextEpisode handles the logic for starting the next episode
+// It updates the episode number, resets necessary flags, and handles database updates
+func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile string) {
+	// Increment episode number
+	anime.Ep.Number++
+
+	// Reset episode flags
+	anime.Ep.Started = false
+	anime.Ep.IsCompleted = true
+
+	// Log the transition
+	Log("Completed episode, starting next.")
+
+	// Update local database
+	err := LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
+	if err != nil {
+		Log("Error updating local database: " + err.Error())
+	}
+
+	// Output message to user
+	CurdOut(fmt.Sprint("Starting next episode: ", anime.Ep.Number))
+}
