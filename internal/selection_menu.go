@@ -380,7 +380,7 @@ func RofiSelect(options map[string]string) (SelectionOption, error) {
 
 	// Add "Quit" options
 	optionsList = append(optionsList, "Quit")
-	
+
 	// Join all options into a single string, separated by newlines
 	optionsString := strings.Join(optionsList, "\n")
 
@@ -458,18 +458,23 @@ func DynamicSelect(options map[string]string) (SelectionOption, error) {
 		filteredKeys: orderedOptions,
 	}
 
-
 	model.filteredKeys = append(model.filteredKeys, SelectionOption{
 		Label: "Quit",
 		Key:   "-1",
 	})
 
+	// Create a program with altScreen option turned off to maintain the terminal state
+	// This prevents the terminal from switching to an alternate screen
 	p := tea.NewProgram(model)
 
 	finalModel, err := p.Run()
 	if err != nil {
 		return SelectionOption{}, err
 	}
+
+	// Explicitly reset the terminal state
+	fmt.Print("\033[?25h") // Show cursor
+	fmt.Print("\033[?7h")  // Enable line wrapping
 
 	finalSelectionModel, ok := finalModel.(*Model)
 	if !ok {

@@ -127,6 +127,33 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 		CurdOut("Error: Failed to start mpv process")
 		return "", fmt.Errorf("failed to start mpv: %w", err)
 	}
+
+	// Wait for the socket to become available with retries
+	socketReady := false
+	maxRetries := 10
+	retryDelay := 300 * time.Millisecond
+
+	Log(fmt.Sprintf("Waiting for MPV socket to be ready at %s", mpvSocketPath))
+	for i := 0; i < maxRetries; i++ {
+		time.Sleep(retryDelay)
+
+		// Try to connect to the socket
+		conn, err := connectToPipe(mpvSocketPath)
+		if err == nil {
+			conn.Close()
+			socketReady = true
+			Log(fmt.Sprintf("MPV socket ready after %d attempts", i+1))
+			break
+		}
+
+		Log(fmt.Sprintf("Attempt %d/%d - Socket not ready yet: %v", i+1, maxRetries, err))
+	}
+
+	if !socketReady {
+		Log(fmt.Sprintf("Failed to connect to MPV socket after %d attempts", maxRetries))
+		// Don't fail here, just warn and continue - the next commands will handle any further issues
+	}
+
 	return mpvSocketPath, nil
 }
 
@@ -143,42 +170,70 @@ func joinArgs(args []string) string {
 }
 
 func MPVSendCommand(ipcSocketPath string, command []interface{}) (interface{}, error) {
-	conn, err := connectToPipe(ipcSocketPath)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+	// Use a retry mechanism for transient errors
+	var lastErr error
+	maxRetries := 3
+	retryDelay := 100 * time.Millisecond
 
-	commandStr, err := json.Marshal(map[string]interface{}{
-		"command": command,
-	})
-	if err != nil {
-		return nil, err
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryDelay)
+			Log(fmt.Sprintf("Retrying MPV command, attempt %d/%d", attempt+1, maxRetries))
+		}
+
+		conn, err := connectToPipe(ipcSocketPath)
+		if err != nil {
+			lastErr = err
+			Log(fmt.Sprintf("Connect error (attempt %d/%d): %v", attempt+1, maxRetries, err))
+			continue // Try again
+		}
+		defer conn.Close()
+
+		commandStr, err := json.Marshal(map[string]interface{}{
+			"command": command,
+		})
+		if err != nil {
+			return nil, err // Don't retry on JSON marshalling errors
+		}
+
+		// Send the command
+		_, err = conn.Write(append(commandStr, '\n'))
+		if err != nil {
+			lastErr = err
+			Log(fmt.Sprintf("Write error (attempt %d/%d): %v", attempt+1, maxRetries, err))
+			continue // Try again
+		}
+
+		// Receive the response with timeout
+		buf := make([]byte, 4096)
+		// Set read deadline for 1 second
+		if deadline, ok := conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+			deadline.SetReadDeadline(time.Now().Add(1 * time.Second))
+		}
+
+		n, err := conn.Read(buf)
+		if err != nil {
+			lastErr = err
+			Log(fmt.Sprintf("Read error (attempt %d/%d): %v", attempt+1, maxRetries, err))
+			continue // Try again
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(buf[:n], &response); err != nil {
+			lastErr = err
+			Log(fmt.Sprintf("JSON parse error (attempt %d/%d): %v", attempt+1, maxRetries, err))
+			continue // Try again
+		}
+
+		// Success!
+		if data, exists := response["data"]; exists {
+			return data, nil
+		}
+		return nil, nil
 	}
 
-	// Send the command
-	_, err = conn.Write(append(commandStr, '\n'))
-	if err != nil {
-		return nil, err
-	}
-
-	// Receive the response
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return nil, err
-	}
-
-	var response map[string]interface{}
-	if err := json.Unmarshal(buf[:n], &response); err != nil {
-		return nil, err
-	}
-
-	if data, exists := response["data"]; exists {
-		return data, nil
-	}
-
-	return nil, nil
+	// All retries failed
+	return nil, fmt.Errorf("command failed after %d attempts: %w", maxRetries, lastErr)
 }
 
 func SeekMPV(ipcSocketPath string, time int) (interface{}, error) {
@@ -245,24 +300,49 @@ func PercentageWatched(playbackTime int, duration int) float64 {
 }
 
 func HasActivePlayback(ipcSocketPath string) (bool, error) {
-	// Get the time-pos property from MPV
-	timePos, err := MPVSendCommand(ipcSocketPath, []interface{}{"get_property", "time-pos"})
-	if err != nil {
-		// Check specifically for "property unavailable" error
-		if strings.Contains(err.Error(), "property unavailable") {
-			// This indicates nothing is playing
-			return false, nil
+	maxRetries := 3
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(200 * time.Millisecond)
 		}
-		return false, fmt.Errorf("error getting time-pos: %w", err)
+
+		// Get the time-pos property from MPV
+		timePos, err := MPVSendCommand(ipcSocketPath, []interface{}{"get_property", "time-pos"})
+
+		if err != nil {
+			// Check specifically for "property unavailable" error - this is a valid state
+			if strings.Contains(err.Error(), "property unavailable") {
+				Log("HasActivePlayback: Property unavailable, nothing is playing")
+				return false, nil
+			}
+
+			// Check for socket connection errors - these might be temporary
+			if strings.Contains(err.Error(), "connect: connection refused") ||
+				strings.Contains(err.Error(), "connect: no such file or directory") {
+				lastErr = err
+				Log(fmt.Sprintf("HasActivePlayback: Connection error (attempt %d/%d): %v",
+					attempt+1, maxRetries, err))
+				continue // Try again
+			}
+
+			// Other errors should be returned
+			return false, fmt.Errorf("error getting time-pos: %w", err)
+		}
+
+		// If we got a valid response, something is playing
+		if timePos != nil {
+			return true, nil
+		}
+
+		// No error but no position either - likely nothing is playing
+		return false, nil
 	}
 
-	// If we got a valid response, something is playing
-	if timePos != nil {
-		return true, nil
-	}
-
-	// Default to false if we can't determine the status
-	return false, nil
+	// If we get here, all retries failed
+	Log(fmt.Sprintf("HasActivePlayback: Failed after %d attempts: %v", maxRetries, lastErr))
+	return false, fmt.Errorf("failed to check playback status: %w", lastErr)
 }
 
 func IsMPVRunning(socketPath string) bool {
@@ -270,16 +350,34 @@ func IsMPVRunning(socketPath string) bool {
 		return false
 	}
 
-	// Try to connect to the socket
-	conn, err := connectToPipe(socketPath)
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
+	maxRetries := 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(200 * time.Millisecond)
+			Log(fmt.Sprintf("Retrying MPV connection check, attempt %d/%d", attempt+1, maxRetries))
+		}
 
-	// Send a simple command to check if MPV responds
-	_, err = MPVSendCommand(socketPath, []interface{}{"get_property", "pid"})
-	return err == nil
+		// Try to connect to the socket
+		conn, err := connectToPipe(socketPath)
+		if err != nil {
+			Log(fmt.Sprintf("IsMPVRunning: Connection error (attempt %d/%d): %v",
+				attempt+1, maxRetries, err))
+			continue
+		}
+		defer conn.Close()
+
+		// Send a simple command to check if MPV responds
+		_, err = MPVSendCommand(socketPath, []interface{}{"get_property", "pid"})
+		if err == nil {
+			return true
+		}
+
+		Log(fmt.Sprintf("IsMPVRunning: Command failed (attempt %d/%d): %v",
+			attempt+1, maxRetries, err))
+	}
+
+	// After all retries, conclude MPV is not running
+	return false
 }
 
 func ExitMPV(ipcSocketPath string) error {
