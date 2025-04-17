@@ -1250,7 +1250,7 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 		ExitCurd(err)
 	}
 
-	if selectedOption.Key != "yes" {
+	if selectedOption.Key == "-1" {
 		// User selected to quit
 		fmt.Print("\r\033[K") // Carriage return and clear line
 		ExitMPV(anime.Ep.Player.SocketPath)
