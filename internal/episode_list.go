@@ -12,7 +12,7 @@ import (
 type episodesResponse struct {
 	Data struct {
 		Show struct {
-			ID                   string                 `json:"_id"`
+			ID                      string                 `json:"_id"`
 			AvailableEpisodesDetail map[string]interface{} `json:"availableEpisodesDetail"`
 		} `json:"show"`
 	} `json:"data"`
@@ -33,14 +33,14 @@ type episodesResponse struct {
 // episodesList performs the API call and fetches the episodes list
 func EpisodesList(showID, mode string) ([]string, error) {
 	const (
-		agent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
-		allanimeRef   = "https://allanime.to"
-		allanimeBase  = "allanime.day"
-		allanimeAPI   = "https://api." + allanimeBase + "/api"
+		agent        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
+		allanimeRef  = "https://allanime.to"
+		allanimeBase = "allanime.day"
+		allanimeAPI  = "https://api." + allanimeBase + "/api"
 	)
 
 	episodesListGql := `query ($showId: String!) { show( _id: $showId ) { _id availableEpisodesDetail }}`
-	
+
 	// Build the request URL
 	url := fmt.Sprintf("%s?variables={\"showId\":\"%s\"}&query=%s", allanimeAPI, showID, episodesListGql)
 	episodes := []string{}

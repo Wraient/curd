@@ -46,4 +46,3 @@ func PrioritizeLink(links []string) string {
 
 	return bestLink
 }
-
