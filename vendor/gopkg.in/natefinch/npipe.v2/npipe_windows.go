@@ -103,11 +103,12 @@ func (e PipeError) Temporary() bool {
 // Dial will return a PipeError if you pass in a badly formatted pipe name.
 //
 // Examples:
-//   // local pipe
-//   conn, err := Dial(`\\.\pipe\mypipename`)
 //
-//   // remote pipe
-//   conn, err := Dial(`\\othercomp\pipe\mypipename`)
+//	// local pipe
+//	conn, err := Dial(`\\.\pipe\mypipename`)
+//
+//	// remote pipe
+//	conn, err := Dial(`\\othercomp\pipe\mypipename`)
 func Dial(address string) (*PipeConn, error) {
 	for {
 		conn, err := dial(address, nmpwait_wait_forever)
