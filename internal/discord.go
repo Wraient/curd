@@ -17,14 +17,14 @@ func DiscordPresence(anime Anime, IsPaused bool) error {
 
 	var state string
 	if IsPaused {
-		state = fmt.Sprintf("\nEpisode %d - %s (Paused)", 
-			anime.Ep.Number, 
+		state = fmt.Sprintf("\nEpisode %d - %s (Paused)",
+			anime.Ep.Number,
 			FormatTime(anime.Ep.Player.PlaybackTime),
 		)
 	} else {
-		state = fmt.Sprintf("\nEpisode %d - %s / %s", 
-			anime.Ep.Number, 
-			FormatTime(anime.Ep.Player.PlaybackTime), 
+		state = fmt.Sprintf("\nEpisode %d - %s / %s",
+			anime.Ep.Number,
+			FormatTime(anime.Ep.Player.PlaybackTime),
 			FormatTime(anime.Ep.Duration),
 		)
 	}
@@ -37,12 +37,12 @@ func DiscordPresence(anime Anime, IsPaused bool) error {
 		//SmallImage: anime.SmallCoverImage, // Image for the bottom left corner
 		//SmallText:  fmt.Sprintf("Episode: %s", anime.Ep.Title.English), // Text when hovering over the small image
 		Buttons: []*client.Button{
-			&client.Button{
-				Label: "View on AniList", // Button label
+			{
+				Label: "View on AniList",                                           // Button label
 				Url:   fmt.Sprintf("https://anilist.co/anime/%d", anime.AnilistId), // Button link
 			},
-			&client.Button{
-				Label: "View on MAL", // Button label
+			{
+				Label: "View on MAL",                                                // Button label
 				Url:   fmt.Sprintf("https://myanimelist.net/anime/%d", anime.MalId), // Button link
 			},
 		},

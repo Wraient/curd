@@ -4,13 +4,13 @@
 package internal
 
 import (
-    "net"
+	"net"
 )
 
 func connectToPipe(ipcSocketPath string) (net.Conn, error) {
-    conn, err := net.Dial("unix", ipcSocketPath)
-    if err != nil {
-        return nil, err
-    }
-    return conn, nil
+	conn, err := net.Dial("unix", ipcSocketPath)
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
 }

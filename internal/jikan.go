@@ -3,8 +3,8 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"io"
+	"net/http"
 )
 
 // GetEpisodeData fetches episode data for a given anime ID and episode number
