@@ -225,6 +225,40 @@ yay -R curd
 
 ### [Windows Installer](https://github.com/Wraient/curd/releases/latest/download/curd-windows-installer.exe)
 
+## Data Storage
+
+<details>
+<summary>Windows</summary>
+Stroage: (Token, Timestamps, debug.log, etc) 
+
+```bash
+C:\.local\share\curd
+```
+
+Config : 
+
+```bash
+C:\Users\USERNAME\AppData\Roaming\Curd
+```
+
+</details>
+
+<details>
+<summary>Linux/Unix</summary>
+Stroage: (Token, Timestamps, debug.log, etc)
+
+```bash
+$USER/.local/share/curd
+```
+
+Config : 
+
+```bash
+$USER/.config/curd
+```
+
+</details>
+
 ## Usage
 
 Run `curd` with the following options:
