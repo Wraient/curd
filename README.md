@@ -359,6 +359,14 @@ config file is located at ```~/.config/curd/curd.conf```
 | `SaveMpvSpeed`            | Boolean    | `true`, `false`                           | Retains the playback speed set in MPV for next episode.                                           |
 | `SkipFiller`              | Boolean    | `true`, `false`                           | Skips filler episodes when supported.                                                             |
 
+## Todo (fix)
+- Config: Nextepisodeprompt, Cli Mode, Problem: Quitting with quit button while ep is still playing doesnt update progress, even if past Mark Complete Threshold (Regression)
+- Use Powershell for windows token input instead of notepad or cmd
+- Add Rewatching list to "Show All" Option
+- Last episode doesnt prompt for anime score (Regression)
+- Find a way to get "Watching" instead of "Playing" Activity type in discord rpc (Implemented in [Dantotsu](https://github.com/aayush2622/Dartotsu) and [Premid](https://github.com/PreMiD/PreMiD))
+- Add a better way to do commands in windows (Convinience for users)
+
 ## Dependencies
 - mpv - Video player (vlc support might be added later)
 - rofi - Selection menu
