@@ -143,16 +143,69 @@ func ExitCurd(err error) {
 	RestoreScreen()
 
 	anime := GetGlobalAnime()
+	userCurdConfig := GetGlobalConfig()
+
+	// Check if episode should be marked complete before exiting
+	if anime != nil && anime.Ep.Started && anime.Ep.Duration > 0 && userCurdConfig != nil {
+		// Calculate percentage watched
+		percentageWatched := PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
+		Log(fmt.Sprintf("Exit check - Percentage watched: %.2f%%, Required: %d%%", percentageWatched, userCurdConfig.PercentageToMarkComplete))
+
+		// If episode meets completion threshold, update progress
+		if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
+			Log("Episode meets completion threshold, updating progress before exit")
+
+			// Update local database
+			homeDir := ""
+			if runtime.GOOS == "windows" {
+				homeDir = os.Getenv("USERPROFILE")
+			} else {
+				homeDir = os.Getenv("HOME")
+			}
+			databaseFile := filepath.Join(homeDir, ".config", "curd", "curd_history.txt")
+			if userCurdConfig.StoragePath != "" {
+				databaseFile = filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
+			}
+
+			updateErr := LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
+			if updateErr != nil {
+				Log("Error updating local database on exit: " + updateErr.Error())
+			}
+
+			// Update Anilist progress if not rewatching
+			if !anime.Rewatching {
+				tokenFile := filepath.Join(homeDir, ".config", "curd", "token")
+				if userCurdConfig.StoragePath != "" {
+					tokenFile = filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token")
+				}
+
+				token, tokenErr := GetTokenFromFile(tokenFile)
+				if tokenErr != nil {
+					Log("Error reading token for progress update on exit: " + tokenErr.Error())
+				} else {
+					// Update progress synchronously to ensure it completes before exit
+					progressErr := UpdateAnimeProgress(token, anime.AnilistId, anime.Ep.Number)
+					if progressErr != nil {
+						Log("Error updating Anilist progress on exit: " + progressErr.Error())
+					} else {
+						Log(fmt.Sprintf("Progress updated on exit! Latest watched episode: %d", anime.Ep.Number))
+						CurdOut(fmt.Sprintf("Episode marked complete! Progress updated to episode %d", anime.Ep.Number))
+					}
+				}
+			}
+		}
+	}
+
 	if anime != nil && anime.Ep.Player.SocketPath != "" {
-		_, err = MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
-		if err != nil {
-			Log("Error closing MPV: " + err.Error())
+		_, mpvErr := MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
+		if mpvErr != nil {
+			Log("Error closing MPV: " + mpvErr.Error())
 		}
 	}
 
 	CurdOut("Have a great day!")
 	// If the error is not about the connection refused, print the error
-	if err != nil && !strings.Contains(err.Error(), "dial unix "+anime.Ep.Player.SocketPath+": connect: connection refused") {
+	if err != nil && anime != nil && anime.Ep.Player.SocketPath != "" && !strings.Contains(err.Error(), "dial unix "+anime.Ep.Player.SocketPath+": connect: connection refused") {
 		CurdOut(fmt.Sprintf("Error: %v", err))
 		if runtime.GOOS == "windows" {
 			fmt.Println("Press Enter to exit")
