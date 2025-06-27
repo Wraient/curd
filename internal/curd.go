@@ -1255,48 +1255,6 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 		fmt.Print("\r\033[K") // Carriage return and clear line
 		ExitMPV(anime.Ep.Player.SocketPath)
 		CurdOut("Exiting without starting next episode")
-		
-		// Update both local database and Anilist progress for the current episode if episode is marked as completed
-		if anime.Ep.IsCompleted {
-			// Get database file path for progress update
-			homeDir := ""
-			if runtime.GOOS == "windows" {
-				homeDir = os.Getenv("USERPROFILE")
-			} else {
-				homeDir = os.Getenv("HOME")
-			}
-			configFilePath := filepath.Join(homeDir, ".config", "curd", "curd.conf")
-			config, err := LoadConfig(configFilePath)
-			if err != nil {
-				Log("Error loading config for progress update on quit: " + err.Error())
-			} else {
-				databaseFile := filepath.Join(os.ExpandEnv(config.StoragePath), "curd_history.txt")
-				
-				// Update local database 
-				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
-				if err != nil {
-					Log("Error updating local database on quit: " + err.Error())
-				}
-				
-				// Update Anilist progress if not rewatching
-				if !anime.Rewatching {
-					user := &User{}
-					user.Token, err = GetTokenFromFile(filepath.Join(os.ExpandEnv(config.StoragePath), "token"))
-					if err != nil {
-						Log("Error reading token for progress update on quit: " + err.Error())
-					} else {
-						// Update progress for current episode before quitting
-						err = UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
-						if err != nil {
-							Log("Error updating Anilist progress on quit: " + err.Error())
-						} else {
-							CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", anime.Ep.Number))
-						}
-					}
-				}
-			}
-		}
-		
 		ExitCurd(nil)
 		return
 	}
