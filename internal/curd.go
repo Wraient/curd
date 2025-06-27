@@ -1253,6 +1253,42 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 	if selectedOption.Key == "-1" {
 		// User selected to quit
 		fmt.Print("\r\033[K") // Carriage return and clear line
+
+		// --- Begin fix: update progress if past threshold ---
+		if !userCurdConfig.RofiSelection && anime.Ep.Player.SocketPath != "" {
+			percentageWatched, err := GetPercentageWatched(anime.Ep.Player.SocketPath)
+			if err != nil {
+				Log("Error getting percentage watched: " + err.Error())
+			} else if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
+				Log(fmt.Sprintf("Episode past completion threshold (%.1f%% >= %d%%), updating progress", percentageWatched, userCurdConfig.PercentageToMarkComplete))
+				
+				// Update local database
+				databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
+				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
+				if err != nil {
+					Log("Error updating local database: " + err.Error())
+				}
+				
+				// Update Anilist progress if not rewatching
+				if !anime.Rewatching {
+					token, err := GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
+					if err != nil {
+						Log("Error reading token for progress update: " + err.Error())
+					} else {
+						go func() {
+							err = UpdateAnimeProgress(token, anime.AnilistId, anime.Ep.Number)
+							if err != nil {
+								Log("Error updating Anilist progress: " + err.Error())
+							} else {
+								CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", anime.Ep.Number))
+							}
+						}()
+					}
+				}
+			}
+		}
+		// --- End fix ---
+
 		ExitMPV(anime.Ep.Player.SocketPath)
 		CurdOut("Exiting without starting next episode")
 		ExitCurd(nil)
