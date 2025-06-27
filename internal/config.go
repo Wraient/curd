@@ -15,7 +15,7 @@ import (
 // CurdConfig struct with field names that match the config keys
 type CurdConfig struct {
 	Player                   string   `config:"Player"`
-	MpvArgs                  []string `config:MpvArgs`
+	MpvArgs                  []string `config:"MpvArgs"`
 	SubsLanguage             string   `config:"SubsLanguage"`
 	SubOrDub                 string   `config:"SubOrDub"`
 	StoragePath              string   `config:"StoragePath"`
@@ -180,7 +180,11 @@ func createDefaultConfig(path string) error {
 }
 
 func getTokenFromTempFile(isWindowsPlatform bool) (string, error) {
-	// Create a temporary file for the token
+	if isWindowsPlatform {
+		return getTokenFromPowerShell()
+	}
+
+	// Create a temporary file for the token (macOS and other platforms)
 	tempFile, err := os.CreateTemp("", "curd-token-*.txt")
 	if err != nil {
 		return "", fmt.Errorf("error creating temp file: %v", err)
@@ -195,20 +199,16 @@ func getTokenFromTempFile(isWindowsPlatform bool) (string, error) {
 		return "", fmt.Errorf("error writing instructions: %v", err)
 	}
 
-	// Open the file with appropriate editor
+	// Open the file with appropriate editor (macOS and other platforms)
 	var cmd *exec.Cmd
-	if isWindowsPlatform {
-		cmd = exec.Command("notepad.exe", tempPath)
-	} else {
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = "nano" // Default to nano if $EDITOR is not set
-		}
-		cmd = exec.Command(editor, tempPath)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "nano" // Default to nano if $EDITOR is not set
 	}
+	cmd = exec.Command(editor, tempPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("error opening editor: %v", err)
@@ -225,6 +225,129 @@ func getTokenFromTempFile(isWindowsPlatform bool) (string, error) {
 
 	// Extract token (remove instructions and whitespace)
 	return strings.TrimSpace(string(content)), nil
+}
+
+// getTokenFromPowerShell uses PowerShell to get token input on Windows
+func getTokenFromPowerShell() (string, error) {
+	// PowerShell script that shows a user-friendly input dialog
+	psScript := `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# Create the form
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "Curd - AniList Token"
+$form.Size = New-Object System.Drawing.Size(600, 300)
+$form.StartPosition = "CenterScreen"
+$form.FormBorderStyle = "FixedDialog"
+$form.MaximizeBox = $false
+$form.MinimizeBox = $false
+$form.TopMost = $true
+
+# Create instruction label
+$label = New-Object System.Windows.Forms.Label
+$label.Location = New-Object System.Drawing.Point(10, 10)
+$label.Size = New-Object System.Drawing.Size(560, 60)
+$label.Text = "Please generate a token from:" + [Environment]::NewLine + "https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token" + [Environment]::NewLine + [Environment]::NewLine + "Then paste your token below:"
+$form.Controls.Add($label)
+
+# Create URL button
+$urlButton = New-Object System.Windows.Forms.Button
+$urlButton.Location = New-Object System.Drawing.Point(10, 80)
+$urlButton.Size = New-Object System.Drawing.Size(200, 30)
+$urlButton.Text = "Open AniList Token Page"
+$urlButton.Add_Click({
+    Start-Process "https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token"
+})
+$form.Controls.Add($urlButton)
+
+# Create token textbox
+$textBox = New-Object System.Windows.Forms.TextBox
+$textBox.Location = New-Object System.Drawing.Point(10, 120)
+$textBox.Size = New-Object System.Drawing.Size(560, 60)
+$textBox.Multiline = $true
+$textBox.ScrollBars = "Vertical"
+$textBox.Text = "Paste your AniList token here..."
+$textBox.ForeColor = [System.Drawing.Color]::Gray
+$textBox.Add_GotFocus({
+    if ($textBox.Text -eq "Paste your AniList token here...") {
+        $textBox.Text = ""
+        $textBox.ForeColor = [System.Drawing.Color]::Black
+    }
+})
+$textBox.Add_LostFocus({
+    if ($textBox.Text -eq "") {
+        $textBox.Text = "Paste your AniList token here..."
+        $textBox.ForeColor = [System.Drawing.Color]::Gray
+    }
+})
+$form.Controls.Add($textBox)
+
+# Create OK button
+$okButton = New-Object System.Windows.Forms.Button
+$okButton.Location = New-Object System.Drawing.Point(400, 200)
+$okButton.Size = New-Object System.Drawing.Size(80, 30)
+$okButton.Text = "OK"
+$okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
+$form.AcceptButton = $okButton
+$form.Controls.Add($okButton)
+
+# Create Cancel button
+$cancelButton = New-Object System.Windows.Forms.Button
+$cancelButton.Location = New-Object System.Drawing.Point(490, 200)
+$cancelButton.Size = New-Object System.Drawing.Size(80, 30)
+$cancelButton.Text = "Cancel"
+$cancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+$form.CancelButton = $cancelButton
+$form.Controls.Add($cancelButton)
+
+# Show the form and get result
+$result = $form.ShowDialog()
+
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+    $token = $textBox.Text.Trim()
+    if ($token -eq "" -or $token -eq "Paste your AniList token here...") {
+        Write-Error "No token provided"
+        exit 1
+    }
+    Write-Output $token
+} else {
+    Write-Error "Token input cancelled"
+    exit 1
+}
+`
+
+	// Execute PowerShell script
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript)
+	cmd.Stdin = os.Stdin
+
+	output, err := cmd.Output()
+	if err != nil {
+		// Fallback to simple console input if PowerShell dialog fails
+		Log(fmt.Sprintf("PowerShell dialog failed, falling back to console input: %v", err))
+		return getTokenFromConsole()
+	}
+
+	token := strings.TrimSpace(string(output))
+	if token == "" {
+		return "", fmt.Errorf("no token provided")
+	}
+
+	return token, nil
+}
+
+// getTokenFromConsole provides fallback console input for Windows
+func getTokenFromConsole() (string, error) {
+	fmt.Println("Please generate a token from: https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
+	fmt.Print("Enter your AniList token: ")
+
+	var token string
+	_, err := fmt.Scanln(&token)
+	if err != nil {
+		return "", fmt.Errorf("error reading token: %v", err)
+	}
+
+	return strings.TrimSpace(token), nil
 }
 
 func ChangeToken(config *CurdConfig, user *User) {
