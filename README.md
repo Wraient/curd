@@ -360,7 +360,6 @@ config file is located at ```~/.config/curd/curd.conf```
 | `SkipFiller`              | Boolean    | `true`, `false`                           | Skips filler episodes when supported.                                                             |
 
 ## Todo (fix)
-- Config: Nextepisodeprompt, Cli Mode, Problem: Quitting with quit button while ep is still playing doesnt update progress, even if past Mark Complete Threshold (Regression)
 - Use Powershell for windows token input instead of notepad or cmd
 - Add Rewatching list to "Show All" Option
 - Last episode doesnt prompt for anime score (Regression)
