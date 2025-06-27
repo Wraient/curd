@@ -1254,6 +1254,9 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 		// User selected to quit
 		fmt.Print("\r\033[K") // Carriage return and clear line
 
+		// Set flag to indicate user explicitly quit
+		anime.Ep.UserQuit = true
+
 		// --- Begin fix: update progress if past threshold ---
 		if !userCurdConfig.RofiSelection && anime.Ep.Player.SocketPath != "" {
 			percentageWatched, err := GetPercentageWatched(anime.Ep.Player.SocketPath)
@@ -1300,6 +1303,7 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 	anime.Ep.Number++
 	anime.Ep.Started = false
 	anime.Ep.IsCompleted = false // Reset completion flag for the new episode
+	anime.Ep.UserQuit = false    // Reset quit flag for the new episode
 
 	// Clear current line to avoid visual glitches
 	fmt.Print("\r\033[K") // Carriage return and clear line
@@ -1435,6 +1439,7 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 	// Reset episode flags
 	anime.Ep.Started = false
 	anime.Ep.IsCompleted = false
+	anime.Ep.UserQuit = false
 
 	// Log the transition
 	Log("Completed episode, starting next.")

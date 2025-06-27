@@ -468,6 +468,12 @@ func main() {
 							internal.Log(fmt.Sprint(userCurdConfig.PercentageToMarkComplete))
 							if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 								anime.Ep.IsCompleted = true
+								// Check if user has already explicitly quit
+								if anime.Ep.UserQuit {
+									internal.Log("User has explicitly quit, not showing next episode prompt")
+									internal.ExitCurd(nil)
+									return
+								}
 								if !userCurdConfig.NextEpisodePrompt {
 									internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile)
 								} else {
@@ -563,6 +569,12 @@ func main() {
 
 							if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 								anime.Ep.IsCompleted = true
+								// Check if user has already explicitly quit
+								if anime.Ep.UserQuit {
+									internal.Log("User has explicitly quit, not showing next episode prompt")
+									internal.ExitCurd(nil)
+									return
+								}
 								if !userCurdConfig.NextEpisodePrompt {
 									internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile)
 								} else {
@@ -706,6 +718,12 @@ func main() {
 
 				// Only show the prompt here if playback is still active - otherwise it was already handled
 				if isPlaying {
+					// Check if user has already explicitly quit
+					if anime.Ep.UserQuit {
+						internal.Log("User has explicitly quit, not showing next episode prompt from main loop")
+						internal.ExitCurd(nil)
+						return
+					}
 					internal.CurdOut("Episode completed, showing next episode prompt from main loop")
 					if userCurdConfig.RofiSelection {
 						internal.NextEpisodePrompt(&userCurdConfig)

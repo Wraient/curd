@@ -46,6 +46,7 @@ type Episode struct {
 	ContinueLast   bool
 	LastWasSkipped bool // used in filler check
 	IsCompleted    bool
+	UserQuit       bool // flag to indicate user explicitly quit via NextEpisodePrompt
 }
 
 type NextEpisode struct {
