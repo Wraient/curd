@@ -225,12 +225,6 @@ func main() {
 
 	// Main loop (loop to keep starting new episodes)
 	for {
-		// Safety check: if user has quit, exit immediately
-		if anime.Ep.UserQuit {
-			internal.Log("Main loop: User has quit, exiting main loop")
-			internal.ExitCurd(nil)
-			return
-		}
 
 		internal.Log(anime)
 
@@ -428,11 +422,6 @@ func main() {
 					case <-skipLoopDone:
 						return
 					default:
-						// Check if user has already quit before calling NextEpisodePrompt
-						if anime.Ep.UserQuit {
-							internal.Log("User has already quit, not calling NextEpisodePrompt")
-							return
-						}
 						internal.NextEpisodePrompt(&userCurdConfig)
 						// Exit the skip loop - only close if not already closed
 						select {
@@ -461,12 +450,6 @@ func main() {
 				default:
 					time.Sleep(1 * time.Second)
 
-					// Check if user has already quit before proceeding with playback monitoring
-					if anime.Ep.UserQuit {
-						internal.Log("User has quit, exiting playback monitoring goroutine")
-						return
-					}
-
 					// Get current playback time
 					// internal.Log("Getting playback time "+anime.Ep.Player.SocketPath)
 					timePos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
@@ -476,12 +459,6 @@ func main() {
 						// Check if the error is due to invalid JSON
 						// User closed the video
 						if anime.Ep.Started {
-							// Check if user has quit before processing completion
-							if anime.Ep.UserQuit {
-								internal.Log("User has quit, not processing completion in error handler")
-								return
-							}
-
 							percentageWatched := internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
 							// Episode is completed
 							internal.Log(fmt.Sprint(percentageWatched))
@@ -579,23 +556,11 @@ func main() {
 						// Wait for a moment to allow playback to start
 						time.Sleep(2 * time.Second) // Wait for 2 seconds
 
-						// Check if user has quit during the wait
-						if anime.Ep.UserQuit {
-							internal.Log("User has quit during playback monitoring, exiting")
-							return
-						}
-
 						// Check playback status again
 						hasPlayback, err = internal.HasActivePlayback(anime.Ep.Player.SocketPath)
 						if err != nil {
 							internal.Log("Error checking playback status: " + err.Error())
 						} else if !hasPlayback {
-							// Check if user has quit before processing completion
-							if anime.Ep.UserQuit {
-								internal.Log("User has quit, not processing completion")
-								return
-							}
-
 							// Nothing is playing, check percentage watched
 							percentageWatched := internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
 							// fmt.Printf("[DEBUG] Playback stopped - Percentage watched: %d%%, Required: %d%%\n",
@@ -691,6 +656,8 @@ func main() {
 		}
 
 		if anime.Ep.IsCompleted && !anime.Rewatching {
+			internal.Log(fmt.Sprintf("Episode completed and not rewatching: Ep.Number=%d, TotalEpisodes=%d", 
+				anime.Ep.Number, anime.TotalEpisodes))
 			// Update progress for both regular episodes and skipped fillers
 			if anime.TotalEpisodes > 0 && anime.Ep.Number-1 != anime.TotalEpisodes {
 				go func() {
@@ -715,14 +682,17 @@ func main() {
 			anime.Ep.IsCompleted = false
 			// Only mark as complete and prompt for rating if we've reached the total episodes
 			// AND the anime is not currently airing (total episodes > 0)
-			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 {
+			internal.Log(fmt.Sprintf("Checking scoring conditions: Ep.Number=%d, TotalEpisodes=%d, ScoreOnCompletion=%t", 
+				anime.Ep.Number, anime.TotalEpisodes, userCurdConfig.ScoreOnCompletion))
+			if anime.Ep.Number == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 {
+				internal.Log("Scoring conditions met, checking if anime is still airing")
 
 				// Get updated anime data to check if it's still airing
 				updatedAnime, err := internal.GetAnimeDataByID(anime.AnilistId, user.Token)
 				if err != nil {
 					internal.Log("Error getting updated anime data: " + err.Error())
 				} else if !updatedAnime.IsAiring {
-					anime.Ep.Number = anime.Ep.Number - 1
+					internal.Log("Anime is not airing, proceeding with scoring")
 					internal.CurdOut("Completed anime.")
 					err = internal.RateAnime(user.Token, anime.AnilistId)
 					if err != nil {
@@ -731,11 +701,14 @@ func main() {
 					}
 					internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 					internal.ExitCurd(nil)
+				} else {
+					internal.Log("Anime is still airing, skipping scoring")
 				}
+			} else {
+				internal.Log("Scoring conditions not met")
 			}
 		}
-		if anime.Rewatching && anime.Ep.IsCompleted && anime.Ep.Number-1 == anime.TotalEpisodes {
-			anime.Ep.Number = anime.Ep.Number - 1
+		if anime.Rewatching && anime.Ep.IsCompleted && anime.Ep.Number == anime.TotalEpisodes {
 			internal.CurdOut("Completed anime. (Rewatching so no scoring)")
 			internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
 			internal.ExitCurd(nil)
@@ -802,13 +775,6 @@ func main() {
 		if len(anime.Ep.Links) == 0 {
 			internal.CurdOut("No episode links found. Try again later.")
 			internal.ExitCurd(fmt.Errorf("no episode links found"))
-			return
-		}
-
-		// Final safety check before starting next iteration
-		if anime.Ep.UserQuit {
-			internal.Log("Main loop: User has quit before starting next episode, exiting")
-			internal.ExitCurd(nil)
 			return
 		}
 

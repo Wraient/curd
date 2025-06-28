@@ -140,12 +140,10 @@ func RestoreScreen() {
 }
 
 func ExitCurd(err error) {
-	Log("ExitCurd called with error: " + fmt.Sprintf("%v", err))
 	RestoreScreen()
 
 	anime := GetGlobalAnime()
 	if anime != nil && anime.Ep.Player.SocketPath != "" {
-		Log("ExitCurd: Closing MPV with socket: " + anime.Ep.Player.SocketPath)
 		_, err = MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
 		if err != nil {
 			Log("Error closing MPV: " + err.Error())
@@ -153,7 +151,6 @@ func ExitCurd(err error) {
 	}
 
 	CurdOut("Have a great day!")
-	Log("ExitCurd: About to call os.Exit")
 	// If the error is not about the connection refused, print the error
 	if err != nil && !strings.Contains(err.Error(), "dial unix "+anime.Ep.Player.SocketPath+": connect: connection refused") {
 		CurdOut(fmt.Sprintf("Error: %v", err))
@@ -161,14 +158,11 @@ func ExitCurd(err error) {
 			fmt.Println("Press Enter to exit")
 			var wait string
 			fmt.Scanln(&wait)
-			Log("ExitCurd: Calling os.Exit(1) on Windows")
 			os.Exit(1)
 		} else {
-			Log("ExitCurd: Calling os.Exit(1) on Unix")
 			os.Exit(1)
 		}
 	}
-	Log("ExitCurd: Calling os.Exit(0)")
 	os.Exit(0)
 }
 
@@ -1260,11 +1254,8 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 		// User selected to quit
 		fmt.Print("\r\033[K") // Carriage return and clear line
 
-		Log("NextEpisodePrompt: User selected to quit")
-		
-		// Set flag to indicate user explicitly quit BEFORE any other operations
+		// Set flag to indicate user explicitly quit
 		anime.Ep.UserQuit = true
-		Log(fmt.Sprintf("NextEpisodePrompt: Set UserQuit=true for episode %d", anime.Ep.Number))
 
 		// --- Begin fix: update progress if past threshold ---
 		if !userCurdConfig.RofiSelection && anime.Ep.Player.SocketPath != "" {
@@ -1287,13 +1278,14 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 					if err != nil {
 						Log("Error reading token for progress update: " + err.Error())
 					} else {
-						// Use synchronous update when quitting to ensure completion before exit
-						err = UpdateAnimeProgress(token, anime.AnilistId, anime.Ep.Number)
-						if err != nil {
-							Log("Error updating Anilist progress: " + err.Error())
-						} else {
-							CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", anime.Ep.Number))
-						}
+						go func() {
+							err = UpdateAnimeProgress(token, anime.AnilistId, anime.Ep.Number)
+							if err != nil {
+								Log("Error updating Anilist progress: " + err.Error())
+							} else {
+								CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", anime.Ep.Number))
+							}
+						}()
 					}
 				}
 			}
@@ -1301,11 +1293,8 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 		// --- End fix ---
 
 		ExitMPV(anime.Ep.Player.SocketPath)
-		Log("NextEpisodePrompt: Called ExitMPV")
 		CurdOut("Exiting without starting next episode")
-		Log("NextEpisodePrompt: About to call ExitCurd from quit path")
 		ExitCurd(nil)
-		Log("NextEpisodePrompt: ExitCurd returned (this should never be reached)")
 		return
 	}
 
