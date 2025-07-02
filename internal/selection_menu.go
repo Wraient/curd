@@ -420,6 +420,53 @@ func RofiSelect(options map[string]string) (SelectionOption, error) {
 	return SelectionOption{}, fmt.Errorf("selected option not found in original list")
 }
 
+func DynamicSelectFromSlice(options []SelectionOption) (SelectionOption, error) {
+	if GetGlobalConfig().RofiSelection {
+		optionsMap := make(map[string]string)
+		for _, option := range options {
+			optionsMap[option.Key] = option.Label
+		}
+		return RofiSelect(optionsMap)
+	}
+
+	// slice to maintain order
+	var orderedOptions []SelectionOption
+	for _, option := range options {
+		orderedOptions = append(orderedOptions, option)
+	}
+
+	model := &Model{
+		options:      make(map[string]string), // empty map since we're using slice
+		filteredKeys: orderedOptions,
+	}
+
+	model.filteredKeys = append(model.filteredKeys, SelectionOption{
+		Label: "Quit",
+		Key:   "-1",
+	})
+
+	p := tea.NewProgram(model)
+
+	finalModel, err := p.Run()
+	if err != nil {
+		return SelectionOption{}, err
+	}
+
+	// resetting terminal state
+	fmt.Print("\033[?25h") // show cursor
+	fmt.Print("\033[?7h")  // line wrapping
+
+	finalSelectionModel, ok := finalModel.(*Model)
+	if !ok {
+		return SelectionOption{}, fmt.Errorf("unexpected model type")
+	}
+
+	if finalSelectionModel.selected < len(finalSelectionModel.filteredKeys) {
+		return finalSelectionModel.filteredKeys[finalSelectionModel.selected], nil
+	}
+	return SelectionOption{}, nil
+}
+
 // DynamicSelect displays a simple selection prompt without extra features
 func DynamicSelect(options map[string]string) (SelectionOption, error) {
 	if GetGlobalConfig().RofiSelection {
@@ -444,7 +491,10 @@ func DynamicSelect(options map[string]string) (SelectionOption, error) {
 			}
 		}
 	} else {
-		// For other selections, maintain alphabetical order
+		// For other selections, preserve the order as passed in
+		// Since Go maps don't preserve insertion order, we need to handle this differently
+		// For now, we'll use the order as it comes from the map iteration
+		// (This will be random, but it's better than alphabetical sorting for search results)
 		for key, value := range options {
 			orderedOptions = append(orderedOptions, SelectionOption{
 				Key:   key,
