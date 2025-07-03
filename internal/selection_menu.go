@@ -25,14 +25,16 @@ type SelectionOption struct {
 
 // Model represents the application state for the selection prompt
 type Model struct {
-	options        map[string]string
-	filter         string
-	filteredKeys   []SelectionOption
-	selected       int
-	terminalWidth  int
-	terminalHeight int
-	scrollOffset   int  // Track the topmost visible item
-	addNewOption   bool // Add this field
+	options         map[string]string
+	filter          string
+	filteredKeys    []SelectionOption
+	selected        int
+	terminalWidth   int
+	terminalHeight  int
+	scrollOffset    int               // Track the topmost visible item
+	addNewOption    bool
+	useSliceMode    bool              // Track if we're using slice-based filtering
+	originalOptions []SelectionOption // Store original options for slice-based filtering
 }
 
 var (
@@ -183,21 +185,31 @@ func (m Model) visibleItemsCount() int {
 func (m *Model) filterOptions() {
 	m.filteredKeys = []SelectionOption{}
 
-	for key, value := range m.options {
+	if m.useSliceMode {
+		// slice-based filtering, filter from the original options
+		for _, option := range m.originalOptions {
+			if strings.Contains(strings.ToLower(option.Label), strings.ToLower(m.filter)) {
+				m.filteredKeys = append(m.filteredKeys, option)
+			}
+		}
+	} else {
+		// map-based filtering
+		for key, value := range m.options {
 		// When the key is " ", compare and display using the value instead
-		if key == " " {
-			if strings.Contains(strings.ToLower(value), strings.ToLower(m.filter)) {
+			if key == " " {
+				if strings.Contains(strings.ToLower(value), strings.ToLower(m.filter)) {
+					m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: value, Key: key})
+				}
+			} else if strings.Contains(strings.ToLower(value), strings.ToLower(m.filter)) {
 				m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: value, Key: key})
 			}
-		} else if strings.Contains(strings.ToLower(value), strings.ToLower(m.filter)) {
-			m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: value, Key: key})
 		}
-	}
 
-	// Sort the filtered options alphabetically
-	sort.Slice(m.filteredKeys, func(i, j int) bool {
-		return m.filteredKeys[i].Label < m.filteredKeys[j].Label
-	})
+		// Sort the filtered options alphabetically
+		sort.Slice(m.filteredKeys, func(i, j int) bool {
+			return m.filteredKeys[i].Label < m.filteredKeys[j].Label
+		})
+	}
 
 	// Add "Add new anime" option if enabled
 	if m.addNewOption {
@@ -436,8 +448,10 @@ func DynamicSelectFromSlice(options []SelectionOption) (SelectionOption, error) 
 	}
 
 	model := &Model{
-		options:      make(map[string]string), // empty map since we're using slice
-		filteredKeys: orderedOptions,
+		options:         make(map[string]string), // empty map since we're using slice
+		filteredKeys:    orderedOptions,
+		useSliceMode:    true,                    // slice-based filtering
+		originalOptions: orderedOptions,          // store original options for filtering
 	}
 
 	model.filteredKeys = append(model.filteredKeys, SelectionOption{
