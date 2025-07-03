@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
+	"bufio"
 	"github.com/gen2brain/beeep"
 )
 
@@ -550,8 +550,8 @@ func UpdateCurd(repo, fileName string) error {
 
 func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime) SelectionOption {
 	var query string
-	var animeMap map[string]string
 	var animeMapPreview map[string]RofiSelectPreview
+	var animeOptions []SelectionOption
 	var err error
 	var anilistSelectedOption SelectionOption
 
@@ -564,12 +564,14 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 		query = userInput
 	} else {
 		CurdOut("Enter the anime name:")
-		fmt.Scanln(&query)
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		query = strings.TrimSpace(input)
 	}
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		animeMapPreview, err = SearchAnimeAnilistPreview(query, user.Token)
 	} else {
-		animeMap, err = SearchAnimeAnilist(query, user.Token)
+		animeOptions, err = SearchAnimeAnilist(query, user.Token)
 	}
 	if err != nil {
 		Log(fmt.Sprintf("Failed to search anime: %v", err))
@@ -578,7 +580,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		anilistSelectedOption, err = DynamicSelectPreview(animeMapPreview, false)
 	} else {
-		anilistSelectedOption, err = DynamicSelect(animeMap)
+		anilistSelectedOption, err = DynamicSelectFromSlice(animeOptions)
 	}
 
 	if anilistSelectedOption.Key == "-1" {
