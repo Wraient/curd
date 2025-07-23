@@ -1050,6 +1050,33 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	if userCurdConfig.NextEpisodePrompt && anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !userCurdConfig.RofiSelection {
 		// Ensure the terminal state is clean for the prompt
 		fmt.Print("\r\033[K") // Carriage return and clear line
+		episodeNum := anime.Ep.Number
+		if !userCurdConfig.RofiSelection {
+			episodeNum++
+		}
+
+		CurdOut(fmt.Sprintf("Start next episode (%d)?", episodeNum))
+
+		// Create options for the selection
+		options := []SelectionOption{
+			{Key: "yes", Label: "Yes, start next episode"},
+			// "no":  "No, quit",
+		}
+
+		// Use DynamicSelect for both CLI and Rofi modes
+		selectedOption, err := DynamicSelect(options)
+		if err != nil {
+			ExitCurd(err)
+		}
+
+		if selectedOption.Key == "-1" {
+			// User selected to quit
+			fmt.Print("\r\033[K") // Carriage return and clear line
+			ExitMPV(anime.Ep.Player.SocketPath)
+			CurdOut("Exiting without starting next episode")
+			ExitCurd(nil)
+			return
+		}
 	}
 }
 
