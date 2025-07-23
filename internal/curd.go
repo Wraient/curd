@@ -1256,6 +1256,20 @@ func getEntriesByCategory(list AnimeList, category string) []Entry {
 
 func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 	anime := GetGlobalAnime()
+
+	// Check if we just completed the last episode
+	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes {
+		// Handle scoring and completion for the last episode
+		HandleLastEpisodeCompletion(userCurdConfig, anime)
+
+		// Exit after completing the series
+		fmt.Print("\r\033[K") // Carriage return and clear line
+		ExitMPV(anime.Ep.Player.SocketPath)
+		CurdOut("Series completed!")
+		ExitCurd(nil)
+		return
+	}
+
 	// If in CLI mode (not Rofi), we need to show the next episode number
 	episodeNum := anime.Ep.Number
 	if !userCurdConfig.RofiSelection {
@@ -1389,6 +1403,35 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 	// Save previous episode number for progress update
 	prevEpisode := anime.Ep.Number
 
+	// Check if we just completed the last episode
+	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes {
+		// Handle scoring and completion for the last episode
+		HandleLastEpisodeCompletion(userCurdConfig, anime)
+
+		// Update Anilist progress for the last episode if not rewatching
+		if !anime.Rewatching {
+			user := &User{}
+			var err error
+			user.Token, err = GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
+			if err != nil {
+				Log("Error reading token for progress update: " + err.Error())
+			} else {
+				go func() {
+					err = UpdateAnimeProgress(user.Token, anime.AnilistId, prevEpisode)
+					if err != nil {
+						Log("Error updating Anilist progress: " + err.Error())
+					} else {
+						CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", prevEpisode))
+					}
+				}()
+			}
+		}
+
+		CurdOut("Series completed!")
+		ExitCurd(nil)
+		return
+	}
+
 	// Increment episode number
 	anime.Ep.Number++
 
@@ -1456,4 +1499,69 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 
 	// Output message to user
 	CurdOut(fmt.Sprint("Starting next episode: ", anime.Ep.Number))
+}
+
+// HandleLastEpisodeCompletion handles scoring and completion for the last episode
+func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime) {
+	// Check if this is the last episode and scoring is enabled
+	if userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes {
+		// Get user token for scoring
+		user := &User{}
+
+		// Get config for storage path
+		homeDir := ""
+		if runtime.GOOS == "windows" {
+			homeDir = os.Getenv("USERPROFILE")
+		} else {
+			homeDir = os.Getenv("HOME")
+		}
+		configFilePath := filepath.Join(homeDir, ".config", "curd", "curd.conf")
+		config, err := LoadConfig(configFilePath)
+		if err != nil {
+			Log("Error loading config for scoring: " + err.Error())
+			return
+		}
+
+		user.Token, err = GetTokenFromFile(filepath.Join(os.ExpandEnv(config.StoragePath), "token"))
+		if err != nil {
+			Log("Error reading token for scoring: " + err.Error())
+			return
+		}
+
+		// Prompt user to score the anime
+		CurdOut("You've completed this anime! Would you like to rate it?")
+
+		scoreOptions := []SelectionOption{
+			{Key: "yes", Label: "Yes, rate this anime"},
+			{Key: "no", Label: "No, skip rating"},
+		}
+
+		selectedOption, err := DynamicSelect(scoreOptions)
+		if err != nil {
+			Log(fmt.Sprintf("Error in score prompt selection: %v", err))
+			return
+		}
+
+		if selectedOption.Key == "yes" {
+			err = RateAnime(user.Token, anime.AnilistId)
+			if err != nil {
+				Log(fmt.Sprintf("Error rating anime: %v", err))
+				CurdOut("Failed to rate anime")
+			} else {
+				CurdOut("Anime rated successfully!")
+			}
+		}
+
+		// Update anime status to completed on AniList
+		if !anime.Rewatching {
+			go func() {
+				err = UpdateAnimeStatus(user.Token, anime.AnilistId, "COMPLETED")
+				if err != nil {
+					Log("Error updating anime status to completed: " + err.Error())
+				} else {
+					CurdOut("Anime status updated to completed!")
+				}
+			}()
+		}
+	}
 }
