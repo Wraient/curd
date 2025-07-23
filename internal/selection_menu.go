@@ -81,9 +81,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			// Return quit selection option instead of quitting the program
-			m.filteredKeys[m.selected] = SelectionOption{"quit", "-1"}
-			return m, tea.Quit // Properly exit the program
+			// Return quit selection option directly
+			return m, tea.Quit
 		case "backspace":
 			if len(m.filter) > 0 {
 				m.filter = m.filter[:len(m.filter)-1]
@@ -461,6 +460,11 @@ func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
 	finalSelectionModel, ok := finalModel.(*Model)
 	if !ok {
 		return SelectionOption{}, fmt.Errorf("unexpected model type")
+	}
+
+	// Check if the program was quit with Ctrl+C
+	if err != nil {
+		return SelectionOption{Key: "-1", Label: "Quit"}, nil
 	}
 
 	if finalSelectionModel.selected < len(finalSelectionModel.filteredKeys) {

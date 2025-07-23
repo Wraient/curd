@@ -1365,7 +1365,7 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 	// Create options for the selection
 	options := []SelectionOption{
 		{Key: "yes", Label: "Yes, start next episode"},
-		// "no":  "No, quit",
+		// {Key: "-1", Label:  "No, quit"},
 	}
 
 	// Use DynamicSelect for both CLI and Rofi modes
@@ -1375,8 +1375,20 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 		ExitCurd(err)
 	}
 
+	Log(fmt.Sprintf("User Selected Key: '%s', Label: '%s'", selectedOption.Key, selectedOption.Label))
+
 	if selectedOption.Key == "-1" {
 		// User selected to quit
+		fmt.Print("\r\033[K") // Carriage return and clear line
+		ExitMPV(anime.Ep.Player.SocketPath)
+		CurdOut("Exiting without starting next episode")
+		ExitCurd(nil)
+		return
+	}
+
+	if selectedOption.Key != "yes" {
+		// User selected something other than yes (shouldn't happen, but safety check)
+		Log(fmt.Sprintf("Unexpected selection key: %s", selectedOption.Key))
 		fmt.Print("\r\033[K") // Carriage return and clear line
 		ExitMPV(anime.Ep.Player.SocketPath)
 		CurdOut("Exiting without starting next episode")
