@@ -298,6 +298,16 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 				CoverImage: entry.CoverImage,
 			}
 		}
+		for _, entry := range user.AnimeList.Rewatching {
+			title := entry.Media.Title.English
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+				title = entry.Media.Title.Romaji
+			}
+			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+				Title:      title,
+				CoverImage: entry.CoverImage,
+			}
+		}
 	} else {
 		animeListOptions = make([]SelectionOption, 0)
 		// Include anime from all categories
@@ -351,6 +361,16 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 				Label: title,
 			})
 		}
+		for _, entry := range user.AnimeList.Rewatching {
+			title := entry.Media.Title.English
+			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+				title = entry.Media.Title.Romaji
+			}
+			animeListOptions = append(animeListOptions, SelectionOption{
+				Key:   strconv.Itoa(entry.Media.ID),
+				Label: title,
+			})
+		}
 	}
 
 	// Select anime to update
@@ -395,7 +415,13 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 
 		currentStatus := "None"
 		if selectedAnilistAnime.Status != "" {
-			currentStatus = categories[selectedAnilistAnime.Status]
+			// Find the label for the current status
+			for _, cat := range categories {
+				if cat.Key == selectedAnilistAnime.Status {
+					currentStatus = cat.Label
+					break
+				}
+			}
 		}
 		CurdOut(fmt.Sprintf("Current category: %s", currentStatus))
 
@@ -585,7 +611,19 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		animeMapPreview, err = SearchAnimeAnilistPreview(query, user.Token)
 	} else {
-		animeMap, err = SearchAnimeAnilist(query, user.Token)
+		animeMap, err := SearchAnimeAnilist(query, user.Token)
+		if err != nil {
+			Log(fmt.Sprintf("Failed to search anime: %v", err))
+			ExitCurd(fmt.Errorf("Failed to search anime"))
+		}
+		// Convert map to []SelectionOption
+		animeOptions = make([]SelectionOption, 0, len(animeMap))
+		for key, label := range animeMap {
+			animeOptions = append(animeOptions, SelectionOption{
+				Key:   key,
+				Label: label,
+			})
+		}
 	}
 	if err != nil {
 		Log(fmt.Sprintf("Failed to search anime: %v", err))
@@ -870,7 +908,6 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		Log(fmt.Sprintf("Searching for anime with query: %s, SubOrDub: %s", userQuery, userCurdConfig.SubOrDub))
 
 		animeList, err = SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
-		Log(fmt.Sprintf("SearchAnime result - animeList: %+v, err: %v", animeList, err))
 		if err != nil {
 			Log(fmt.Sprintf("Failed to select anime: %v", err))
 			ExitCurd(fmt.Errorf("Failed to select anime"))
@@ -879,10 +916,21 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			ExitCurd(fmt.Errorf("No results found."))
 		}
 
-		// find anime in animeList
-		anime.AllanimeId, err = FindKeyByValue(animeList, fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes))
-		if err != nil {
-			Log(fmt.Sprintf("Failed to find anime in animeList: %v", err))
+		// find anime in animeList by searching through the options
+		targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
+		found := false
+		for i, option := range animeList {
+			Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s'", i, option.Key, option.Label))
+			if option.Label == targetLabel {
+				anime.AllanimeId = option.Key
+				Log(fmt.Sprintf("Found exact match! Setting AllanimeId to: %s", anime.AllanimeId))
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			Log(fmt.Sprintf("No exact match found for label '%s'. Will require manual selection.", targetLabel))
 		}
 
 		// If unable to get Allanime id automatically get manually
@@ -895,7 +943,6 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 
 			if err != nil {
-				// fmt.Println("No anime available")
 				ExitCurd(fmt.Errorf("No anime available"))
 			}
 			anime.AllanimeId = selectedAllanimeAnime.Key
@@ -1101,12 +1148,24 @@ func WriteTokenToFile(token string, filePath string) error {
 
 func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 
-	if anime.Ep.NextEpisode.Number == anime.Ep.Number {
+	// Validate inputs
+	if anime.AllanimeId == "" {
+		CurdOut("Error: No anime ID found")
+		os.Exit(1)
+	}
+	if anime.Ep.Number <= 0 {
+		CurdOut("Error: Invalid episode number")
+		os.Exit(1)
+	}
+
+	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
 		anime.Ep.Links = anime.Ep.NextEpisode.Links
-		Log("using prefetched next episode link")
 	} else {
 		// Get episode link
 		link, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+		if len(link) > 0 {
+			Log(fmt.Sprintf("Links details: %+v", link))
+		}
 		if err != nil {
 			// If unable to get episode link automatically get manually
 			episodeList, err := EpisodesList(anime.AllanimeId, userCurdConfig.SubOrDub)
@@ -1131,7 +1190,8 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 				CurdOut("Failed to get episode link")
 				os.Exit(1)
 			}
-			// anime.Ep.Links = link
+		} else {
+			Log(fmt.Sprintf("Successfully retrieved episode link on first try. Links count: %d", len(link)))
 		}
 		anime.Ep.Links = link
 	}
@@ -1139,9 +1199,9 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 	if len(anime.Ep.Links) == 0 {
 		CurdOut("No episode links found")
 		os.Exit(1)
+	} else {
+		Log(fmt.Sprintf("Episode links validation passed. Found %d links", len(anime.Ep.Links)))
 	}
-
-	Log(anime)
 
 	// Modify the goroutine in main.go where next episode links are fetched
 	// Get next episode link in parallel
@@ -1154,14 +1214,15 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 			}
 			nextLinks, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, nextEpNum)
 			if err != nil {
-				Log("Error getting next episode link: " + err.Error())
+				Log(fmt.Sprintf("Error getting next episode link for ep %d: %v", nextEpNum, err))
 			} else {
 				anime.Ep.NextEpisode = NextEpisode{
 					Number: nextEpNum,
 					Links:  nextLinks,
 				}
-				Log(fmt.Sprintf("Next episode link fetched for ep %d", nextEpNum))
 			}
+		} else {
+			Log(fmt.Sprintf("Next episode %d exceeds total episodes %d, skipping prefetch", nextEpNum, anime.TotalEpisodes))
 		}
 	}()
 
