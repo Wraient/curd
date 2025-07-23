@@ -46,6 +46,7 @@ func GetAnimeMap(animeList AnimeList) map[string]string {
 	populateMap(animeList.Paused)
 	populateMap(animeList.Dropped)
 	populateMap(animeList.Planning)
+	populateMap(animeList.Rewatching) // Add Rewatching list
 
 	return animeMap
 }
@@ -81,6 +82,7 @@ func GetAnimeMapPreview(animeList AnimeList) map[string]RofiSelectPreview {
 	populateMap(animeList.Paused)
 	populateMap(animeList.Dropped)
 	populateMap(animeList.Planning)
+	populateMap(animeList.Rewatching) // Add Rewatching list
 
 	return animeMap
 }
@@ -710,13 +712,15 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 			case "CURRENT":
 				animeList.Watching = append(animeList.Watching, animeEntry)
 			case "COMPLETED":
-				animeList.Completed = append(animeList.Completed, animeEntry) // Fix: Ensure Completed list is used
+				animeList.Completed = append(animeList.Completed, animeEntry)
 			case "PAUSED":
-				animeList.Paused = append(animeList.Paused, animeEntry) // Fix: Append to Paused list
+				animeList.Paused = append(animeList.Paused, animeEntry)
 			case "DROPPED":
-				animeList.Dropped = append(animeList.Dropped, animeEntry) // Fix: Append to Dropped list
+				animeList.Dropped = append(animeList.Dropped, animeEntry)
 			case "PLANNING":
-				animeList.Planning = append(animeList.Planning, animeEntry) // Fix: Append to Planning list
+				animeList.Planning = append(animeList.Planning, animeEntry)
+			case "REPEATING": // Anilist uses REPEATING for rewatching
+				animeList.Rewatching = append(animeList.Rewatching, animeEntry)
 			}
 		}
 	}
@@ -738,6 +742,7 @@ func FindAnimeByAnilistID(list AnimeList, idStr string) (*Entry, error) {
 		list.Paused,
 		list.Dropped,
 		list.Planning,
+		list.Rewatching, // Add Rewatching list
 	}
 
 	// Iterate through each category
