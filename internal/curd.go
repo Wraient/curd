@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bufio"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"bufio"
+
 	"github.com/gen2brain/beeep"
 )
 
@@ -592,7 +593,7 @@ func UpdateCurd(repo, fileName string) error {
 
 func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime) SelectionOption {
 	var query string
-	var animeOptions []SelectionOption
+	// Remove the redeclared variable declaration since animeOptions is already declared above
 	var animeMapPreview map[string]RofiSelectPreview
 	var animeOptions []SelectionOption
 	var err error
@@ -614,18 +615,10 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		animeMapPreview, err = SearchAnimeAnilistPreview(query, user.Token)
 	} else {
-		animeMap, err := SearchAnimeAnilist(query, user.Token)
+		animeOptions, err = SearchAnimeAnilist(query, user.Token)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to search anime: %v", err))
 			ExitCurd(fmt.Errorf("Failed to search anime"))
-		}
-		// Convert map to []SelectionOption
-		animeOptions = make([]SelectionOption, 0, len(animeMap))
-		for key, label := range animeMap {
-			animeOptions = append(animeOptions, SelectionOption{
-				Key:   key,
-				Label: label,
-			})
 		}
 	}
 	if err != nil {

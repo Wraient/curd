@@ -388,30 +388,13 @@ func RofiSelect(options []SelectionOption) (SelectionOption, error) {
 
 func DynamicSelectFromSlice(options []SelectionOption) (SelectionOption, error) {
 	if GetGlobalConfig().RofiSelection {
-		optionsMap := make(map[string]string)
-		for _, option := range options {
-			optionsMap[option.Key] = option.Label
-		}
-		return RofiSelect(optionsMap)
-	}
-
-	// slice to maintain order
-	var orderedOptions []SelectionOption
-	for _, option := range options {
-		orderedOptions = append(orderedOptions, option)
+		return RofiSelect(options)
 	}
 
 	model := &Model{
-		options:         make(map[string]string), // empty map since we're using slice
-		filteredKeys:    orderedOptions,
-		useSliceMode:    true,                    // slice-based filtering
-		originalOptions: orderedOptions,          // store original options for filtering
+		allOptions: options,
 	}
-
-	model.filteredKeys = append(model.filteredKeys, SelectionOption{
-		Label: "Quit",
-		Key:   "-1",
-	})
+	model.filterOptions() // Initialize filtered options
 
 	p := tea.NewProgram(model)
 
