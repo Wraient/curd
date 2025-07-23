@@ -250,7 +250,7 @@ func LocalFindAnime(animeList []Anime, anilistID int, allanimeID string) *Anime 
 
 func WatchUntracked(userCurdConfig *CurdConfig) {
 	var query string
-	var animeList map[string]string
+	var animeList []SelectionOption
 	var err error
 	var anime Anime
 

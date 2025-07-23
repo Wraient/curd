@@ -345,7 +345,7 @@ func getOrderedCategories(userCurdConfig *CurdConfig) map[string]string {
 		"CONTINUE_LAST": "Continue Last Session",
 	}
 
-	// Create ordered map to store final result
+	// Create ordered list to store final result
 	finalOrder := make([]string, 0)
 	seen := make(map[string]bool)
 
@@ -372,11 +372,14 @@ func getOrderedCategories(userCurdConfig *CurdConfig) map[string]string {
 		}
 	}
 
-	// Create the final ordered map
-	orderedMap := make(map[string]string)
+	// Create the final ordered slice of SelectionOptions
+	orderedCategories := make([]SelectionOption, 0, len(finalOrder))
 	for _, key := range finalOrder {
-		orderedMap[key] = defaultLabels[key]
+		orderedCategories = append(orderedCategories, SelectionOption{
+			Key:   key,
+			Label: defaultLabels[key],
+		})
 	}
 
-	return orderedMap
+	return orderedCategories
 }

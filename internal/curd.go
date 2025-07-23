@@ -143,7 +143,7 @@ func ExitCurd(err error) {
 	RestoreScreen()
 
 	anime := GetGlobalAnime()
-	if anime != nil && anime.Ep.Player.SocketPath != "" {
+	if (anime != nil) && (anime.Ep.Player.SocketPath != "") {
 		_, err = MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
 		if err != nil {
 			Log("Error closing MPV: " + err.Error())
@@ -223,11 +223,11 @@ func CurdOut(data interface{}) {
 }
 
 func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
-	// Create update options map
-	updateOptions := map[string]string{
-		"CATEGORY": "Change Anime Category",
-		"PROGRESS": "Change Progress",
-		"SCORE":    "Add/Change Score",
+	// Create update options
+	updateOptions := []SelectionOption{
+		{Key: "CATEGORY", Label: "Change Anime Category"},
+		{Key: "PROGRESS", Label: "Change Progress"},
+		{Key: "SCORE", Label: "Add/Change Score"},
 	}
 
 	// Select update option
@@ -242,7 +242,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	}
 
 	// Get user's anime list
-	var animeListMap map[string]string
+	var animeListOptions []SelectionOption
 	var animeListMapPreview map[string]RofiSelectPreview
 
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
@@ -299,42 +299,57 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 			}
 		}
 	} else {
-		animeListMap = make(map[string]string)
+		animeListOptions = make([]SelectionOption, 0)
 		// Include anime from all categories
 		for _, entry := range user.AnimeList.Watching {
 			title := entry.Media.Title.English
 			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
-			animeListMap[strconv.Itoa(entry.Media.ID)] = title
+			animeListOptions = append(animeListOptions, SelectionOption{
+				Key:   strconv.Itoa(entry.Media.ID),
+				Label: title,
+			})
 		}
 		for _, entry := range user.AnimeList.Completed {
 			title := entry.Media.Title.English
 			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
-			animeListMap[strconv.Itoa(entry.Media.ID)] = title
+			animeListOptions = append(animeListOptions, SelectionOption{
+				Key:   strconv.Itoa(entry.Media.ID),
+				Label: title,
+			})
 		}
 		for _, entry := range user.AnimeList.Paused {
 			title := entry.Media.Title.English
 			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
-			animeListMap[strconv.Itoa(entry.Media.ID)] = title
+			animeListOptions = append(animeListOptions, SelectionOption{
+				Key:   strconv.Itoa(entry.Media.ID),
+				Label: title,
+			})
 		}
 		for _, entry := range user.AnimeList.Dropped {
 			title := entry.Media.Title.English
 			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
-			animeListMap[strconv.Itoa(entry.Media.ID)] = title
+			animeListOptions = append(animeListOptions, SelectionOption{
+				Key:   strconv.Itoa(entry.Media.ID),
+				Label: title,
+			})
 		}
 		for _, entry := range user.AnimeList.Planning {
 			title := entry.Media.Title.English
 			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 				title = entry.Media.Title.Romaji
 			}
-			animeListMap[strconv.Itoa(entry.Media.ID)] = title
+			animeListOptions = append(animeListOptions, SelectionOption{
+				Key:   strconv.Itoa(entry.Media.ID),
+				Label: title,
+			})
 		}
 	}
 
@@ -343,7 +358,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		selectedAnime, err = DynamicSelectPreview(animeListMapPreview, false)
 	} else {
-		selectedAnime, err = DynamicSelect(animeListMap)
+		selectedAnime, err = DynamicSelect(animeListOptions)
 	}
 	if err != nil {
 		Log(fmt.Sprintf("Failed to select anime: %v", err))
@@ -369,12 +384,13 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	ClearScreen()
 	switch updateSelection.Key {
 	case "CATEGORY":
-		categories := map[string]string{
-			"CURRENT":   "Currently Watching",
-			"COMPLETED": "Completed",
-			"PAUSED":    "On Hold",
-			"DROPPED":   "Dropped",
-			"PLANNING":  "Plan to Watch",
+		categories := []SelectionOption{
+			{Key: "CURRENT", Label: "Currently Watching"},
+			{Key: "COMPLETED", Label: "Completed"},
+			{Key: "PAUSED", Label: "On Hold"},
+			{Key: "DROPPED", Label: "Dropped"},
+			{Key: "PLANNING", Label: "Plan to Watch"},
+			{Key: "REPEATING", Label: "Rewatching"}, // Anilist uses REPEATING for rewatching
 		}
 
 		currentStatus := "None"
@@ -550,7 +566,7 @@ func UpdateCurd(repo, fileName string) error {
 
 func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime) SelectionOption {
 	var query string
-	var animeMap map[string]string
+	var animeOptions []SelectionOption
 	var animeMapPreview map[string]RofiSelectPreview
 	var err error
 	var anilistSelectedOption SelectionOption
@@ -578,7 +594,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		anilistSelectedOption, err = DynamicSelectPreview(animeMapPreview, false)
 	} else {
-		anilistSelectedOption, err = DynamicSelect(animeMap)
+		anilistSelectedOption, err = DynamicSelect(animeOptions)
 	}
 
 	if anilistSelectedOption.Key == "-1" {
@@ -596,12 +612,13 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	}
 
 	// Add category selection before adding to list
-	categories := map[string]string{
-		"CURRENT":   "Currently Watching",
-		"COMPLETED": "Completed",
-		"PAUSED":    "On Hold",
-		"DROPPED":   "Dropped",
-		"PLANNING":  "Plan to Watch",
+	categories := []SelectionOption{
+		{Key: "CURRENT", Label: "Currently Watching"},
+		{Key: "COMPLETED", Label: "Completed"},
+		{Key: "PAUSED", Label: "On Hold"},
+		{Key: "DROPPED", Label: "Dropped"},
+		{Key: "PLANNING", Label: "Plan to Watch"},
+		{Key: "REPEATING", Label: "Rewatching"}, // Anilist uses REPEATING for rewatching
 	}
 
 	ClearScreen()
@@ -649,7 +666,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	var anilistUserDataPreview map[string]interface{}
 
 	// Filter anime list based on selected category
-	var animeListMap map[string]string
+	var animeListOptions []SelectionOption
 	var animeListMapPreview map[string]RofiSelectPreview
 
 	// Get user id, username and Anime list
@@ -716,11 +733,12 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 		} else {
 			// Create category selection map
-			categories := getOrderedCategories(userCurdConfig)
+			// Get ordered categories
+			orderedCategories := getOrderedCategories(userCurdConfig)
 
-			// Select category using DynamicSelect
-			var err error
-			categorySelection, err = DynamicSelect(categories)
+			// Use DynamicSelect with ordered categories directly
+			categorySelection, err = DynamicSelect(orderedCategories)
+
 			if err != nil {
 				Log(fmt.Sprintf("Failed to select category: %v", err))
 				ExitCurd(fmt.Errorf("Failed to select category"))
@@ -758,13 +776,16 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				}
 			}
 		} else {
-			animeListMap = make(map[string]string)
+			animeListOptions = make([]SelectionOption, 0)
 			for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
 				title := entry.Media.Title.English
 				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
 					title = entry.Media.Title.Romaji
 				}
-				animeListMap[strconv.Itoa(entry.Media.ID)] = title
+				animeListOptions = append(animeListOptions, SelectionOption{
+					Key:   strconv.Itoa(entry.Media.ID),
+					Label: title,
+				})
 			}
 		}
 	}
@@ -796,10 +817,13 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 			anilistSelectedOption, err = DynamicSelectPreview(animeListMapPreview, true)
 		} else {
-			// Add "Add new anime" option to the map
-			animeListMap["add_new"] = "Add new anime"
+			// Add "Add new anime" option to the slice
+			animeListOptions = append(animeListOptions, SelectionOption{
+				Key:   "add_new",
+				Label: "Add new anime",
+			})
 
-			anilistSelectedOption, err = DynamicSelect(animeListMap)
+			anilistSelectedOption, err = DynamicSelect(animeListOptions)
 		}
 		if err != nil {
 			Log(fmt.Sprintf("Error selecting anime: %v", err))
@@ -836,7 +860,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	anime.Title = selectedAnilistAnime.Media.Title
 	anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
 	anime.Ep.Number = selectedAnilistAnime.Progress + 1
-	var animeList map[string]string
+	var animeList []SelectionOption
 	userQuery = anime.Title.Romaji
 
 	// if anime not found in database, find it in animeList
@@ -900,9 +924,9 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 	if !isInWatchingList {
 		// Create options for the prompt
-		options := map[string]string{
-			"yes": "Add to watching list",
-			"no":  "Continue without adding",
+		options := []SelectionOption{
+			{Key: "yes", Label: "Add to watching list"},
+			{Key: "no", Label: "Continue without adding"},
 		}
 
 		var selectedOption SelectionOption
@@ -970,10 +994,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		if err != nil {
 			CurdOut(fmt.Sprintf("Failed to retrieve anime list: %v", err))
 		} else {
-			for allanimeId, label := range animeList {
-				if allanimeId == anime.AllanimeId {
+			for _, option := range animeList {
+				if option.Key == anime.AllanimeId {
 					// Extract total episodes from the label
-					if matches := regexp.MustCompile(`\((\d+) episodes\)`).FindStringSubmatch(label); len(matches) > 1 {
+					if matches := regexp.MustCompile(`\((\d+) episodes\)`).FindStringSubmatch(option.Label); len(matches) > 1 {
 						anime.TotalEpisodes, _ = strconv.Atoi(matches[1])
 						CurdOut(fmt.Sprintf("Retrieved total episodes: %d", anime.TotalEpisodes))
 						break
@@ -1211,6 +1235,7 @@ func getEntriesByCategory(list AnimeList, category string) []Entry {
 		allEntries = append(allEntries, list.Paused...)
 		allEntries = append(allEntries, list.Dropped...)
 		allEntries = append(allEntries, list.Planning...)
+		allEntries = append(allEntries, list.Rewatching...)
 		return allEntries
 	case "CURRENT":
 		return list.Watching
@@ -1222,6 +1247,8 @@ func getEntriesByCategory(list AnimeList, category string) []Entry {
 		return list.Dropped
 	case "PLANNING":
 		return list.Planning
+	case "REWATCHING": // Added for completeness, though "ALL" covers it.
+		return list.Rewatching
 	default:
 		return []Entry{}
 	}
@@ -1238,8 +1265,8 @@ func NextEpisodePrompt(userCurdConfig *CurdConfig) {
 	CurdOut(fmt.Sprintf("Start next episode (%d)?", episodeNum))
 
 	// Create options for the selection
-	options := map[string]string{
-		"yes": "Yes, start next episode",
+	options := []SelectionOption{
+		{Key: "yes", Label: "Yes, start next episode"},
 		// "no":  "No, quit",
 	}
 
@@ -1379,7 +1406,7 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 		CurdOut(fmt.Sprintf("Last episode (%d). Are you sure you want to watch it?", anime.Ep.Number))
 
 		// Simple yes/no selection for the last episode
-		selectedOption, err := DynamicSelect(map[string]string{"yes": "Yes"})
+		selectedOption, err := DynamicSelect([]SelectionOption{{Key: "yes", Label: "Yes"}})
 		if err != nil {
 			ExitCurd(err)
 		}

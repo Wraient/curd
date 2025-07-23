@@ -17,22 +17,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// SelectionOption holds the label and the internal key
-type SelectionOption struct {
-	Label string
-	Key   string
-}
-
 // Model represents the application state for the selection prompt
 type Model struct {
-	options        map[string]string
 	filter         string
 	filteredKeys   []SelectionOption
+	allOptions     []SelectionOption
 	selected       int
 	terminalWidth  int
 	terminalHeight int
-	scrollOffset   int  // Track the topmost visible item
-	addNewOption   bool // Add this field
+	scrollOffset   int
+	addNewOption   bool
 }
 
 var (
@@ -181,40 +175,36 @@ func (m Model) visibleItemsCount() int {
 
 // filterOptions filters and sorts options based on the search term
 func (m *Model) filterOptions() {
-	m.filteredKeys = []SelectionOption{}
-
-	for key, value := range m.options {
-		// When the key is " ", compare and display using the value instead
-		if key == " " {
-			if strings.Contains(strings.ToLower(value), strings.ToLower(m.filter)) {
-				m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: value, Key: key})
-			}
-		} else if strings.Contains(strings.ToLower(value), strings.ToLower(m.filter)) {
-			m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: value, Key: key})
+	m.filteredKeys = nil
+	for _, opt := range m.allOptions {
+		if strings.Contains(strings.ToLower(opt.Label), strings.ToLower(m.filter)) {
+			m.filteredKeys = append(m.filteredKeys, opt)
 		}
 	}
 
-	// Sort the filtered options alphabetically
-	sort.Slice(m.filteredKeys, func(i, j int) bool {
-		return m.filteredKeys[i].Label < m.filteredKeys[j].Label
-	})
+	// Sort the filtered options alphabetically unless this is a menu selection
+	isMenu := false
+	for _, opt := range m.allOptions {
+		if opt.Key == "ALL" || opt.Key == "CURRENT" {
+			isMenu = true
+			break
+		}
+	}
 
-	// Add "Add new anime" option if enabled
-	if m.addNewOption {
-		m.filteredKeys = append(m.filteredKeys, SelectionOption{
-			Label: "Add new anime",
-			Key:   "add_new",
+	if !isMenu {
+		sort.Slice(m.filteredKeys, func(i, j int) bool {
+			return m.filteredKeys[i].Label < m.filteredKeys[j].Label
 		})
 	}
 
-	m.filteredKeys = append(m.filteredKeys, SelectionOption{
-		Label: "Quit",
-		Key:   "-1",
-	})
+	// Add "Add new anime" option if enabled
+	if m.addNewOption {
+		m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Add new anime", Key: "add_new"})
+	}
+	m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Quit", Key: "-1"})
 }
 
 func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption bool) (SelectionOption, error) {
-	// Pre-download first 14 images in background
 	go preDownloadImages(options, 14)
 
 	userCurdConfig := GetGlobalConfig()
@@ -222,62 +212,46 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
 	}
 
-	// Prepare Rofi input with anime titles and their cached image paths
 	var rofiInput strings.Builder
-	for _, option := range options {
-		// Download and get cache path for the image
-		cachePath, err := downloadToCache(option.CoverImage)
+	selectionOptions := make([]SelectionOption, 0, len(options))
+
+	// Prepare options and rofi input
+	for id, opt := range options {
+		cachePath, err := downloadToCache(opt.CoverImage)
 		if err != nil {
 			Log(fmt.Sprintf("Error caching image: %v", err))
 			continue
 		}
-
-		// Format: "Title\x00icon\x1f/path/to/cached/image\n"
-		// This tells Rofi to use the image as an icon for this entry
-		rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", option.Title, cachePath))
+		rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", opt.Title, cachePath))
+		selectionOptions = append(selectionOptions, SelectionOption{
+			Label: opt.Title,
+			Key:   id,
+		})
 	}
 
-	// Add "Add new anime" and "Quit" options
 	if addnewoption {
 		rofiInput.WriteString("Add new anime\n")
 	}
 	rofiInput.WriteString("Quit\n")
 
-	// Get the absolute path to the rasi config
+	// Run rofi
 	configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanimepreview.rasi")
-
-	// Create the command with explicit arguments
-	args := []string{
-		"-dmenu",
-		"-theme", configPath,
-		"-show-icons",
-		"-p", "Select Anime",
-		"-i",         // Case-insensitive matching
-		"-no-custom", // Disable custom input
-	}
-
-	// Create the command
-	rofiCmd := exec.Command("rofi", args...)
-
-	// Set up pipes for input/output
-	rofiCmd.Stdin = strings.NewReader(rofiInput.String())
+	cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-show-icons", "-p", "Select Anime", "-i", "-no-custom")
+	cmd.Stdin = strings.NewReader(rofiInput.String())
 	var stdout, stderr bytes.Buffer
-	rofiCmd.Stdout = &stdout
-	rofiCmd.Stderr = &stderr
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	// Run the command
-	err := rofiCmd.Run()
-	if err != nil {
-		// Log both stdout and stderr for debugging
+	if err := cmd.Run(); err != nil {
 		Log(fmt.Sprintf("Rofi stderr: %s", stderr.String()))
 		Log(fmt.Sprintf("Rofi stdout: %s", stdout.String()))
 		return SelectionOption{}, fmt.Errorf("failed to execute rofi: %w", err)
 	}
 
-	selectedTitle := strings.TrimSpace(stdout.String())
+	selected := strings.TrimSpace(stdout.String())
 
 	// Handle special cases
-	switch selectedTitle {
+	switch selected {
 	case "":
 		return SelectionOption{}, fmt.Errorf("no selection made")
 	case "Add new anime":
@@ -286,13 +260,10 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 		return SelectionOption{Label: "Quit", Key: "-1"}, nil
 	}
 
-	// Find the selected anime in options
-	for id, option := range options {
-		if option.Title == selectedTitle {
-			return SelectionOption{
-				Label: option.Title,
-				Key:   id,
-			}, nil
+	// Find matching option
+	for _, opt := range selectionOptions {
+		if opt.Label == selected {
+			return opt, nil
 		}
 	}
 
@@ -363,116 +334,95 @@ func showCachedImagePreview(imageURL string) error {
 	return nil
 }
 
-func RofiSelect(options map[string]string) (SelectionOption, error) {
+func RofiSelect(options []SelectionOption) (SelectionOption, error) {
 	userCurdConfig := GetGlobalConfig()
 	if userCurdConfig.StoragePath == "" {
 		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
 	}
 
-	// Create a slice to store the options in the order we want
+	// Create ordered list of options
 	var optionsList []string
-	for _, value := range options {
-		optionsList = append(optionsList, value)
+	for _, opt := range options {
+		optionsList = append(optionsList, opt.Label)
 	}
 
-	// Sort the options alphabetically
-	sort.Strings(optionsList)
-
-	// Add "Quit" options
+	// Add "Quit" option at the end
 	optionsList = append(optionsList, "Quit")
-
-	// Join all options into a single string, separated by newlines
 	optionsString := strings.Join(optionsList, "\n")
 
-	// Prepare the Rofi command
-	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanime.rasi"), "-i", "-p", "Select an anime")
-
-	// Set up pipes for input and output
+	// Prepare and run rofi
+	configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanime.rasi")
+	cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-i", "-p", "Select")
 	cmd.Stdin = strings.NewReader(optionsString)
-	var out bytes.Buffer
-	cmd.Stdout = &out
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	// Run the command
 	err := cmd.Run()
 	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
+			return SelectionOption{Key: "-1", Label: ""}, nil
+		}
 		return SelectionOption{}, fmt.Errorf("failed to run Rofi: %v", err)
 	}
 
-	// Get the selected option
-	selected := strings.TrimSpace(out.String())
+	selected := strings.TrimSpace(stdout.String())
 
 	// Handle special cases
 	switch selected {
 	case "":
-		return SelectionOption{}, fmt.Errorf("no selection made")
+		return SelectionOption{Key: "-1", Label: ""}, nil
 	case "Quit":
 		return SelectionOption{Label: "Quit", Key: "-1"}, nil
 	}
 
-	// Find the key for the selected value
-	for key, value := range options {
-		if value == selected {
-			return SelectionOption{Label: value, Key: key}, nil
+	// Find the matching SelectionOption
+	for _, opt := range options {
+		if opt.Label == selected {
+			return opt, nil
 		}
 	}
 
-	// If we get here, the selected option wasn't found in the original map
 	return SelectionOption{}, fmt.Errorf("selected option not found in original list")
 }
 
 // DynamicSelect displays a simple selection prompt without extra features
-func DynamicSelect(options map[string]string) (SelectionOption, error) {
+func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
 	if GetGlobalConfig().RofiSelection {
 		return RofiSelect(options)
 	}
 
-	// Create a slice to maintain order
-	var orderedOptions []SelectionOption
-
-	// If this is a category selection (contains menu items), use the ordered keys
-	if _, hasMenu := options["ALL"]; hasMenu {
-		// Get the menu order from config
-		menuOrder := strings.Split(GetGlobalConfig().MenuOrder, ",")
-
-		// Add options in the specified order
-		for _, key := range menuOrder {
-			if value, exists := options[key]; exists {
-				orderedOptions = append(orderedOptions, SelectionOption{
-					Key:   key,
-					Label: value,
-				})
+	// Sort options if this contains menu categories
+	for _, opt := range options {
+		if opt.Key == "ALL" || opt.Key == "CURRENT" {
+			menuOrder := strings.Split(GetGlobalConfig().MenuOrder, ",")
+			optMap := make(map[string]SelectionOption)
+			for _, opt := range options {
+				optMap[opt.Key] = opt
 			}
-		}
-	} else {
-		// For other selections, maintain alphabetical order
-		for key, value := range options {
-			orderedOptions = append(orderedOptions, SelectionOption{
-				Key:   key,
-				Label: value,
-			})
+
+			sorted := make([]SelectionOption, 0, len(options))
+			for _, key := range menuOrder {
+				if opt, exists := optMap[key]; exists {
+					sorted = append(sorted, opt)
+				}
+			}
+			options = sorted
+			break
 		}
 	}
 
 	model := &Model{
-		options:      options,
-		filteredKeys: orderedOptions,
+		allOptions: options,
 	}
+	model.filterOptions() // Initialize filtered options
 
-	model.filteredKeys = append(model.filteredKeys, SelectionOption{
-		Label: "Quit",
-		Key:   "-1",
-	})
-
-	// Create a program with altScreen option turned off to maintain the terminal state
-	// This prevents the terminal from switching to an alternate screen
 	p := tea.NewProgram(model)
-
 	finalModel, err := p.Run()
 	if err != nil {
 		return SelectionOption{}, err
 	}
 
-	// Explicitly reset the terminal state
 	fmt.Print("\033[?25h") // Show cursor
 	fmt.Print("\033[?7h")  // Enable line wrapping
 
