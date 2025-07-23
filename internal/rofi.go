@@ -3,8 +3,8 @@ package internal
 import (
 	"bytes"
 	"fmt"
-	"os/exec"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -43,19 +43,19 @@ func GetUserInputFromRofi(message string) (string, error) {
 	}
 	// Create the Rofi command
 	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "userinput.rasi"), "-p", "Input", "-mesg", message)
-	
+
 	// Set up pipes for output
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	
+
 	// Run the command
 	err := cmd.Run()
 	if err != nil {
 		return "", fmt.Errorf("failed to run Rofi: %w", err)
 	}
-	
+
 	// Get the entered input
 	userInput := strings.TrimSpace(out.String())
-	
+
 	return userInput, nil
 }

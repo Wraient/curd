@@ -158,7 +158,6 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 		return nil, err
 	}
 
-
 	// Pre-count valid URLs and create slice to preserve order
 	validURLs := make([]string, 0)
 	highestPriority := -1

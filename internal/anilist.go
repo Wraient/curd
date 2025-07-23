@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -87,13 +88,61 @@ func GetAnimeMapPreview(animeList AnimeList) map[string]RofiSelectPreview {
 	return animeMap
 }
 
+// fuzzy matching w/ Levenshtein distance
+func levenshtein(a, b string) int {
+	a = strings.ToLower(a)
+	b = strings.ToLower(b)
+	ar, br := []rune(a), []rune(b)
+	alen, blen := len(ar), len(br)
+	if alen == 0 {
+		return blen
+	}
+	if blen == 0 {
+		return alen
+	}
+	matrix := make([][]int, alen+1)
+	for i := range matrix {
+		matrix[i] = make([]int, blen+1)
+	}
+	for i := 0; i <= alen; i++ {
+		matrix[i][0] = i
+	}
+	for j := 0; j <= blen; j++ {
+		matrix[0][j] = j
+	}
+	for i := 1; i <= alen; i++ {
+		for j := 1; j <= blen; j++ {
+			cost := 0
+			if ar[i-1] != br[j-1] {
+				cost = 1
+			}
+			matrix[i][j] = min3(
+				matrix[i-1][j]+1,
+				matrix[i][j-1]+1,
+				matrix[i-1][j-1]+cost,
+			)
+		}
+	}
+	return matrix[alen][blen]
+}
+
+func min3(a, b, c int) int {
+	if a < b && a < c {
+		return a
+	}
+	if b < c {
+		return b
+	}
+	return c
+}
+
 // SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
 func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPreview, error) {
 	url := "https://graphql.anilist.co"
 
 	queryString := `
 	query ($search: String) {
-		Page(page: 1, perPage: 10) {
+		Page(page: 1, perPage: 50) {
 			media(search: $search, type: ANIME) {
 				id
 				title {
@@ -151,29 +200,45 @@ func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPrevie
 	animeList := responseData["data"].Page.Media
 	animeDict := make(map[string]RofiSelectPreview)
 
-	// Map titles and cover images to their IDs
+	type scoredAnime struct {
+		id    string
+		title string
+		cover string
+		score int
+	}
+	var scored []scoredAnime
 	for _, anime := range animeList {
 		idStr := strconv.Itoa(anime.ID)
 		title := anime.Title.English
 		if title == "" {
 			title = anime.Title.Romaji
 		}
-		animeDict[idStr] = RofiSelectPreview{
-			Title:      title,
-			CoverImage: anime.CoverImage.Large,
+		cover := anime.CoverImage.Large
+		score := levenshtein(title, query)
+		scored = append(scored, scoredAnime{idStr, title, cover, score})
+	}
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score < scored[j].score
+	})
+	for i, s := range scored {
+		if i >= 10 {
+			break
+		}
+		animeDict[s.id] = RofiSelectPreview{
+			Title:      s.title,
+			CoverImage: s.cover,
 		}
 	}
-
 	return animeDict, nil
 }
 
 // SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
-func SearchAnimeAnilist(query, token string) (map[string]string, error) {
+func SearchAnimeAnilist(query, token string) ([]SelectionOption, error) {
 	url := "https://graphql.anilist.co"
 
 	queryString := `
 	query ($search: String) {
-		Page(page: 1, perPage: 10) {
+		Page(page: 1, perPage: 50) {
 			media(search: $search, type: ANIME) {
 				id
 				title {
@@ -226,19 +291,36 @@ func SearchAnimeAnilist(query, token string) (map[string]string, error) {
 	}
 
 	animeList := responseData["data"].Page.Media
-	animeDict := make(map[string]string)
+	var results []SelectionOption
 
-	// Map titles to their IDs as strings
-	for _, anime := range animeList {
-		idStr := strconv.Itoa(anime.ID) // Convert ID to string
-		if anime.Title.English != "" {
-			animeDict[idStr] = anime.Title.English
-		} else {
-			animeDict[idStr] = anime.Title.Romaji
-		}
+	type scoredAnime struct {
+		id    string
+		title string
+		score int
 	}
-
-	return animeDict, nil
+	var scored []scoredAnime
+	for _, anime := range animeList {
+		idStr := strconv.Itoa(anime.ID)
+		title := anime.Title.English
+		if title == "" {
+			title = anime.Title.Romaji
+		}
+		score := levenshtein(title, query)
+		scored = append(scored, scoredAnime{idStr, title, score})
+	}
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score < scored[j].score
+	})
+	for i, s := range scored {
+		if i >= 10 {
+			break
+		}
+		results = append(results, SelectionOption{
+			Key:   s.id,
+			Label: s.title,
+		})
+	}
+	return results, nil
 }
 
 // Function to get AniList user ID and username

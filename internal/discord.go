@@ -17,14 +17,14 @@ func DiscordPresence(anime Anime, IsPaused bool) error {
 
 	var state string
 	if IsPaused {
-		state = fmt.Sprintf("\nEpisode %d - %s (Paused)", 
-			anime.Ep.Number, 
+		state = fmt.Sprintf("\nEpisode %d - %s (Paused)",
+			anime.Ep.Number,
 			FormatTime(anime.Ep.Player.PlaybackTime),
 		)
 	} else {
-		state = fmt.Sprintf("\nEpisode %d - %s / %s", 
-			anime.Ep.Number, 
-			FormatTime(anime.Ep.Player.PlaybackTime), 
+		state = fmt.Sprintf("\nEpisode %d - %s / %s",
+			anime.Ep.Number,
+			FormatTime(anime.Ep.Player.PlaybackTime),
 			FormatTime(anime.Ep.Duration),
 		)
 	}

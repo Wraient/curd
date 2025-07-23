@@ -258,7 +258,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 	if userCurdConfig.RofiSelection {
 		userInput, err := GetUserInputFromRofi("Enter the anime name")
 		if err != nil {
-			Log("Error getting user input: "+err.Error())
+			Log("Error getting user input: " + err.Error())
 			ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 		}
 		query = userInput
@@ -297,7 +297,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 	if userCurdConfig.RofiSelection {
 		userInput, err := GetUserInputFromRofi("Enter the episode number")
 		if err != nil {
-			Log("Error getting episode number: "+err.Error())
+			Log("Error getting episode number: " + err.Error())
 			ExitCurd(fmt.Errorf("Error getting episode number: " + err.Error()))
 		}
 		episodeNumber, err = strconv.Atoi(userInput)
@@ -346,7 +346,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 						// Get video duration
 						durationPos, err := MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "duration"})
 						if err != nil {
-							Log("Error getting video duration: "+err.Error())
+							Log("Error getting video duration: " + err.Error())
 						} else if durationPos != nil {
 							if duration, ok := durationPos.(float64); ok {
 								anime.Ep.Duration = int(duration + 0.5) // Round to nearest integer
@@ -366,7 +366,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 		for {
 			timePos, err := MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
 			if err != nil {
-				Log("Error getting playback time: "+err.Error())
+				Log("Error getting playback time: " + err.Error())
 
 				// Check if the error is due to invalid JSON
 				// User closed the video

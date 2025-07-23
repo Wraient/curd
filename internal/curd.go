@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
+	"bufio"
 	"github.com/gen2brain/beeep"
 )
 
@@ -594,6 +594,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	var query string
 	var animeOptions []SelectionOption
 	var animeMapPreview map[string]RofiSelectPreview
+	var animeOptions []SelectionOption
 	var err error
 	var anilistSelectedOption SelectionOption
 
@@ -606,7 +607,9 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 		query = userInput
 	} else {
 		CurdOut("Enter the anime name:")
-		fmt.Scanln(&query)
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		query = strings.TrimSpace(input)
 	}
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		animeMapPreview, err = SearchAnimeAnilistPreview(query, user.Token)

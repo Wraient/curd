@@ -12,9 +12,9 @@ import (
 )
 
 type anime struct {
-	ID               string      `json:"_id"`
-	Name             string      `json:"name"`
-	EnglishName      string      `json:"englishName"`
+	ID                string      `json:"_id"`
+	Name              string      `json:"name"`
+	EnglishName       string      `json:"englishName"`
 	AvailableEpisodes interface{} `json:"availableEpisodes"`
 }
 
@@ -49,10 +49,10 @@ func SearchAnime(query, mode string) ([]SelectionOption, error) {
 		logFile = filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "debug.log")
 	}
 	const (
-		agent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
-		allanimeRef   = "https://allanime.to"
-		allanimeBase  = "allanime.day"
-		allanimeAPI   = "https://api." + allanimeBase + "/api"
+		agent        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
+		allanimeRef  = "https://allanime.to"
+		allanimeBase = "allanime.day"
+		allanimeAPI  = "https://api." + allanimeBase + "/api"
 	)
 
 	// Prepare the anime list
@@ -73,12 +73,12 @@ func SearchAnime(query, mode string) ([]SelectionOption, error) {
 	// Prepare the GraphQL variables
 	variables := map[string]interface{}{
 		"search": map[string]interface{}{
-			"allowAdult":    false,
-			"allowUnknown":  false,
-			"query":         query,
+			"allowAdult":   false,
+			"allowUnknown": false,
+			"query":        query,
 		},
-		"limit":          40,
-		"page":           1,
+		"limit":           40,
+		"page":            1,
 		"translationType": mode,
 		"countryOrigin":   "ALL",
 	}
