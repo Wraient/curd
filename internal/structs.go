@@ -106,14 +106,27 @@ type Entry struct {
 }
 
 type AnimeList struct {
-	Watching  []Entry `json:"watching"`
-	Completed []Entry `json:"completed"`
-	Paused    []Entry `json:"paused"`
-	Dropped   []Entry `json:"dropped"`
-	Planning  []Entry `json:"planning"`
+	Watching   []Entry `json:"watching"`
+	Completed  []Entry `json:"completed"`
+	Paused     []Entry `json:"paused"`
+	Dropped    []Entry `json:"dropped"`
+	Planning   []Entry `json:"planning"`
+	Rewatching []Entry `json:"rewatching"`
 }
 
 type RofiSelectPreview struct {
 	Title      string `json:"title"`
 	CoverImage string `json:"coverImage"`
+}
+
+type SelectionOptionImage struct {
+	Key        string
+	Label      string
+	CoverImage string
+}
+
+// SelectionOption holds the label and the internal key
+type SelectionOption struct {
+	Label string
+	Key   string
 }

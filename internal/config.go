@@ -110,7 +110,7 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 	}
 
 	// Load the config from file
-	configMap, err := loadConfigFromFile(configPath)
+	configMap, err := LoadConfigFromFile(configPath)
 	if err != nil {
 		return CurdConfig{}, fmt.Errorf("error loading config file: %v", err)
 	}
@@ -133,7 +133,7 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 
 	// Write updated config back to file only if AddMissingOptions is true
 	if addMissing && updated {
-		if err := saveConfigToFile(configPath, configMap); err != nil {
+		if err := SaveConfigToFile(configPath, configMap); err != nil {
 			return CurdConfig{}, fmt.Errorf("error saving updated config file: %v", err)
 		}
 	}
@@ -144,7 +144,7 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 	}
 
 	// Populate the CurdConfig struct from the config map
-	config := populateConfig(configMap)
+	config := PopulateConfig(configMap)
 
 	return config, nil
 }
@@ -249,8 +249,8 @@ func ChangeToken(config *CurdConfig, user *User) {
 	WriteTokenToFile(user.Token, tokenPath)
 }
 
-// Load config file from disk into a map (key=value format)
-func loadConfigFromFile(path string) (map[string]string, error) {
+// LoadConfigFromFile loads config file from disk into a map (key=value format)
+func LoadConfigFromFile(path string) (map[string]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -281,8 +281,8 @@ func loadConfigFromFile(path string) (map[string]string, error) {
 	return configMap, nil
 }
 
-// Save updated config map to file in key=value format
-func saveConfigToFile(path string, configMap map[string]string) error {
+// SaveConfigToFile saves updated config map to file in key=value format
+func SaveConfigToFile(path string, configMap map[string]string) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -299,8 +299,8 @@ func saveConfigToFile(path string, configMap map[string]string) error {
 	return writer.Flush()
 }
 
-// Populate the CurdConfig struct from a map
-func populateConfig(configMap map[string]string) CurdConfig {
+// PopulateConfig populates the CurdConfig struct from a map
+func PopulateConfig(configMap map[string]string) CurdConfig {
 	config := CurdConfig{}
 	configValue := reflect.ValueOf(&config).Elem()
 
@@ -334,7 +334,7 @@ func populateConfig(configMap map[string]string) CurdConfig {
 	return config
 }
 
-func getOrderedCategories(userCurdConfig *CurdConfig) map[string]string {
+func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
 	// Define the default categories and their labels
 	defaultOrder := []string{"CURRENT", "ALL", "UNTRACKED", "UPDATE", "CONTINUE_LAST"}
 	defaultLabels := map[string]string{
@@ -345,7 +345,7 @@ func getOrderedCategories(userCurdConfig *CurdConfig) map[string]string {
 		"CONTINUE_LAST": "Continue Last Session",
 	}
 
-	// Create ordered map to store final result
+	// Create ordered list to store final result
 	finalOrder := make([]string, 0)
 	seen := make(map[string]bool)
 
@@ -372,11 +372,14 @@ func getOrderedCategories(userCurdConfig *CurdConfig) map[string]string {
 		}
 	}
 
-	// Create the final ordered map
-	orderedMap := make(map[string]string)
+	// Create the final ordered slice of SelectionOptions
+	orderedCategories := make([]SelectionOption, 0, len(finalOrder))
 	for _, key := range finalOrder {
-		orderedMap[key] = defaultLabels[key]
+		orderedCategories = append(orderedCategories, SelectionOption{
+			Key:   key,
+			Label: defaultLabels[key],
+		})
 	}
 
-	return orderedMap
+	return orderedCategories
 }

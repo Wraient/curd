@@ -41,7 +41,7 @@ type response struct {
 // 	fmt.Println(animeList)
 // }
 
-func SearchAnime(query, mode string) (map[string]string, error) {
+func SearchAnime(query, mode string) ([]SelectionOption, error) {
 	userCurdConfig := GetGlobalConfig()
 	if userCurdConfig == nil {
 		logFile = os.ExpandEnv("$HOME/.local/share/curd/debug.log")
@@ -56,7 +56,7 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 	)
 
 	// Prepare the anime list
-	animeList := make(map[string]string)
+	animeList := make([]SelectionOption, 0)
 
 	searchGql := `query($search: SearchInput, $limit: Int, $page: Int, $translationType: VaildTranslationTypeEnumType, $countryOrigin: VaildCountryOriginEnumType) {
 		shows(search: $search, limit: $limit, page: $page, translationType: $translationType, countryOrigin: $countryOrigin) {
@@ -146,7 +146,10 @@ func SearchAnime(query, mode string) (map[string]string, error) {
 			displayName = anime.EnglishName
 		}
 
-		animeList[anime.ID] = fmt.Sprintf("%s (%s episodes)", displayName, episodesStr)
+		animeList = append(animeList, SelectionOption{
+			Key:   anime.ID,
+			Label: fmt.Sprintf("%s (%s episodes)", displayName, episodesStr),
+		})
 	}
 	return animeList, nil
 }
