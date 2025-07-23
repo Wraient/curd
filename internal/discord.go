@@ -37,11 +37,11 @@ func DiscordPresence(anime Anime, IsPaused bool) error {
 		//SmallImage: anime.SmallCoverImage, // Image for the bottom left corner
 		//SmallText:  fmt.Sprintf("Episode: %s", anime.Ep.Title.English), // Text when hovering over the small image
 		Buttons: []*client.Button{
-			&client.Button{
+			{
 				Label: "View on AniList", // Button label
 				Url:   fmt.Sprintf("https://anilist.co/anime/%d", anime.AnilistId), // Button link
 			},
-			&client.Button{
+			{
 				Label: "View on MAL", // Button label
 				Url:   fmt.Sprintf("https://myanimelist.net/anime/%d", anime.MalId), // Button link
 			},
