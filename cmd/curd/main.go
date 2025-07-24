@@ -329,9 +329,14 @@ func main() {
 					}
 
 					anime.Ep.IsCompleted = true
-					if !userCurdConfig.NextEpisodePrompt || userCurdConfig.RofiSelection {
+					if !userCurdConfig.NextEpisodePrompt {
 						// fmt.Println("[DEBUG] Starting next episode from filler/recap skip")
-						internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile)
+						internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
+					} else {
+						// When NextEpisodePrompt is enabled, just call StartNextEpisode - it handles Rofi prompting internally
+						internal.ExitMPV(anime.Ep.Player.SocketPath)
+						internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
+						return
 					}
 					// Send command to close MPV
 					_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
@@ -414,27 +419,20 @@ func main() {
 			}
 		}()
 
-		// Thread to prompt for next episode in CLI Mode
+		// Thread for continuous next episode prompt in CLI mode (throughout episode duration)
 		go func() {
-			if !userCurdConfig.RofiSelection && userCurdConfig.NextEpisodePrompt {
-				for {
-					select {
-					case <-skipLoopDone:
-						return
-					default:
-						internal.NextEpisodePrompt(&userCurdConfig)
-						// Exit the skip loop - only close if not already closed
-						select {
-						case isClosed := <-skipLoopClosed:
-							if !isClosed {
-								close(skipLoopDone)
-								skipLoopClosed <- true // Mark as closed
-							}
-						default:
-							// Channel is busy, another goroutine is handling closure
-						}
-						return
+			if userCurdConfig.NextEpisodePrompt && !userCurdConfig.RofiSelection {
+				internal.NextEpisodePromptContinuous(&userCurdConfig, databaseFile, user.Token)
+				// If the function returns, it means user made a decision
+				// Exit the skip loop - only close if not already closed
+				select {
+				case isClosed := <-skipLoopClosed:
+					if !isClosed {
+						close(skipLoopDone)
+						skipLoopClosed <- true // Mark as closed
 					}
+				default:
+					// Channel is busy, another goroutine is handling closure
 				}
 			}
 		}()
@@ -456,6 +454,11 @@ func main() {
 					if err != nil {
 						internal.Log("Error getting playback time: " + err.Error())
 
+						// For CLI mode with next episode prompt, let the continuous prompt handle everything
+						if userCurdConfig.NextEpisodePrompt && !userCurdConfig.RofiSelection {
+							continue
+						}
+
 						// Check if the error is due to invalid JSON
 						// User closed the video
 						if anime.Ep.Started {
@@ -469,20 +472,50 @@ func main() {
 							if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 								anime.Ep.IsCompleted = true
 								if !userCurdConfig.NextEpisodePrompt {
-									internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile)
+									internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
 								} else {
-									// When NextEpisodePrompt is enabled, show the prompt in both modes
+									// For Rofi mode, show prompt immediately after completion
 									if userCurdConfig.RofiSelection {
-										// For Rofi mode
-										internal.CurdOut("Showing next episode prompt in Rofi mode (playback ended)")
-										internal.ExitMPV(anime.Ep.Player.SocketPath)
-										internal.NextEpisodePrompt(&userCurdConfig)
-										return
+										shouldContinue := internal.NextEpisodePromptRofi(&userCurdConfig)
+										if shouldContinue {
+											internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
+										} else {
+											// Episode was already marked as completed above
+											// Update local database with completed episode
+											err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
+											if err != nil {
+												internal.Log("Error updating local database on quit: " + err.Error())
+											}
+											
+											// Update Anilist progress if not rewatching
+											if !anime.Rewatching {
+												go func() {
+													err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+													if err != nil {
+														internal.Log("Error updating Anilist progress on quit: " + err.Error())
+													} else {
+														internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
+													}
+												}()
+											}
+											
+											internal.ExitCurd(nil)
+										}
 									} else {
-										// For CLI mode
-										internal.NextEpisodePrompt(&userCurdConfig)
-										return
+										// For CLI mode, let the continuous prompt handle it
+										internal.Log("Episode completed, exiting monitoring to let CLI prompt handle next episode")
 									}
+									// Exit the skip loop - only close if not already closed
+									select {
+									case isClosed := <-skipLoopClosed:
+										if !isClosed {
+											close(skipLoopDone)
+											skipLoopClosed <- true // Mark as closed
+										}
+									default:
+										// Channel is busy, another goroutine is handling closure
+									}
+									return
 								}
 							} else {
 								internal.Log("Episode is not completed, exiting")
@@ -555,6 +588,11 @@ func main() {
 						if err != nil {
 							internal.Log("Error checking playback status: " + err.Error())
 						} else if !hasPlayback {
+							// For CLI mode with next episode prompt, let the continuous prompt handle everything
+							if userCurdConfig.NextEpisodePrompt && !userCurdConfig.RofiSelection {
+								continue
+							}
+							
 							// Nothing is playing, check percentage watched
 							percentageWatched := internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
 							// fmt.Printf("[DEBUG] Playback stopped - Percentage watched: %d%%, Required: %d%%\n",
@@ -564,20 +602,50 @@ func main() {
 							if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 								anime.Ep.IsCompleted = true
 								if !userCurdConfig.NextEpisodePrompt {
-									internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile)
+									internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
 								} else {
-									// When NextEpisodePrompt is enabled, show the prompt in both modes
+									// For Rofi mode, show prompt immediately after completion
 									if userCurdConfig.RofiSelection {
-										// For Rofi mode
-										internal.CurdOut("Showing next episode prompt in Rofi mode (playback ended)")
-										internal.ExitMPV(anime.Ep.Player.SocketPath)
-										internal.NextEpisodePrompt(&userCurdConfig)
-										return
+										shouldContinue := internal.NextEpisodePromptRofi(&userCurdConfig)
+										if shouldContinue {
+											internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
+										} else {
+											// Episode was already marked as completed above
+											// Update local database with completed episode
+											err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
+											if err != nil {
+												internal.Log("Error updating local database on quit: " + err.Error())
+											}
+											
+											// Update Anilist progress if not rewatching
+											if !anime.Rewatching {
+												go func() {
+													err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+													if err != nil {
+														internal.Log("Error updating Anilist progress on quit: " + err.Error())
+													} else {
+														internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
+													}
+												}()
+											}
+											
+											internal.ExitCurd(nil)
+										}
 									} else {
-										// For CLI mode
-										internal.NextEpisodePrompt(&userCurdConfig)
-										return
+										// For CLI mode, let the continuous prompt handle it
+										internal.Log("Episode completed, exiting monitoring to let CLI prompt handle next episode")
 									}
+									// Exit the skip loop - only close if not already closed
+									select {
+									case isClosed := <-skipLoopClosed:
+										if !isClosed {
+											close(skipLoopDone)
+											skipLoopClosed <- true // Mark as closed
+										}
+									default:
+										// Channel is busy, another goroutine is handling closure
+									}
+									return
 								}
 							} else {
 								internal.Log("Episode is not completed, exiting")
@@ -697,29 +765,16 @@ func main() {
 		// Handle next episode logic based on config
 		if anime.Ep.IsCompleted {
 			if userCurdConfig.NextEpisodePrompt {
-				// Handle the special case where playback is still active (might happen with Rofi)
-				// This ensures we don't show duplicate prompts if it was already handled in the playback monitor
-				isPlaying, err := internal.HasActivePlayback(anime.Ep.Player.SocketPath)
-				if err != nil {
-					internal.Log(fmt.Sprintf("Error checking playback for prompt: %v", err))
+				if !userCurdConfig.RofiSelection {
+					// For CLI mode, the continuous prompt handles everything
+					internal.CurdOut("CLI mode: continuous prompt handling next episode logic")
 				}
-
-				// Only show the prompt here if playback is still active - otherwise it was already handled
-				if isPlaying {
-					internal.CurdOut("Episode completed, showing next episode prompt from main loop")
-					if userCurdConfig.RofiSelection {
-						internal.NextEpisodePrompt(&userCurdConfig)
-						// Exit after NextEpisodePrompt to avoid starting a new playback loop
-						internal.ExitCurd(nil)
-					}
-					// For CLI mode, the prompt will be shown elsewhere
-				} else {
-					internal.Log("Playback already ended, prompt handled elsewhere")
-				}
+				// For both modes, if we reach here, it means the monitoring thread exited
+				// and the episode should transition. Let the normal flow continue.
 			} else {
-				// When NextEpisodePrompt is off, we continue automatically in both CLI and Rofi modes
-				internal.CurdOut("Auto-continuing to next episode")
-				// Don't need to do anything - the loop will continue naturally
+				// When NextEpisodePrompt is off, continue automatically
+				internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
+				continue
 			}
 		}
 
