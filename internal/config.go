@@ -35,6 +35,7 @@ type CurdConfig struct {
 	AddMissingOptions        bool     `config:"AddMissingOptions"`
 	AlternateScreen          bool     `config:"AlternateScreen"`
 	DiscordPresence          bool     `config:"DiscordPresence"`
+	DiscordClientId          string   `config:"DiscordClientId"`
 }
 
 // Default configuration values as a map
@@ -60,6 +61,7 @@ func defaultConfigMap() map[string]string {
 		"AddMissingOptions":        "true",
 		"AlternateScreen":          "true",
 		"DiscordPresence":          "true",
+		"DiscordClientId":          "1287457464148820089",
 	}
 }
 

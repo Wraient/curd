@@ -16,8 +16,6 @@ import (
 var version string // Will be set by ldflags during build
 
 func main() {
-	discordClientId := "1287457464148820089"
-
 	var anime internal.Anime
 	var user internal.User
 
@@ -63,6 +61,7 @@ func main() {
 	flag.BoolVar(&userCurdConfig.ScoreOnCompletion, "score-on-completion", userCurdConfig.ScoreOnCompletion, "Score on episode completion (true/false)")
 	flag.BoolVar(&userCurdConfig.SaveMpvSpeed, "save-mpv-speed", userCurdConfig.SaveMpvSpeed, "Save MPV speed setting (true/false)")
 	flag.BoolVar(&userCurdConfig.DiscordPresence, "discord-presence", userCurdConfig.DiscordPresence, "Enable Discord presence (true/false)")
+	flag.StringVar(&userCurdConfig.DiscordClientId, "discord-client-id", userCurdConfig.DiscordClientId, "Discord client ID for Rich Presence")
 	continueLast := flag.Bool("c", false, "Continue last episode")
 	addNewAnime := flag.Bool("new", false, "Add new anime")
 	rofiSelection := flag.Bool("rofi", false, "Open selection in rofi")
@@ -237,7 +236,7 @@ func main() {
 		// Get MalId and CoverImage (only if discord presence is enabled)
 		if userCurdConfig.DiscordPresence {
 			discordAvailable := true
-			err := internal.LoginClient(discordClientId)
+			err := internal.LoginClient(userCurdConfig.DiscordClientId)
 			if err != nil {
 				internal.Log("Discord connection failed, disabling presence: " + err.Error())
 				discordAvailable = false
