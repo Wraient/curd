@@ -1088,39 +1088,6 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			anime.Ep.Number = anime.TotalEpisodes
 		}
 	}
-
-	// Check if this is the last episode - prompt user if needed
-	if userCurdConfig.NextEpisodePrompt && anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !userCurdConfig.RofiSelection {
-		// Ensure the terminal state is clean for the prompt
-		fmt.Print("\r\033[K") // Carriage return and clear line
-		episodeNum := anime.Ep.Number
-		if !userCurdConfig.RofiSelection {
-			episodeNum++
-		}
-
-		CurdOut(fmt.Sprintf("Start next episode (%d)?", episodeNum))
-
-		// Create options for the selection
-		options := []SelectionOption{
-			{Key: "yes", Label: "Yes, start next episode"},
-			// "no":  "No, quit",
-		}
-
-		// Use DynamicSelect for both CLI and Rofi modes
-		selectedOption, err := DynamicSelect(options)
-		if err != nil {
-			ExitCurd(err)
-		}
-
-		if selectedOption.Key == "-1" {
-			// User selected to quit
-			fmt.Print("\r\033[K") // Carriage return and clear line
-			ExitMPV(anime.Ep.Player.SocketPath)
-			CurdOut("Exiting without starting next episode")
-			ExitCurd(nil)
-			return
-		}
-	}
 }
 
 // CreateOrWriteTokenFile creates the token file if it doesn't exist and writes the token to it
@@ -1338,189 +1305,196 @@ func getEntriesByCategory(list AnimeList, category string) []Entry {
 	}
 }
 
-func NextEpisodePrompt(userCurdConfig *CurdConfig) {
+func NextEpisodePromptCLI(userCurdConfig *CurdConfig) bool {
 	anime := GetGlobalAnime()
 
-	// Check if we just completed the last episode
-	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes {
-		// Handle scoring and completion for the last episode
-		HandleLastEpisodeCompletion(userCurdConfig, anime)
+	// Show the next episode number that will be started
+	nextEpisodeNum := anime.Ep.Number + 1
+	CurdOut(fmt.Sprintf("Start next episode (%d)?", nextEpisodeNum))
 
-		// Exit after completing the series
-		fmt.Print("\r\033[K") // Carriage return and clear line
-		ExitMPV(anime.Ep.Player.SocketPath)
-		CurdOut("Series completed!")
-		ExitCurd(nil)
-		return
+	// Create options for the selection - no "quit" option since it's built into selection menu
+	options := []SelectionOption{
+		{Key: "yes", Label: fmt.Sprintf("Yes, continue to episode %d", nextEpisodeNum)},
 	}
 
-	// If in CLI mode (not Rofi), we need to show the next episode number
-	episodeNum := anime.Ep.Number
-	if !userCurdConfig.RofiSelection {
-		episodeNum++
+	// Use DynamicSelect for CLI mode
+	selectedOption, err := DynamicSelect(options)
+	if err != nil {
+		Log(fmt.Sprintf("Error in CLI next episode prompt selection: %v", err))
+		return false
 	}
 
-	CurdOut(fmt.Sprintf("Start next episode (%d)?", episodeNum))
+	Log(fmt.Sprintf("CLI User Selected Key: '%s', Label: '%s'", selectedOption.Key, selectedOption.Label))
+
+	if selectedOption.Key == "-1" {
+		// User selected to quit via the built-in quit option
+		CurdOut("Exiting")
+		return false
+	}
+
+	return selectedOption.Key == "yes"
+}
+
+// NextEpisodePromptContinuous provides a continuous next episode prompt for CLI mode
+// This runs throughout the episode duration and handles completion logic
+func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string, userToken string) {
+	anime := GetGlobalAnime()
+	
+	for {
+		// Check if episode has started
+		if !anime.Ep.Started {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// Show the next episode number that will be started
+		nextEpisodeNum := anime.Ep.Number + 1
+		CurdOut(fmt.Sprintf("Continue to next episode (%d) or quit?", nextEpisodeNum))
+
+		// Create options for the selection - no "quit" option since it's built into selection menu
+		options := []SelectionOption{
+			{Key: "yes", Label: "Yes, start next episode now"},
+		}
+
+		// Use DynamicSelect for CLI mode
+		selectedOption, err := DynamicSelect(options)
+		if err != nil {
+			Log(fmt.Sprintf("Error in CLI continuous next episode prompt: %v", err))
+			break
+		}
+
+		Log(fmt.Sprintf("CLI Continuous User Selected Key: '%s', Label: '%s'", selectedOption.Key, selectedOption.Label))
+
+		if selectedOption.Key == "-1" {
+			// User selected to quit via the built-in quit option
+			
+			// Check completion percentage
+			percentageWatched := PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
+			
+			if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
+				// Episode is considered completed, mark it and update progress
+				anime.Ep.IsCompleted = true
+				
+				// Update local database
+				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime))
+				if err != nil {
+					Log("Error updating local database on quit: " + err.Error())
+				}
+
+				// Update Anilist progress if not rewatching
+				if !anime.Rewatching {
+					go func() {
+						err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
+						if err != nil {
+							Log("Error updating Anilist progress on quit: " + err.Error())
+						} else {
+							CurdOut(fmt.Sprintf("Episode marked as completed! Progress updated: %d", anime.Ep.Number))
+						}
+					}()
+				}
+				
+				CurdOut(fmt.Sprintf("Episode completed (%.1f%% watched). Exiting.", percentageWatched))
+			} else {
+				CurdOut(fmt.Sprintf("Episode not completed (%.1f%% watched). Exiting.", percentageWatched))
+			}
+			
+			ExitMPV(anime.Ep.Player.SocketPath)
+			ExitCurd(nil)
+			return
+		}
+
+		if selectedOption.Key == "yes" {
+			// User wants to start next episode immediately
+			anime.Ep.IsCompleted = true
+			
+			// Update database with completed episode first
+			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime))
+			if err != nil {
+				Log("Error updating local database with completed episode: " + err.Error())
+			}
+			
+			// Update Anilist progress for the completed episode if not rewatching
+			if !anime.Rewatching {
+				go func() {
+					err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
+					if err != nil {
+						Log("Error updating Anilist progress: " + err.Error())
+					} else {
+						CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
+					}
+				}()
+			}
+			
+			// Increment to next episode and update database with next episode number and 0 playback time
+			anime.Ep.Number++
+			
+			// Use prefetched links if available for the next episode
+			if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
+				anime.Ep.Links = anime.Ep.NextEpisode.Links
+				Log(fmt.Sprintf("Using prefetched links for episode %d", anime.Ep.Number))
+			} else {
+				// Clear links to force fetching new ones
+				anime.Ep.Links = []string{}
+				Log(fmt.Sprintf("No prefetched links available for episode %d, will fetch new ones", anime.Ep.Number))
+			}
+			
+			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
+			if err != nil {
+				Log("Error updating local database with next episode: " + err.Error())
+			}
+			
+			CurdOut("Starting next episode now...")
+			ExitMPV(anime.Ep.Player.SocketPath)
+			return // Exit this function, let the main loop handle next episode
+		}
+	}
+}
+
+// Simple next episode prompt for Rofi mode - just asks if user wants to continue
+func NextEpisodePromptRofi(userCurdConfig *CurdConfig) bool {
+	anime := GetGlobalAnime()
+
+	// Show the next episode number that will be started
+	nextEpisodeNum := anime.Ep.Number + 1
 
 	// Create options for the selection
 	options := []SelectionOption{
-		{Key: "yes", Label: "Yes, start next episode"},
-		// {Key: "-1", Label:  "No, quit"},
+		{Key: "yes", Label: fmt.Sprintf("Yes, start episode %d", nextEpisodeNum)},
 	}
 
-	// Use DynamicSelect for both CLI and Rofi modes
+	// Use DynamicSelect for Rofi mode
 	selectedOption, err := DynamicSelect(options)
 	if err != nil {
 		Log(fmt.Sprintf("Error in next episode prompt selection: %v", err))
-		ExitCurd(err)
+		return false
 	}
 
-	Log(fmt.Sprintf("User Selected Key: '%s', Label: '%s'", selectedOption.Key, selectedOption.Label))
+	Log(fmt.Sprintf("Rofi User Selected Key: '%s', Label: '%s'", selectedOption.Key, selectedOption.Label))
 
-	if selectedOption.Key == "-1" {
-		// User selected to quit
-		fmt.Print("\r\033[K") // Carriage return and clear line
-		ExitMPV(anime.Ep.Player.SocketPath)
-		CurdOut("Exiting without starting next episode")
-		ExitCurd(nil)
-		return
-	}
-
-	if selectedOption.Key != "yes" {
-		// User selected something other than yes (shouldn't happen, but safety check)
-		Log(fmt.Sprintf("Unexpected selection key: %s", selectedOption.Key))
-		fmt.Print("\r\033[K") // Carriage return and clear line
-		ExitMPV(anime.Ep.Player.SocketPath)
-		CurdOut("Exiting without starting next episode")
-		ExitCurd(nil)
-		return
-	}
-
-	// If yes, start the next episode
-	prevEpisode := anime.Ep.Number
-	anime.Ep.Number++
-	anime.Ep.Started = false
-	anime.Ep.IsCompleted = false // Reset completion flag for the new episode
-
-	// Clear current line to avoid visual glitches
-	fmt.Print("\r\033[K") // Carriage return and clear line
-
-	CurdOut(fmt.Sprint("Starting next episode: ", anime.Ep.Number))
-
-	// Get database file path for StartNextEpisode
-	homeDir := ""
-	if runtime.GOOS == "windows" {
-		homeDir = os.Getenv("USERPROFILE")
-	} else {
-		homeDir = os.Getenv("HOME")
-	}
-	configFilePath := filepath.Join(homeDir, ".config", "curd", "curd.conf")
-	config, err := LoadConfig(configFilePath)
-	if err != nil {
-		Log("Error loading config for database path: " + err.Error())
-		ExitCurd(err)
-	}
-	databaseFile := filepath.Join(os.ExpandEnv(config.StoragePath), "curd_history.txt")
-
-	// Update local database for the new episode
-	err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
-	if err != nil {
-		Log("Error updating local database: " + err.Error())
-	}
-
-	// Update Anilist progress for the previous episode if not rewatching
-	if !anime.Rewatching {
-		user := &User{}
-		user.Token, err = GetTokenFromFile(filepath.Join(os.ExpandEnv(config.StoragePath), "token"))
-		if err != nil {
-			Log("Error reading token for progress update: " + err.Error())
-		} else {
-			go func() {
-				err = UpdateAnimeProgress(user.Token, anime.AnilistId, prevEpisode)
-				if err != nil {
-					Log("Error updating Anilist progress: " + err.Error())
-				} else {
-					CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", prevEpisode))
-				}
-			}()
-		}
-	}
-
-	// Close current MPV instance
-	ExitMPV(anime.Ep.Player.SocketPath)
-
-	// Check if we have prefetched links for the next episode
-	if anime.Ep.NextEpisode.Number == anime.Ep.Number && len(anime.Ep.NextEpisode.Links) > 0 {
-		Log("Using prefetched next episode link")
-		anime.Ep.Links = anime.Ep.NextEpisode.Links
-	} else {
-		// No prefetched links available, need to fetch them
-		CurdOut("Fetching links for next episode...")
-
-		// Wait for up to 5 seconds for prefetched links to become available
-		for i := 0; i < 5; i++ {
-			if anime.Ep.NextEpisode.Number == anime.Ep.Number && len(anime.Ep.NextEpisode.Links) > 0 {
-				CurdOut("Using newly fetched next episode link")
-				anime.Ep.Links = anime.Ep.NextEpisode.Links
-				break
-			}
-			time.Sleep(1 * time.Second)
-		}
-
-		// If we still don't have links, get them now
-		if len(anime.Ep.Links) == 0 {
-			links, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
-			if err != nil {
-				Log("Failed to get episode links: " + err.Error())
-				CurdOut("Failed to get episode links. Try again later.")
-				ExitCurd(fmt.Errorf("failed to get episode links: %v", err))
-				return
-			}
-			anime.Ep.Links = links
-		}
-	}
-
-	// Verify that we have links before starting
-	if len(anime.Ep.Links) == 0 {
-		CurdOut("No episode links found. Try again later.")
-		ExitCurd(fmt.Errorf("no episode links found"))
-		return
-	}
-
-	// Actually start the next episode
-	anime.Ep.Player.SocketPath = StartCurd(userCurdConfig, anime)
-
-	// We don't exit, instead we let the main loop continue with the new episode
+	return selectedOption.Key == "yes"
 }
 
 // StartNextEpisode handles the logic for starting the next episode
 // It updates the episode number, resets necessary flags, and handles database updates
-func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile string) {
+func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile string, userToken string) {
 	// Save previous episode number for progress update
 	prevEpisode := anime.Ep.Number
 
 	// Check if we just completed the last episode
 	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes {
 		// Handle scoring and completion for the last episode
-		HandleLastEpisodeCompletion(userCurdConfig, anime)
+		HandleLastEpisodeCompletion(userCurdConfig, anime, userToken)
 
 		// Update Anilist progress for the last episode if not rewatching
 		if !anime.Rewatching {
-			user := &User{}
-			var err error
-			user.Token, err = GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
-			if err != nil {
-				Log("Error reading token for progress update: " + err.Error())
-			} else {
-				go func() {
-					err = UpdateAnimeProgress(user.Token, anime.AnilistId, prevEpisode)
-					if err != nil {
-						Log("Error updating Anilist progress: " + err.Error())
-					} else {
-						CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", prevEpisode))
-					}
-				}()
-			}
+			go func() {
+				err := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
+				if err != nil {
+					Log("Error updating Anilist progress: " + err.Error())
+				} else {
+					CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", prevEpisode))
+				}
+			}()
 		}
 
 		CurdOut("Series completed!")
@@ -1538,28 +1512,14 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 		return
 	}
 
-	// Check if this is the last episode - prompt user if needed
-	if userCurdConfig.NextEpisodePrompt && anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !userCurdConfig.RofiSelection {
-		// Ensure the terminal state is clean for the prompt
-		fmt.Print("\r\033[K") // Carriage return and clear line
-		CurdOut(fmt.Sprintf("Last episode (%d). Are you sure you want to watch it?", anime.Ep.Number))
-
-		// Simple yes/no selection for the last episode
-		selectedOption, err := DynamicSelect([]SelectionOption{{Key: "yes", Label: "Yes"}})
-		if err != nil {
-			ExitCurd(err)
-		}
-
-		if selectedOption.Key != "yes" {
-			// User selected to quitd
-			fmt.Print("\r\033[K") // Carriage return and clear line
-			CurdOut("Exiting without watching the last episode.")
-			ExitCurd(nil)
-			return
-		}
-
-		// User chose to continue to the last episode
-		fmt.Print("\r\033[K") // Carriage return and clear line
+	// Use prefetched links if available for the next episode
+	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
+		anime.Ep.Links = anime.Ep.NextEpisode.Links
+		Log(fmt.Sprintf("Using prefetched links for episode %d", anime.Ep.Number))
+	} else {
+		// Clear links to force fetching new ones
+		anime.Ep.Links = []string{}
+		Log(fmt.Sprintf("No prefetched links available for episode %d, will fetch new ones", anime.Ep.Number))
 	}
 
 	// Reset episode flags
@@ -1577,20 +1537,14 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 
 	// Update Anilist progress for the previous episode if not rewatching
 	if !anime.Rewatching {
-		user := &User{}
-		user.Token, err = GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
-		if err != nil {
-			Log("Error reading token for progress update: " + err.Error())
-		} else {
-			go func() {
-				err = UpdateAnimeProgress(user.Token, anime.AnilistId, prevEpisode)
-				if err != nil {
-					Log("Error updating Anilist progress: " + err.Error())
-				} else {
-					CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", prevEpisode))
-				}
-			}()
-		}
+		go func() {
+			err = UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
+			if err != nil {
+				Log("Error updating Anilist progress: " + err.Error())
+			} else {
+				CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", prevEpisode))
+			}
+		}()
 	}
 
 	// Output message to user
@@ -1598,32 +1552,9 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 }
 
 // HandleLastEpisodeCompletion handles scoring and completion for the last episode
-func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime) {
+func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userToken string) {
 	// Check if this is the last episode and scoring is enabled
 	if userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes {
-		// Get user token for scoring
-		user := &User{}
-
-		// Get config for storage path
-		homeDir := ""
-		if runtime.GOOS == "windows" {
-			homeDir = os.Getenv("USERPROFILE")
-		} else {
-			homeDir = os.Getenv("HOME")
-		}
-		configFilePath := filepath.Join(homeDir, ".config", "curd", "curd.conf")
-		config, err := LoadConfig(configFilePath)
-		if err != nil {
-			Log("Error loading config for scoring: " + err.Error())
-			return
-		}
-
-		user.Token, err = GetTokenFromFile(filepath.Join(os.ExpandEnv(config.StoragePath), "token"))
-		if err != nil {
-			Log("Error reading token for scoring: " + err.Error())
-			return
-		}
-
 		// Prompt user to score the anime
 		CurdOut("You've completed this anime! Would you like to rate it?")
 
@@ -1639,7 +1570,7 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime) {
 		}
 
 		if selectedOption.Key == "yes" {
-			err = RateAnime(user.Token, anime.AnilistId)
+			err = RateAnime(userToken, anime.AnilistId)
 			if err != nil {
 				Log(fmt.Sprintf("Error rating anime: %v", err))
 				CurdOut("Failed to rate anime")
@@ -1651,7 +1582,7 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime) {
 		// Update anime status to completed on AniList
 		if !anime.Rewatching {
 			go func() {
-				err = UpdateAnimeStatus(user.Token, anime.AnilistId, "COMPLETED")
+				err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
 				if err != nil {
 					Log("Error updating anime status to completed: " + err.Error())
 				} else {
