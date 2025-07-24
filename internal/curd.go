@@ -1427,6 +1427,17 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 			
 			// Increment to next episode and update database with next episode number and 0 playback time
 			anime.Ep.Number++
+			
+			// Use prefetched links if available for the next episode
+			if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
+				anime.Ep.Links = anime.Ep.NextEpisode.Links
+				Log(fmt.Sprintf("Using prefetched links for episode %d", anime.Ep.Number))
+			} else {
+				// Clear links to force fetching new ones
+				anime.Ep.Links = []string{}
+				Log(fmt.Sprintf("No prefetched links available for episode %d, will fetch new ones", anime.Ep.Number))
+			}
+			
 			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
 			if err != nil {
 				Log("Error updating local database with next episode: " + err.Error())
@@ -1499,6 +1510,16 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 		CurdOut("Reached end of series")
 		ExitCurd(nil)
 		return
+	}
+
+	// Use prefetched links if available for the next episode
+	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
+		anime.Ep.Links = anime.Ep.NextEpisode.Links
+		Log(fmt.Sprintf("Using prefetched links for episode %d", anime.Ep.Number))
+	} else {
+		// Clear links to force fetching new ones
+		anime.Ep.Links = []string{}
+		Log(fmt.Sprintf("No prefetched links available for episode %d, will fetch new ones", anime.Ep.Number))
 	}
 
 	// Reset episode flags
