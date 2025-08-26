@@ -122,8 +122,65 @@ jobs:
 
       - name: Clone AUR repository
         run: |
-          # The SSH agent should still be running with the key loaded
-          git clone ssh://aur@aur.archlinux.org/curd.git aur-curd
+          # Debug: Check if SSH agent is running
+          echo "SSH_AUTH_SOCK: $SSH_AUTH_SOCK"
+          echo "SSH_AGENT_PID: $SSH_AGENT_PID"
+          
+          # Debug: List loaded keys
+          echo "Keys currently loaded in SSH agent:"
+          ssh-add -l 2>&1 || echo "No keys in agent or agent not accessible"
+          
+          # Debug: Test if key file exists and has correct permissions
+          echo "Checking key file:"
+          ls -la ~/.ssh/aur_rsa
+          
+          # Try to manually load the key again with debugging
+          echo "Attempting to load key manually..."
+          expect -c "
+            set timeout 30
+            log_user 1
+            spawn ssh-add -v ~/.ssh/aur_rsa
+            expect {
+              \"Enter passphrase*\" {
+                send \"sex\r\"
+                expect {
+                  \"Identity added*\" {
+                    puts \"SUCCESS: Key loaded\"
+                    exit 0
+                  }
+                  \"Bad passphrase*\" {
+                    puts \"ERROR: Bad passphrase\"
+                    exit 1
+                  }
+                  timeout {
+                    puts \"ERROR: Timeout after passphrase\"
+                    exit 1
+                  }
+                }
+              }
+              \"*already loaded*\" {
+                puts \"Key already loaded\"
+                exit 0
+              }
+              timeout {
+                puts \"ERROR: No passphrase prompt\"
+                exit 1
+              }
+              eof
+            }
+          " || echo "Manual key loading failed"
+          
+          # Check again if key is loaded
+          echo "Keys after manual loading attempt:"
+          ssh-add -l 2>&1 || echo "Still no keys in agent"
+          
+          # Try direct SSH test with key file
+          echo "Testing direct SSH connection..."
+          ssh -o PasswordAuthentication=no -o IdentitiesOnly=yes -i ~/.ssh/aur_rsa -T aur@aur.archlinux.org 2>&1 | head -10
+          
+          # Clone with verbose output
+          echo "Attempting to clone with SSH debugging..."
+          GIT_SSH_COMMAND="ssh -v -o IdentitiesOnly=yes -i ~/.ssh/aur_rsa" git clone ssh://aur@aur.archlinux.org/curd.git aur-curd
 
       - name: Update PKGBUILD
         working-directory: aur-curd
