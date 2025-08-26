@@ -32,6 +32,11 @@ jobs:
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect git sshpass
+
       - name: Set up SSH for AUR
         run: |
           mkdir -p ~/.ssh
@@ -49,27 +54,20 @@ jobs:
           
           # Start SSH agent and add key with passphrase
           eval $(ssh-agent -s)
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+          
+          # Use expect to add the key with passphrase
           expect -c "
             spawn ssh-add ~/.ssh/aur_rsa
             expect \"Enter passphrase\"
             send \"sex\r\"
             expect eof
           "
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y expect git
 
       - name: Clone AUR repository
         run: |
-          eval $(ssh-agent -s)
-          expect -c "
-            spawn ssh-add ~/.ssh/aur_rsa
-            expect \"Enter passphrase\"
-            send \"sex\r\"
-            expect eof
-          "
+          # The SSH agent should still be running with the key loaded
           git clone ssh://aur@aur.archlinux.org/curd.git aur-curd
 
       - name: Update PKGBUILD
@@ -103,15 +101,6 @@ jobs:
       - name: Commit and push to AUR
         working-directory: aur-curd
         run: |
-          # Start SSH agent for the commit/push
-          eval $(ssh-agent -s)
-          expect -c "
-            spawn ssh-add ~/.ssh/aur_rsa
-            expect \"Enter passphrase\"
-            send \"sex\r\"
-            expect eof
-          " 2>/dev/null
-          
           # Check if there are changes to commit
           if git diff --quiet && git diff --cached --quiet; then
             echo "No changes to commit"
@@ -122,12 +111,14 @@ jobs:
           git add PKGBUILD .SRCINFO
           git commit -m "Update to version ${{ steps.version.outputs.version }}"
           
-          # Push changes
+          # Push changes (SSH agent should still have the key loaded)
           git push origin master
 
       - name: Cleanup
         if: always()
         run: |
-          # Clean up SSH keys
+          # Clean up SSH keys and kill SSH agent
           rm -f ~/.ssh/aur_rsa
-          ssh-agent -k 2>/dev/null || true
+          if [ -n "$SSH_AGENT_PID" ]; then
+            kill $SSH_AGENT_PID 2>/dev/null || true
+          fi
