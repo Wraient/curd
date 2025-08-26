@@ -38,7 +38,6 @@ func main() {
 	}
 	internal.SetGlobalConfig(&userCurdConfig)
 
-
 	logFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "debug.log")
 	internal.SetGlobalLogFile(logFile)
 	internal.ClearLogFile(logFile)
@@ -87,7 +86,7 @@ func main() {
 	if *versionFlag {
 		internal.RestoreScreen()
 		if version == "" {
-			version = "1.1.4"
+			version = "1.1.5"
 		}
 		fmt.Printf("Curd version: %s\n", version)
 		os.Exit(0)
@@ -644,7 +643,7 @@ func main() {
 												internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
 											}
 										}
-										
+
 										internal.Log("Episode completed, updated progress, exiting monitoring to let CLI prompt handle next episode")
 									}
 									// Exit the skip loop - only close if not already closed
