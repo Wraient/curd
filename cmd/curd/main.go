@@ -38,9 +38,6 @@ func main() {
 	}
 	internal.SetGlobalConfig(&userCurdConfig)
 
-	// Setup
-	internal.ClearScreen()
-	defer internal.RestoreScreen()
 
 	logFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "debug.log")
 	internal.SetGlobalLogFile(logFile)
@@ -116,6 +113,10 @@ func main() {
 		return
 	}
 
+	// Setup screen for interactive mode (only if not changing token)
+	internal.ClearScreen()
+	defer internal.RestoreScreen()
+
 	if *currentCategory {
 		userCurdConfig.CurrentCategory = true
 	}
@@ -149,7 +150,7 @@ func main() {
 	}
 
 	// Get the token from the token file
-	user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "token"))
+	user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "anilist_token.json"))
 	if err != nil {
 		internal.Log("Error reading token")
 	}
@@ -485,7 +486,7 @@ func main() {
 											if err != nil {
 												internal.Log("Error updating local database on quit: " + err.Error())
 											}
-											
+
 											// Update Anilist progress if not rewatching
 											if !anime.Rewatching {
 												go func() {
@@ -497,7 +498,7 @@ func main() {
 													}
 												}()
 											}
-											
+
 											internal.ExitCurd(nil)
 										}
 									} else {
@@ -591,7 +592,7 @@ func main() {
 							if userCurdConfig.NextEpisodePrompt && !userCurdConfig.RofiSelection {
 								continue
 							}
-							
+
 							// Nothing is playing, check percentage watched
 							percentageWatched := internal.PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
 							// fmt.Printf("[DEBUG] Playback stopped - Percentage watched: %d%%, Required: %d%%\n",
@@ -615,7 +616,7 @@ func main() {
 											if err != nil {
 												internal.Log("Error updating local database on quit: " + err.Error())
 											}
-											
+
 											// Update Anilist progress if not rewatching
 											if !anime.Rewatching {
 												go func() {
@@ -627,7 +628,7 @@ func main() {
 													}
 												}()
 											}
-											
+
 											internal.ExitCurd(nil)
 										}
 									} else {
@@ -808,4 +809,3 @@ func main() {
 
 	}
 }
-

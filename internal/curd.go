@@ -19,18 +19,6 @@ import (
 	"github.com/gen2brain/beeep"
 )
 
-func GetTokenFromFile(filePath string) (string, error) {
-	// Read the token from the file
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read token from file: %w", err)
-	}
-
-	// Convert the byte slice to a string and remove any surrounding whitespace or newlines
-	token := strings.TrimSpace(string(data))
-
-	return token, nil
-}
 
 func EditConfig(configFilePath string) {
 	// Get the user's preferred editor from the EDITOR environment variable
