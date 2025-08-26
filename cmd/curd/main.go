@@ -489,14 +489,12 @@ func main() {
 
 											// Update Anilist progress if not rewatching
 											if !anime.Rewatching {
-												go func() {
-													err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
-													if err != nil {
-														internal.Log("Error updating Anilist progress on quit: " + err.Error())
-													} else {
-														internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
-													}
-												}()
+												err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+												if err != nil {
+													internal.Log("Error updating Anilist progress on quit: " + err.Error())
+												} else {
+													internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
+												}
 											}
 
 											internal.ExitCurd(nil)
@@ -619,21 +617,35 @@ func main() {
 
 											// Update Anilist progress if not rewatching
 											if !anime.Rewatching {
-												go func() {
-													err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
-													if err != nil {
-														internal.Log("Error updating Anilist progress on quit: " + err.Error())
-													} else {
-														internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
-													}
-												}()
+												err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+												if err != nil {
+													internal.Log("Error updating Anilist progress on quit: " + err.Error())
+												} else {
+													internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
+												}
 											}
 
 											internal.ExitCurd(nil)
 										}
 									} else {
-										// For CLI mode, let the continuous prompt handle it
-										internal.Log("Episode completed, exiting monitoring to let CLI prompt handle next episode")
+										// For CLI mode, update progress immediately since episode is 85%+ complete
+										// Update local database with completed episode
+										err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
+										if err != nil {
+											internal.Log("Error updating local database on completion: " + err.Error())
+										}
+
+										// Update Anilist progress if not rewatching
+										if !anime.Rewatching {
+											err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+											if err != nil {
+												internal.Log("Error updating Anilist progress on completion: " + err.Error())
+											} else {
+												internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
+											}
+										}
+										
+										internal.Log("Episode completed, updated progress, exiting monitoring to let CLI prompt handle next episode")
 									}
 									// Exit the skip loop - only close if not already closed
 									select {
