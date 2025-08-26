@@ -2,15 +2,39 @@ package internal
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
+
+	// "io"
+	"net/http"
+	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/pkg/browser"
 )
+
+const (
+	anilistOAuthURL     = "https://anilist.co/api/v2/oauth"
+	anilistClientID     = "20686"
+	anilistClientSecret = "APfx41cOgSQVMvi88v7PbN7g6kzed2ZQRcxmACod"
+	anilistRedirectURI  = "http://localhost:8000/oauth/callback"
+	anilistServerPort   = 8000
+)
+
+// AnilistToken represents the OAuth token response from Anilist
+type AnilistToken struct {
+	AccessToken  string    `json:"access_token"`
+	TokenType    string    `json:"token_type"`
+	ExpiresIn    int       `json:"expires_in"`
+	RefreshToken string    `json:"refresh_token"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
 
 // CurdConfig struct with field names that match the config keys
 type CurdConfig struct {
@@ -181,74 +205,287 @@ func createDefaultConfig(path string) error {
 	return nil
 }
 
-func getTokenFromTempFile(isWindowsPlatform bool) (string, error) {
-	// Create a temporary file for the token
-	tempFile, err := os.CreateTemp("", "curd-token-*.txt")
-	if err != nil {
-		return "", fmt.Errorf("error creating temp file: %v", err)
-	}
-	tempPath := tempFile.Name()
-	tempFile.Close()
+// authenticateWithBrowser performs OAuth authentication using browser
+func authenticateWithBrowser(tokenPath string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 
-	// Write instructions to the temp file
-	instructions := "Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token\n" +
-		"Replace this text with your token and save the file.\n"
-	if err := os.WriteFile(tempPath, []byte(instructions), 0644); err != nil {
-		return "", fmt.Errorf("error writing instructions: %v", err)
+	// Try to load existing token first
+	if token, err := loadToken(tokenPath); err == nil && isTokenValid(token) {
+		return token.AccessToken, nil
 	}
 
-	// Open the file with appropriate editor
-	var cmd *exec.Cmd
-	if isWindowsPlatform {
-		cmd = exec.Command("notepad.exe", tempPath)
-	} else {
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = "nano" // Default to nano if $EDITOR is not set
+	// Start local server to handle OAuth callback
+	callbackCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+	mux := http.NewServeMux()
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", anilistServerPort),
+		Handler: mux,
+	}
+
+	// Handle OAuth callback - for authorization code grant, code comes in query params
+	mux.HandleFunc("/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
+		code := r.URL.Query().Get("code")
+		errorParam := r.URL.Query().Get("error")
+
+		w.Header().Set("Content-Type", "text/html")
+
+		if errorParam != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Curd Authentication</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; text-align: center; background: #1a1a1a; color: white; }
+        .error { color: #f44336; font-size: 18px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="error">Authentication failed: %s</div>
+    <p>You can close this window and try again.</p>
+</body>
+</html>`, errorParam)
+			fmt.Fprint(w, html)
+			errCh <- fmt.Errorf("oauth error: %s", errorParam)
+			return
 		}
-		cmd = exec.Command(editor, tempPath)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+
+		if code == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			html := `<!DOCTYPE html>
+<html>
+<head>
+    <title>Curd Authentication</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; text-align: center; background: #1a1a1a; color: white; }
+        .error { color: #f44336; font-size: 18px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="error">No authorization code received</div>
+    <p>You can close this window and try again.</p>
+</body>
+</html>`
+			fmt.Fprint(w, html)
+			errCh <- fmt.Errorf("no authorization code received")
+			return
+		}
+
+		// Exchange authorization code for access token
+		go func() {
+			tokenURL := fmt.Sprintf("%s/token", anilistOAuthURL)
+			data := url.Values{
+				"grant_type":    {"authorization_code"},
+				"client_id":     {anilistClientID},
+				"client_secret": {anilistClientSecret},
+				"redirect_uri":  {anilistRedirectURI},
+				"code":          {code},
+			}
+
+			resp, err := http.PostForm(tokenURL, data)
+			if err != nil {
+				errCh <- fmt.Errorf("failed to exchange code for token: %w", err)
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				errCh <- fmt.Errorf("token exchange failed with status: %d", resp.StatusCode)
+				return
+			}
+
+			var tokenResponse struct {
+				AccessToken string `json:"access_token"`
+				TokenType   string `json:"token_type"`
+				ExpiresIn   int    `json:"expires_in"`
+			}
+
+			if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
+				errCh <- fmt.Errorf("failed to parse token response: %w", err)
+				return
+			}
+
+			if tokenResponse.AccessToken == "" {
+				errCh <- fmt.Errorf("no access token in response")
+				return
+			}
+
+			callbackCh <- tokenResponse.AccessToken
+		}()
+
+		// Show success page immediately
+		html := `<!DOCTYPE html>
+<html>
+<head>
+    <title>Curd Authentication</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; text-align: center; background: #1a1a1a; color: white; }
+        .loading { color: #2196F3; font-size: 18px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="loading">Processing authentication...</div>
+    <p>Exchanging authorization code for token. You can close this window.</p>
+</body>
+</html>`
+		fmt.Fprint(w, html)
+	})
+
+	// Start server in background
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("failed to start server: %w", err)
+		}
+	}()
+	defer srv.Shutdown(ctx)
+
+	// Give server a moment to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Open browser for authentication using Authorization Code Grant flow (response_type=code)
+	authURL := fmt.Sprintf("%s/authorize?client_id=%s&redirect_uri=%s&response_type=code",
+		anilistOAuthURL,
+		anilistClientID,
+		url.QueryEscape(anilistRedirectURI))
+
+	fmt.Println("Opening browser for AniList authentication...")
+	fmt.Printf("If the browser doesn't open automatically, visit: %s\n", authURL)
+
+	if err := browser.OpenURL(authURL); err != nil {
+		fmt.Printf("Failed to open browser automatically: %v\n", err)
+		fmt.Println("Please copy and paste the URL above into your browser")
 	}
 
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("error opening editor: %v", err)
+	// Wait for token
+	var accessToken string
+	select {
+	case accessToken = <-callbackCh:
+	case err := <-errCh:
+		return "", fmt.Errorf("authentication failed: %w", err)
+	case <-ctx.Done():
+		return "", fmt.Errorf("authentication timeout after 5 minutes")
 	}
 
-	// Read the token from the file
-	content, err := os.ReadFile(tempPath)
+	// Create token object and save
+	token := &AnilistToken{
+		AccessToken: accessToken,
+		TokenType:   "Bearer",
+		ExpiresIn:   31536000, // AniList tokens are valid for 1 year
+		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+	}
+
+	// Save token to file
+	if err := saveToken(tokenPath, token); err != nil {
+		return "", fmt.Errorf("failed to save token: %w", err)
+	}
+
+	fmt.Println("Authentication successful!")
+	return token.AccessToken, nil
+}
+
+// loadToken loads the token from the token file
+func loadToken(tokenPath string) (*AnilistToken, error) {
+	data, err := os.ReadFile(tokenPath)
 	if err != nil {
-		return "", fmt.Errorf("error reading token: %v", err)
+		return nil, fmt.Errorf("failed to read token file: %w", err)
 	}
 
-	// Clean up the temp file
-	os.Remove(tempPath)
+	var token AnilistToken
+	if err := json.Unmarshal(data, &token); err != nil {
+		return nil, fmt.Errorf("failed to parse token file: %w", err)
+	}
 
-	// Extract token (remove instructions and whitespace)
-	return strings.TrimSpace(string(content)), nil
+	return &token, nil
+}
+
+// saveToken saves the token to the token file
+func saveToken(tokenPath string, token *AnilistToken) error {
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(tokenPath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	data, err := json.Marshal(token)
+	if err != nil {
+		return fmt.Errorf("failed to marshal token: %w", err)
+	}
+
+	return os.WriteFile(tokenPath, data, 0600)
+}
+
+// isTokenValid checks if the token is still valid
+func isTokenValid(token *AnilistToken) bool {
+	return token != nil && token.AccessToken != "" && time.Now().Before(token.ExpiresAt)
+}
+
+// GetTokenFromFile loads the token from the token file (supports both old text format and new JSON format)
+func GetTokenFromFile(tokenPath string) (string, error) {
+	data, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read token from file: %w", err)
+	}
+
+	// Try to parse as JSON first (new format)
+	var token AnilistToken
+	if err := json.Unmarshal(data, &token); err == nil {
+		// It's JSON format, check if token is valid
+		if isTokenValid(&token) {
+			return token.AccessToken, nil
+		}
+		return "", fmt.Errorf("token has expired")
+	}
+
+	// Fall back to plain text format (old format)
+	plainToken := strings.TrimSpace(string(data))
+	if plainToken == "" {
+		return "", fmt.Errorf("empty token file")
+	}
+
+	return plainToken, nil
 }
 
 func ChangeToken(config *CurdConfig, user *User) {
 	var err error
-	tokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "token")
+	tokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "anilist_token.json")
 
-	switch {
-	case runtime.GOOS == "darwin" || runtime.GOOS == "windows":
-		user.Token, err = getTokenFromTempFile(runtime.GOOS == "windows")
-	case config.RofiSelection:
-		user.Token, err = GetTokenFromRofi()
-	default:
-		fmt.Println("Please generate a token from https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token")
-		fmt.Scanln(&user.Token)
-	}
+	// Try browser-based OAuth first
+	fmt.Println("Starting browser-based authentication...")
+	user.Token, err = authenticateWithBrowser(tokenPath)
 
 	if err != nil {
-		Log("Error getting user input: " + err.Error())
-		ExitCurd(err)
+		Log("Browser authentication failed: " + err.Error())
+		fmt.Printf("Browser authentication failed: %v\n", err)
+		fmt.Println("Falling back to manual token entry...")
+
+		// Simple CLI fallback
+		fmt.Println("Please visit: https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token&redirect_uri=http://localhost:8000/oauth/callback")
+		fmt.Print("Copy and paste your access token here: ")
+		fmt.Scanln(&user.Token)
+
+		if user.Token == "" {
+			ExitCurd(fmt.Errorf("no token provided"))
+		}
+
+		// Save the manually entered token as JSON format
+		token := &AnilistToken{
+			AccessToken: user.Token,
+			TokenType:   "Bearer",
+			ExpiresIn:   31536000, // AniList tokens are valid for 1 year
+			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+		}
+
+		if err := saveToken(tokenPath, token); err != nil {
+			ExitCurd(fmt.Errorf("failed to save token: %w", err))
+		}
 	}
 
-	WriteTokenToFile(user.Token, tokenPath)
+	if user.Token == "" {
+		ExitCurd(fmt.Errorf("no token provided"))
+	}
+
+	fmt.Println("Token saved successfully!")
 }
 
 // LoadConfigFromFile loads config file from disk into a map (key=value format)
