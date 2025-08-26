@@ -40,7 +40,10 @@ jobs:
       - name: Set up SSH for AUR
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur_rsa
+          # Write the SSH key, ensuring proper formatting
+          cat > ~/.ssh/aur_rsa << 'EOF'
+          ${{ secrets.AUR_SSH_KEY }}
+          EOF
           chmod 600 ~/.ssh/aur_rsa
           
           # Create SSH config for AUR
@@ -50,6 +53,7 @@ jobs:
             User aur
             IdentityFile ~/.ssh/aur_rsa
             StrictHostKeyChecking no
+            IdentitiesOnly yes
           EOF
           
           # Start SSH agent and add key with passphrase
@@ -59,11 +63,31 @@ jobs:
           
           # Use expect to add the key with passphrase
           expect -c "
+            set timeout 10
             spawn ssh-add ~/.ssh/aur_rsa
-            expect \"Enter passphrase\"
-            send \"sex\r\"
-            expect eof
+            expect {
+              \"Enter passphrase\" {
+                send \"sex\r\"
+                exp_continue
+              }
+              \"Identity added\" {
+                puts \"Key successfully added\"
+              }
+              \"Bad passphrase\" {
+                puts \"Bad passphrase\"
+                exit 1
+              }
+              timeout {
+                puts \"Timeout waiting for passphrase prompt\"
+                exit 1
+              }
+              eof
+            }
           "
+          
+          # Test SSH connection (output suppressed for security)
+          echo "Testing SSH connection to AUR..."
+          ssh -T aur@aur.archlinux.org >/dev/null 2>&1 && echo "SSH connection successful" || echo "SSH connection failed (this might be normal for AUR)"
 
       - name: Clone AUR repository
         run: |
