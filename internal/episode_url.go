@@ -35,11 +35,23 @@ func decodeProviderID(encoded string) string {
 
 	// Mapping for the replacements
 	replacements := map[string]string{
-		"01": "9", "08": "0", "05": "=", "0a": "2", "0b": "3", "0c": "4", "07": "?",
-		"00": "8", "5c": "d", "0f": "7", "5e": "f", "17": "/", "54": "l", "09": "1",
-		"48": "p", "4f": "w", "0e": "6", "5b": "c", "5d": "e", "0d": "5", "53": "k",
-		"1e": "&", "5a": "b", "59": "a", "4a": "r", "4c": "t", "4e": "v", "57": "o",
-		"51": "i",
+		// Uppercase letters
+		"79": "A", "7a": "B", "7b": "C", "7c": "D", "7d": "E", "7e": "F", "7f": "G",
+		"70": "H", "71": "I", "72": "J", "73": "K", "74": "L", "75": "M", "76": "N", "77": "O",
+		"68": "P", "69": "Q", "6a": "R", "6b": "S", "6c": "T", "6d": "U", "6e": "V", "6f": "W",
+		"60": "X", "61": "Y", "62": "Z",
+		// Lowercase letters
+		"59": "a", "5a": "b", "5b": "c", "5c": "d", "5d": "e", "5e": "f", "5f": "g",
+		"50": "h", "51": "i", "52": "j", "53": "k", "54": "l", "55": "m", "56": "n", "57": "o",
+		"48": "p", "49": "q", "4a": "r", "4b": "s", "4c": "t", "4d": "u", "4e": "v", "4f": "w",
+		"40": "x", "41": "y", "42": "z",
+		// Numbers
+		"08": "0", "09": "1", "0a": "2", "0b": "3", "0c": "4", "0d": "5", "0e": "6", "0f": "7",
+		"00": "8", "01": "9",
+		// Special characters
+		"15": "-", "16": ".", "67": "_", "46": "~", "02": ":", "17": "/", "07": "?", "1b": "#",
+		"63": "[", "65": "]", "78": "@", "19": "!", "1c": "$", "1e": "&", "10": "(", "11": ")",
+		"12": "*", "13": "+", "14": ",", "03": ";", "05": "=", "1d": "%",
 	}
 
 	// Perform the replacement equivalent to sed 's/^../.../'
@@ -60,6 +72,33 @@ func decodeProviderID(encoded string) string {
 }
 
 func extractLinks(provider_id string) map[string]interface{} {
+	// Check if provider_id is already a full URL (external link)
+	if strings.HasPrefix(provider_id, "http://") || strings.HasPrefix(provider_id, "https://") {
+		// It's an external direct video link, return it as-is
+		cleanedURL := provider_id
+		// Clean up any double slashes in the URL (except after protocol)
+		if strings.Contains(cleanedURL, "://") {
+			parts := strings.SplitN(cleanedURL, "://", 2)
+			if len(parts) == 2 {
+				protocol := parts[0]
+				rest := parts[1]
+				// Replace any double slashes in the rest of the URL
+				rest = strings.ReplaceAll(rest, "//", "/")
+				cleanedURL = protocol + "://" + rest
+			}
+		}
+		
+		Log(fmt.Sprintf("Direct external link detected: %s -> %s", provider_id, cleanedURL))
+		return map[string]interface{}{
+			"links": []interface{}{
+				map[string]interface{}{
+					"link": cleanedURL,
+				},
+			},
+		}
+	}
+	
+	// It's a relative path for allanime API
 	allanime_base := "https://allanime.day"
 	url := allanime_base + provider_id
 	client := &http.Client{}
