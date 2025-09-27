@@ -1,5 +1,7 @@
 # Curd
 
+<h1 align="center">I will try to implement MAL in Curd. Idk if it is possible or not, but i will try my best.</h1>
+
 A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC written in golang.
 Works on Windows and Linux
 
