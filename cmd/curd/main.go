@@ -148,13 +148,18 @@ func main() {
 		userCurdConfig.SubOrDub = "dub"
 	}
 
-	// Get the token from the token file
-	user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "anilist_token.json"))
+	// Get the token from the token file based on provider
+	user.Token, err = internal.GetProviderToken(&userCurdConfig)
 	if err != nil {
-		internal.Log("Error reading token")
+		internal.Log("Error reading token: " + err.Error())
 	}
 	if user.Token == "" {
 		internal.ChangeToken(&userCurdConfig, &user)
+		// Get token again after authentication
+		user.Token, err = internal.GetProviderToken(&userCurdConfig)
+		if err != nil {
+			internal.ExitCurd(fmt.Errorf("failed to get token after authentication: %w", err))
+		}
 	}
 
 	if userCurdConfig.RofiSelection {
@@ -276,7 +281,7 @@ func main() {
 			// If not filler/recap (or skip is disabled), break and continue with playback
 			if !((anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap)) {
 				if anime.Ep.LastWasSkipped {
-					go internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
+					go internal.UpdateProviderAnimeProgress(&userCurdConfig, user.Token, anime.AnilistId, anime.Ep.Number-1)
 				}
 				break
 			}
@@ -486,11 +491,11 @@ func main() {
 												internal.Log("Error updating local database on quit: " + err.Error())
 											}
 
-											// Update Anilist progress if not rewatching
+											// Update provider progress if not rewatching
 											if !anime.Rewatching {
-												err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+												err = internal.UpdateProviderAnimeProgress(&userCurdConfig, user.Token, anime.AnilistId, anime.Ep.Number)
 												if err != nil {
-													internal.Log("Error updating Anilist progress on quit: " + err.Error())
+													internal.Log("Error updating progress on quit: " + err.Error())
 												} else {
 													internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
 												}
@@ -614,11 +619,11 @@ func main() {
 												internal.Log("Error updating local database on quit: " + err.Error())
 											}
 
-											// Update Anilist progress if not rewatching
+											// Update provider progress if not rewatching
 											if !anime.Rewatching {
-												err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+												err = internal.UpdateProviderAnimeProgress(&userCurdConfig, user.Token, anime.AnilistId, anime.Ep.Number)
 												if err != nil {
-													internal.Log("Error updating Anilist progress on quit: " + err.Error())
+													internal.Log("Error updating progress on quit: " + err.Error())
 												} else {
 													internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
 												}
@@ -634,11 +639,11 @@ func main() {
 											internal.Log("Error updating local database on completion: " + err.Error())
 										}
 
-										// Update Anilist progress if not rewatching
+										// Update provider progress if not rewatching
 										if !anime.Rewatching {
-											err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+											err = internal.UpdateProviderAnimeProgress(&userCurdConfig, user.Token, anime.AnilistId, anime.Ep.Number)
 											if err != nil {
-												internal.Log("Error updating Anilist progress on completion: " + err.Error())
+												internal.Log("Error updating progress on completion: " + err.Error())
 											} else {
 												internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
 											}
@@ -727,9 +732,9 @@ func main() {
 			if anime.TotalEpisodes > 0 && anime.Ep.Number-1 != anime.TotalEpisodes {
 				go func() {
 					// Update progress for regular episodes
-					err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
+					err = internal.UpdateProviderAnimeProgress(&userCurdConfig, user.Token, anime.AnilistId, anime.Ep.Number-1)
 					if err != nil {
-						internal.Log("Error updating Anilist progress: " + err.Error())
+						internal.Log("Error updating progress: " + err.Error())
 					}
 				}()
 			} else {
@@ -738,9 +743,9 @@ func main() {
 				// Exit MPV
 				internal.ExitMPV(anime.Ep.Player.SocketPath)
 
-				err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
+				err = internal.UpdateProviderAnimeProgress(&userCurdConfig, user.Token, anime.AnilistId, anime.Ep.Number-1)
 				if err != nil {
-					internal.Log("Error updating Anilist progress: " + err.Error())
+					internal.Log("Error updating progress: " + err.Error())
 				}
 			}
 
@@ -750,13 +755,13 @@ func main() {
 			if anime.Ep.Number-1 == anime.TotalEpisodes && userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 {
 
 				// Get updated anime data to check if it's still airing
-				updatedAnime, err := internal.GetAnimeDataByID(anime.AnilistId, user.Token)
+				updatedAnime, err := internal.GetProviderAnimeDetails(&userCurdConfig, user.Token, anime.AnilistId)
 				if err != nil {
 					internal.Log("Error getting updated anime data: " + err.Error())
 				} else if !updatedAnime.IsAiring {
 					anime.Ep.Number = anime.Ep.Number - 1
 					internal.CurdOut("Completed anime.")
-					err = internal.RateAnime(user.Token, anime.AnilistId)
+					err = internal.RateProviderAnime(&userCurdConfig, user.Token, anime.AnilistId, 0)
 					if err != nil {
 						internal.Log("Error rating anime: " + err.Error())
 						internal.CurdOut("Error rating anime: " + err.Error())

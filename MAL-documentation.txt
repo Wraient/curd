@@ -1,0 +1,234 @@
+```
+MyAnimeList API v2 — Setup & Integration Guide (TXT Edition)
+=============================================================
+
+Last updated: 2025-09-30
+
+Overview
+--------
+MyAnimeList (MAL) exposes a RESTful API at:
+  • Base URL: https://api.myanimelist.net/v2
+  • Authentication: OAuth 2.0 Authorization Code flow with PKCE for user-authenticated requests.
+  • Public (no-login) requests: supply your Client ID via the X-MAL-CLIENT-ID header.
+  • Versioning: The 'v2' segment is part of the path; breaking changes increase the version.
+  • Responses: JSON. Many list endpoints are paginated and may return a "paging" object with "next"/"previous" links.
+
+What You Can Do
+---------------
+• Read public data (anime/manga search, details, rankings, seasons, forums) with only your Client ID (no user login).
+• Read a user’s private data and modify lists (e.g., add/update/remove anime/manga list entries) after OAuth login with scope write:users.
+
+Register Your Application
+-------------------------
+1) Log in to MyAnimeList and create an API client:
+   • https://myanimelist.net/apiconfig (then “Create”)
+   • Provide: App name, (company) name, Homepage URL (can be a placeholder during dev), and Redirect URI(s).
+   • You will receive a Client ID. Depending on app type you may or may not get a Client Secret.
+   • The Redirect URI must exactly match what you’ll use during OAuth (include scheme, host, port, and path).
+
+2) Decide what you need:
+   • Public-only access (no user login): use X-MAL-CLIENT-ID for requests.
+   • User-authenticated access (read/modify lists): implement OAuth 2.0 with PKCE and request scope write:users.
+
+Authentication Options
+----------------------
+A) Public requests with API Key header
+   • Add: X-MAL-CLIENT-ID: <your_client_id>
+   • Use for endpoints like /anime, /manga, /anime/{id}, /manga/{id}, /anime/ranking, /manga/ranking, /anime/season/{year}/{season}, forums, etc.
+   • No user context; cannot access/update a user’s lists.
+
+B) OAuth 2.0 Authorization Code (with PKCE)
+   • Required for accessing/modifying a user’s lists and for /users/@me endpoints.
+   • PKCE parameters:
+       - code_challenge: Derived from a random code_verifier (PKCE). (MAL supports plain challenge method.)
+       - code_verifier: The original random string you keep client-side to exchange the authorization code for tokens.
+   • Scopes:
+       - write:users — grants permission to read/modify basic profile and list data and post on user’s behalf.
+   • Important URLs:
+       - Authorization endpoint: https://myanimelist.net/v1/oauth2/authorize
+       - Token endpoint:         https://myanimelist.net/v1/oauth2/token
+
+OAuth 2.0 (PKCE) — Step-by-Step
+-------------------------------
+1) Generate PKCE values
+   • Create a cryptographically random code_verifier (43–128 characters URL-safe).
+   • Derive code_challenge from code_verifier (MAL supports "plain" code_challenge_method).
+   • Persist state and the code_verifier (server-side or secure client storage) for later token exchange.
+
+2) Send the user to the Authorization URL (GET)
+   • Endpoint: https://myanimelist.net/v1/oauth2/authorize
+   • Query parameters:
+       response_type=code
+       client_id=<YOUR_CLIENT_ID>
+       redirect_uri=<YOUR_REGISTERED_REDIRECT_URI>
+       state=<CSRF_TOKEN_YOU_GENERATE>
+       scope=write:users        (include if you need to access/modify user data)
+       code_challenge=<YOUR_CODE_CHALLENGE>
+       code_challenge_method=plain
+   • User logs in and approves your app; MAL redirects to your redirect_uri with ?code=<AUTH_CODE>&state=<...>.
+
+3) Exchange the authorization code for tokens (POST)
+   • Endpoint: https://myanimelist.net/v1/oauth2/token
+   • Headers: Content-Type: application/x-www-form-urlencoded
+   • Body (form-encoded):
+       grant_type=authorization_code
+       client_id=<YOUR_CLIENT_ID>
+       code=<AUTH_CODE_FROM_STEP_2>
+       redirect_uri=<YOUR_REGISTERED_REDIRECT_URI>
+       code_verifier=<YOUR_ORIGINAL_CODE_VERIFIER>
+       (client_secret=<YOUR_CLIENT_SECRET>     # if your app type uses a secret)
+   • Response: JSON with token_type (Bearer), access_token, refresh_token, expires_in (seconds).
+
+4) Call MAL APIs with the Access Token
+   • Add header: Authorization: Bearer <access_token>
+   • Example (search anime): GET https://api.myanimelist.net/v2/anime?q=one&limit=4
+   • Use the 'fields' parameter to request additional fields; omit to get defaults.
+     Example: fields=synopsis,my_list_status,priority,comments
+   • Many list endpoints support pagination via 'limit' and 'offset'.
+
+5) Refresh an expired token
+   • Endpoint: https://myanimelist.net/v1/oauth2/token
+   • Headers: Content-Type: application/x-www-form-urlencoded
+   • Body (form-encoded):
+       grant_type=refresh_token
+       client_id=<YOUR_CLIENT_ID>
+       refresh_token=<YOUR_REFRESH_TOKEN>
+       (client_secret=<YOUR_CLIENT_SECRET>     # if applicable)
+   • Store new tokens securely; rotate refresh tokens according to your security policy.
+
+Core Request Patterns
+---------------------
+• Public search (no login):
+    curl 'https://api.myanimelist.net/v2/anime?q=one&limit=4' \
+      -H 'X-MAL-CLIENT-ID: YOUR_CLIENT_ID'
+
+• Authenticated search (after OAuth):
+    curl 'https://api.myanimelist.net/v2/anime?q=one&limit=4' \
+      -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
+
+• Get an anime by ID (with selected fields):
+    curl 'https://api.myanimelist.net/v2/anime/30230?fields=id,title,main_picture,alternative_titles' \
+      -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
+
+• Get top/ranking (public or with user token):
+    curl 'https://api.myanimelist.net/v2/anime/ranking?ranking_type=all&limit=4' \
+      -H 'X-MAL-CLIENT-ID: YOUR_CLIENT_ID'
+
+• Seasonal anime:
+    curl 'https://api.myanimelist.net/v2/anime/season/2017/summer?limit=4' \
+      -H 'X-MAL-CLIENT-ID: YOUR_CLIENT_ID'
+
+• Suggested anime for the logged-in user:
+    curl 'https://api.myanimelist.net/v2/anime/suggestions?limit=4' \
+      -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
+
+• Read current user (profile/stats):
+    curl 'https://api.myanimelist.net/v2/users/@me?fields=anime_statistics' \
+      -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
+
+• Get a user’s anime/manga list (with filters/sort):
+    curl 'https://api.myanimelist.net/v2/users/@me/animelist?fields=list_status&limit=100' \
+      -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
+
+    curl 'https://api.myanimelist.net/v2/users/@me/mangalist?fields=list_status&limit=100' \
+      -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
+
+• Update your anime list status (create or update record):
+    curl 'https://api.myanimelist.net/v2/anime/17074/my_list_status' \
+      -X PUT \
+      -H 'Authorization: Bearer YOUR_ACCESS_TOKEN' \
+      -H 'Content-Type: application/x-www-form-urlencoded' \
+      -d 'status=completed&score=8&num_watched_episodes=3'
+
+• Delete from your anime list:
+    curl 'https://api.myanimelist.net/v2/anime/21/my_list_status' \
+      -X DELETE \
+      -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
+
+Request Parameters & Tips
+-------------------------
+• fields: Request only what you need (speeds responses, reduces payloads).
+  Example: fields=synopsis,my_list_status{status,score,comments}
+• nsfw: By default, some APIs omit NSFW. Set nsfw=true to include.
+• Pagination: limit (often defaults to 100; max varies by endpoint), offset.
+• Ranking & Seasonal filters: Refer to docs for valid values (e.g., ranking_type=all, airing, upcoming, tv, movie; seasons: winter/spring/summer/fall).
+• Sorting user lists: sort=list_score, list_updated_at, anime_title, etc.
+
+Common HTTP Errors
+------------------
+• 400 Bad Request — invalid parameters.
+• 401 Unauthorized — token invalid/expired (error: invalid_token).
+• 403 Forbidden — e.g., abuse/DoS protection triggered.
+• 404 Not Found — resource doesn’t exist (or list item missing on DELETE).
+• Error JSON shape example:
+    {
+      "error": "invalid_token",
+      "message": "token is invalid"
+    }
+
+Security & Implementation Notes
+-------------------------------
+• Treat access_token and refresh_token as secrets; store encrypted at rest.
+• On mobile/desktop apps that can’t keep a client_secret, rely on PKCE; do NOT embed secrets in distributed binaries.
+• Always validate the state parameter on redirect to prevent CSRF.
+• Prefer HTTPS everywhere; never transmit tokens over insecure channels.
+• Handle pagination; don’t assume you got all results without checking "paging.next".
+• Use exponential backoff on 429/5xx; respect server limits.
+• Avoid requesting nsfw unless your UX explicitly needs it.
+• Consider caching (short TTL) for public endpoints using X-MAL-CLIENT-ID.
+
+Minimal Language Examples
+-------------------------
+Go (public-only requests with X-MAL-CLIENT-ID):
+    // Create an http.Client with X-MAL-CLIENT-ID automatically added.
+    // Then use it to call https://api.myanimelist.net/v2 endpoints.
+
+Go (OAuth 2.0 config):
+    // OAuth2 config:
+    AuthURL:  "https://myanimelist.net/v1/oauth2/authorize"
+    TokenURL: "https://myanimelist.net/v1/oauth2/token"
+    // Use golang.org/x/oauth2 with a PKCE flow (store code_verifier, use it at token exchange).
+
+JavaScript/TypeScript (conceptual):
+    // 1) Generate code_verifier & code_challenge (PKCE).
+    // 2) Redirect user to authorize URL with response_type=code & code_challenge.
+    // 3) On redirect, exchange code + code_verifier at /v1/oauth2/token.
+    // 4) Call /v2 endpoints using Authorization: Bearer <token>.
+    // 5) Refresh with grant_type=refresh_token when needed.
+
+Postman Tips
+------------
+• Callback URL: https://oauth.pstmn.io/v1/callback (use this during testing and add it to your MAL redirect URIs).
+• Grant Type: Authorization Code (with PKCE).
+• Auth URL:   https://myanimelist.net/v1/oauth2/authorize
+• Token URL:  https://myanimelist.net/v1/oauth2/token
+• Code Challenge Method: plain
+• Provide Client ID (and Secret if applicable), plus your generated code_verifier.
+• After success, use the captured access token in the requests.
+
+Troubleshooting
+---------------
+• invalid_token / 401: Refresh the token; if that fails, restart the auth flow.
+• 400 invalid parameters: Double-check query/form names and values; ensure redirect_uri matches exactly.
+• No data returned: Request missing fields; set fields=...; check nsfw parameter if content is filtered.
+• 404 on DELETE /my_list_status: MAL returns 404 when item doesn’t exist; handle idempotency carefully.
+• CORS/browser issues during local dev: Prefer server-to-server calls for secrets; for SPA/native apps, ensure your redirect URI scheme and ports are consistent.
+
+Glossary
+--------
+• Access Token — Short-lived bearer token to call protected endpoints.
+• Refresh Token — Long-lived token to obtain a new access token without re-login.
+• PKCE — Proof Key for Code Exchange; mitigates code interception in public clients.
+• Scope — A permission group, e.g., write:users for accessing/modifying user data.
+
+Quick Endpoint Catalog (not exhaustive)
+---------------------------------------
+• /anime (search), /anime/{id}, /anime/ranking, /anime/season/{year}/{season}, /anime/suggestions
+• /manga (search), /manga/{id}, /manga/ranking
+• /users/@me, /users/@me/animelist, /users/@me/mangalist
+• /anime/{anime_id}/my_list_status (PUT/DELETE), /manga/{manga_id}/my_list_status (PUT/DELETE)
+• /forum/boards, /forum/topic/{topic_id}, /forum/topics
+
+That’s it — you’re ready to integrate MAL v2!
+```
+

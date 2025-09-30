@@ -600,10 +600,13 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 		input, _ := reader.ReadString('\n')
 		query = strings.TrimSpace(input)
 	}
+	// Search using provider abstraction
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+		// For image preview, use AniList-specific function for now
+		// MAL doesn't provide preview in the same way
 		animeMapPreview, err = SearchAnimeAnilistPreview(query, user.Token)
 	} else {
-		animeOptions, err = SearchAnimeAnilist(query, user.Token)
+		animeOptions, err = SearchProviderAnime(userCurdConfig, user.Token, query)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to search anime: %v", err))
 			ExitCurd(fmt.Errorf("Failed to search anime"))
@@ -656,27 +659,17 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 		ExitCurd(nil)
 	}
 
-	err = UpdateAnimeStatus(user.Token, animeID, categorySelection.Key)
+	err = UpdateProviderAnimeStatus(userCurdConfig, user.Token, animeID, categorySelection.Key)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to add anime to list: %v", err))
 		ExitCurd(fmt.Errorf("Failed to add anime to list"))
 	}
 
 	// Refresh user's anime list after adding
-	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-		anilistUserDataPreview, err := GetUserDataPreview(user.Token, user.Id)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to refresh anime list: %v", err))
-			ExitCurd(fmt.Errorf("Failed to refresh anime list"))
-		}
-		user.AnimeList = ParseAnimeList(anilistUserDataPreview)
-	} else {
-		anilistUserData, err := GetUserData(user.Token, user.Id)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to refresh anime list: %v", err))
-			ExitCurd(fmt.Errorf("Failed to refresh anime list"))
-		}
-		user.AnimeList = ParseAnimeList(anilistUserData)
+	user.AnimeList, err = GetProviderAnimeList(userCurdConfig, user.Token, user.Id)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to refresh anime list: %v", err))
+		ExitCurd(fmt.Errorf("Failed to refresh anime list"))
 	}
 
 	return anilistSelectedOption
@@ -684,35 +677,23 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 
 func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAnimes *[]Anime) {
 	var err error
-	var anilistUserData map[string]interface{}
-	var anilistUserDataPreview map[string]interface{}
 
 	// Filter anime list based on selected category
 	var animeListOptions []SelectionOption
 	var animeListMapPreview map[string]RofiSelectPreview
 
-	// Get user id, username and Anime list
-	user.Id, user.Username, err = GetAnilistUserID(user.Token)
+	// Get user id, username using provider abstraction
+	user.Id, user.Username, err = GetProviderUserID(userCurdConfig, user.Token)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to get user ID: %v", err))
 		ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
 	}
 
-	// Get the anime list data
-	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-		anilistUserDataPreview, err = GetUserDataPreview(user.Token, user.Id)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to get user data preview: %v", err))
-			ExitCurd(fmt.Errorf("Failed to get user data preview"))
-		}
-		user.AnimeList = ParseAnimeList(anilistUserDataPreview)
-	} else {
-		anilistUserData, err = GetUserData(user.Token, user.Id)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to get user data: %v", err))
-			ExitCurd(fmt.Errorf("Failed to get user ID\nYou can reset the token by running `curd -change-token`"))
-		}
-		user.AnimeList = ParseAnimeList(anilistUserData)
+	// Get the anime list data using provider abstraction
+	user.AnimeList, err = GetProviderAnimeList(userCurdConfig, user.Token, user.Id)
+	if err != nil {
+		Log(fmt.Sprintf("Failed to get anime list: %v", err))
+		ExitCurd(fmt.Errorf("Failed to get anime list\nYou can reset the token by running `curd -change-token`"))
 	}
 
 	// If continueLast flag is set, directly get the last watched anime
