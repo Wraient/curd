@@ -137,10 +137,11 @@ func GetMALAuthorizationURL(clientID, redirectURI, state, codeChallenge string) 
 }
 
 // ExchangeCodeForToken exchanges the authorization code for access token
-func ExchangeCodeForToken(clientID, code, redirectURI, codeVerifier string) (*MALTokenResponse, error) {
+func ExchangeCodeForToken(clientID, clientSecret, code, redirectURI, codeVerifier string) (*MALTokenResponse, error) {
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
 	data.Set("code", code)
 	data.Set("redirect_uri", redirectURI)
 	data.Set("code_verifier", codeVerifier)
@@ -177,10 +178,11 @@ func ExchangeCodeForToken(clientID, code, redirectURI, codeVerifier string) (*MA
 }
 
 // RefreshMALToken refreshes an expired access token
-func RefreshMALToken(clientID, refreshToken string) (*MALTokenResponse, error) {
+func RefreshMALToken(clientID, clientSecret, refreshToken string) (*MALTokenResponse, error) {
 	data := url.Values{}
 	data.Set("grant_type", "refresh_token")
 	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
 	data.Set("refresh_token", refreshToken)
 
 	req, err := http.NewRequest("POST", MALTokenURL, strings.NewReader(data.Encode()))

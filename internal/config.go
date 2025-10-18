@@ -62,6 +62,7 @@ type CurdConfig struct {
 	DiscordClientId          string   `config:"DiscordClientId"`
 	AnimeProvider            string   `config:"AnimeProvider"`
 	MALClientID              string   `config:"MALClientID"`
+	MALClientSecret          string   `config:"MALClientSecret"`
 }
 
 // Default configuration values as a map
@@ -90,6 +91,7 @@ func defaultConfigMap() map[string]string {
 		"DiscordClientId":          "1287457464148820089",
 		"AnimeProvider":            "anilist",
 		"MALClientID":              "",
+		"MALClientSecret":          "",
 	}
 }
 
@@ -455,6 +457,9 @@ func authenticateMALWithBrowser(config *CurdConfig, tokenPath string) (string, e
 	if config.MALClientID == "" {
 		return "", fmt.Errorf("MAL Client ID not configured. Please set MALClientID in your config file")
 	}
+	if config.MALClientSecret == "" {
+		return "", fmt.Errorf("MAL Client Secret not configured. Please set MALClientSecret in your config file")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -553,7 +558,7 @@ func authenticateMALWithBrowser(config *CurdConfig, tokenPath string) (string, e
 
 		// Exchange code for token
 		go func() {
-			tokenResp, err := ExchangeCodeForToken(config.MALClientID, code, "http://localhost:8080/callback", codeVerifier)
+			tokenResp, err := ExchangeCodeForToken(config.MALClientID, config.MALClientSecret, code, "http://localhost:8080/callback", codeVerifier)
 			if err != nil {
 				errCh <- fmt.Errorf("failed to exchange code for token: %w", err)
 				return
