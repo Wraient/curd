@@ -881,26 +881,92 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			ExitCurd(fmt.Errorf("No results found."))
 		}
 
-		// find anime in animeList by searching through the options
-		targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
+		// Try to find anime automatically using multiple matching strategies
 		found := false
+		requiresConfirmation := false
+
+		// Strategy 1: Exact match with episode count (HIGH CONFIDENCE)
+		targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
 		for i, option := range animeList {
 			Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s'", i, option.Key, option.Label))
 			if option.Label == targetLabel {
 				anime.AllanimeId = option.Key
 				Log(fmt.Sprintf("Found exact match! Setting AllanimeId to: %s", anime.AllanimeId))
 				found = true
+				requiresConfirmation = false // High confidence, no confirmation needed
 				break
 			}
 		}
 
+		// Strategy 2: Check if option label starts with the anime name (MEDIUM CONFIDENCE)
 		if !found {
-			Log(fmt.Sprintf("No exact match found for label '%s'. Will require manual selection.", targetLabel))
+			Log("Trying partial name match...")
+			normalizedQuery := strings.ToLower(strings.TrimSpace(userQuery))
+			for _, option := range animeList {
+				normalizedLabel := strings.ToLower(option.Label)
+				// Check if the label starts with the query (higher confidence)
+				if strings.HasPrefix(normalizedLabel, normalizedQuery) {
+					anime.AllanimeId = option.Key
+					Log(fmt.Sprintf("Found prefix match! Setting AllanimeId to: %s (matched on '%s')", anime.AllanimeId, option.Label))
+					found = true
+					requiresConfirmation = false // Prefix match is fairly confident
+					break
+				}
+			}
 		}
 
-		// If unable to get Allanime id automatically get manually
-		if anime.AllanimeId == "" {
-			CurdOut("Failed to automatically select anime")
+		// Strategy 3: Check if query is contained anywhere in label (LOWER CONFIDENCE)
+		if !found {
+			Log("Trying contains match...")
+			normalizedQuery := strings.ToLower(strings.TrimSpace(userQuery))
+			for _, option := range animeList {
+				normalizedLabel := strings.ToLower(option.Label)
+				if strings.Contains(normalizedLabel, normalizedQuery) {
+					anime.AllanimeId = option.Key
+					Log(fmt.Sprintf("Found contains match! Setting AllanimeId to: %s (matched on '%s')", anime.AllanimeId, option.Label))
+					found = true
+					requiresConfirmation = true // Lower confidence, ask user to confirm
+					break
+				}
+			}
+		}
+
+		// Strategy 4: Try with English title if available
+		if !found && anime.Title.English != "" {
+			Log(fmt.Sprintf("Trying with English title: %s", anime.Title.English))
+			normalizedEnglish := strings.ToLower(strings.TrimSpace(anime.Title.English))
+			for _, option := range animeList {
+				normalizedLabel := strings.ToLower(option.Label)
+				if strings.HasPrefix(normalizedLabel, normalizedEnglish) {
+					anime.AllanimeId = option.Key
+					Log(fmt.Sprintf("Found match with English title! Setting AllanimeId to: %s (matched on '%s')", anime.AllanimeId, option.Label))
+					found = true
+					requiresConfirmation = false // English title prefix is confident
+					break
+				} else if strings.Contains(normalizedLabel, normalizedEnglish) {
+					anime.AllanimeId = option.Key
+					Log(fmt.Sprintf("Found partial match with English title! Setting AllanimeId to: %s (matched on '%s')", anime.AllanimeId, option.Label))
+					found = true
+					requiresConfirmation = true // Contains match needs confirmation
+					break
+				}
+			}
+		}
+
+		// If automatic matching failed, require manual selection
+		if !found {
+			Log(fmt.Sprintf("No automatic match found for '%s'. Will require manual selection.", userQuery))
+		}
+
+		// Show manual selection if: no match found OR match requires confirmation
+		if anime.AllanimeId == "" || requiresConfirmation {
+			if requiresConfirmation {
+				Log("Match found but confidence is low. Showing options for user confirmation.")
+				CurdOut(fmt.Sprintf("Found possible match: %s", anime.AllanimeId))
+				CurdOut("Please confirm or select correct anime:")
+			} else {
+				CurdOut("Failed to automatically select anime")
+			}
 			selectedAllanimeAnime, err := DynamicSelect(animeList)
 
 			if selectedAllanimeAnime.Key == "-1" {
