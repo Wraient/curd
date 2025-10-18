@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // MAL API endpoints
@@ -22,10 +23,11 @@ const (
 
 // MALTokenResponse represents the OAuth token response from MAL
 type MALTokenResponse struct {
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	TokenType    string    `json:"token_type"`
+	ExpiresIn    int       `json:"expires_in"`
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 // MALUser represents the authenticated MAL user
@@ -174,6 +176,9 @@ func ExchangeCodeForToken(clientID, clientSecret, code, redirectURI, codeVerifie
 		return nil, fmt.Errorf("failed to parse token response: %w", err)
 	}
 
+	// Calculate expiration time
+	tokenResp.ExpiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+
 	return &tokenResp, nil
 }
 
@@ -212,6 +217,9 @@ func RefreshMALToken(clientID, clientSecret, refreshToken string) (*MALTokenResp
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to parse refresh response: %w", err)
 	}
+
+	// Calculate expiration time
+	tokenResp.ExpiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
 
 	return &tokenResp, nil
 }
@@ -256,7 +264,7 @@ func GetMALAnimeList(accessToken, status string, limit, offset int) (*MALAnimeLi
 	baseURL := fmt.Sprintf("%s/users/@me/animelist", MALBaseURL)
 
 	params := url.Values{}
-	params.Add("fields", "list_status,num_episodes,status,alternative_titles")
+	params.Add("fields", "my_list_status{status,score,num_episodes_watched,is_rewatching},num_episodes,status,alternative_titles")
 	if status != "" && status != "all" {
 		params.Add("status", status)
 	}

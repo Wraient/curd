@@ -433,12 +433,22 @@ func GetTokenFromFile(tokenPath string) (string, error) {
 		return "", fmt.Errorf("failed to read token from file: %w", err)
 	}
 
-	// Try to parse as JSON first (new format)
-	var token AnilistToken
-	if err := json.Unmarshal(data, &token); err == nil {
-		// It's JSON format, check if token is valid
-		if isTokenValid(&token) {
-			return token.AccessToken, nil
+	// Try to parse as AnilistToken JSON format
+	var anilistToken AnilistToken
+	if err := json.Unmarshal(data, &anilistToken); err == nil && anilistToken.AccessToken != "" {
+		// It's AniList token format, check if token is valid
+		if isTokenValid(&anilistToken) {
+			return anilistToken.AccessToken, nil
+		}
+		return "", fmt.Errorf("token has expired")
+	}
+
+	// Try to parse as MALTokenResponse JSON format
+	var malToken MALTokenResponse
+	if err := json.Unmarshal(data, &malToken); err == nil && malToken.AccessToken != "" {
+		// It's MAL token format, check if token is valid
+		if time.Now().Before(malToken.ExpiresAt) {
+			return malToken.AccessToken, nil
 		}
 		return "", fmt.Errorf("token has expired")
 	}
@@ -477,7 +487,7 @@ func authenticateMALWithBrowser(config *CurdConfig, tokenPath string) (string, e
 	}
 
 	// Start local server to handle OAuth callback
-	callbackCh := make(chan string, 1)
+	callbackCh := make(chan *MALTokenResponse, 1)
 	errCh := make(chan error, 1)
 	mux := http.NewServeMux()
 	srv := &http.Server{
@@ -563,7 +573,7 @@ func authenticateMALWithBrowser(config *CurdConfig, tokenPath string) (string, e
 				errCh <- fmt.Errorf("failed to exchange code for token: %w", err)
 				return
 			}
-			callbackCh <- tokenResp.AccessToken
+			callbackCh <- tokenResp
 		}()
 
 		// Show success page
@@ -606,20 +616,13 @@ func authenticateMALWithBrowser(config *CurdConfig, tokenPath string) (string, e
 	}
 
 	// Wait for token
-	var accessToken string
+	var tokenData *MALTokenResponse
 	select {
-	case accessToken = <-callbackCh:
+	case tokenData = <-callbackCh:
 	case err := <-errCh:
 		return "", fmt.Errorf("authentication failed: %w", err)
 	case <-ctx.Done():
 		return "", fmt.Errorf("authentication timeout after 5 minutes")
-	}
-
-	// Save token
-	tokenData := &MALTokenResponse{
-		AccessToken: accessToken,
-		TokenType:   "Bearer",
-		ExpiresIn:   31536000, // 1 year
 	}
 
 	data, err := json.Marshal(tokenData)
@@ -636,7 +639,7 @@ func authenticateMALWithBrowser(config *CurdConfig, tokenPath string) (string, e
 	}
 
 	fmt.Println("MAL authentication successful!")
-	return accessToken, nil
+	return tokenData.AccessToken, nil
 }
 
 func ChangeToken(config *CurdConfig, user *User) {
