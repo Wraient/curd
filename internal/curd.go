@@ -898,6 +898,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			// Handle back button
 			if anilistSelectedOption.Key == "-2" {
 				ClearScreen()
+				// Clear the last selected category so user can choose again
+				lastSelectedCategory = SelectionOption{}
 				continue // Go back to category selection
 			}
 
@@ -906,6 +908,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				// If user pressed back in AddNewAnime, go back to category selection
 				if anilistSelectedOption.Key == "-2" {
 					ClearScreen()
+					// Clear the last selected category so user can choose again
+					lastSelectedCategory = SelectionOption{}
 					continue
 				}
 			}
