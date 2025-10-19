@@ -280,7 +280,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 
 	// Add back option
 	animeList = append([]SelectionOption{
-		{Key: "-2", Label: "← Back"},
+		{Key: "-2", Label: "<- Back"},
 	}, animeList...)
 
 	// Select anime from search results

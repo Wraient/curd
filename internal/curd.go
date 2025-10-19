@@ -216,7 +216,7 @@ func CurdOut(data interface{}) {
 func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	// Create update options
 	updateOptions := []SelectionOption{
-		{Key: "-2", Label: "← Back"},
+		{Key: "-2", Label: "<- Back"},
 		{Key: "CATEGORY", Label: "Change Anime Category"},
 		{Key: "PROGRESS", Label: "Change Progress"},
 		{Key: "SCORE", Label: "Add/Change Score"},
@@ -377,7 +377,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	} else {
 		// Add back option
 		animeListOptions = append([]SelectionOption{
-			{Key: "-2", Label: "← Back"},
+			{Key: "-2", Label: "<- Back"},
 		}, animeListOptions...)
 		selectedAnime, err = DynamicSelect(animeListOptions)
 	}
@@ -413,7 +413,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	switch updateSelection.Key {
 	case "CATEGORY":
 		categories := []SelectionOption{
-			{Key: "-2", Label: "← Back"},
+			{Key: "-2", Label: "<- Back"},
 			{Key: "CURRENT", Label: "Currently Watching"},
 			{Key: "COMPLETED", Label: "Completed"},
 			{Key: "PAUSED", Label: "On Hold"},
@@ -648,7 +648,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	} else {
 		// Add back option
 		animeOptions = append([]SelectionOption{
-			{Key: "-2", Label: "← Back"},
+			{Key: "-2", Label: "<- Back"},
 		}, animeOptions...)
 		anilistSelectedOption, err = DynamicSelect(animeOptions)
 	}
@@ -674,7 +674,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 
 	// Add category selection before adding to list
 	categories := []SelectionOption{
-		{Key: "-2", Label: "← Back"},
+		{Key: "-2", Label: "<- Back"},
 		{Key: "CURRENT", Label: "Currently Watching"},
 		{Key: "COMPLETED", Label: "Completed"},
 		{Key: "PAUSED", Label: "On Hold"},
@@ -1108,7 +1108,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 			// Add back option
 			animeList = append([]SelectionOption{
-				{Key: "-2", Label: "← Back"},
+				{Key: "-2", Label: "<- Back"},
 			}, animeList...)
 
 			selectedAllanimeAnime, err := DynamicSelect(animeList)
@@ -1539,7 +1539,7 @@ func NextEpisodePromptCLI(userCurdConfig *CurdConfig) bool {
 	// Create options for the selection - no "quit" option since it's built into selection menu
 	options := []SelectionOption{
 		{Key: "yes", Label: fmt.Sprintf("Yes, continue to episode %d", nextEpisodeNum)},
-		{Key: "-2", Label: "← Back"},
+		{Key: "-2", Label: "<- Back"},
 	}
 
 	// Use DynamicSelect for CLI mode
@@ -1585,7 +1585,7 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 		// Create options for the selection - no "quit" option since it's built into selection menu
 		options := []SelectionOption{
 			{Key: "yes", Label: "Yes, start next episode now"},
-			{Key: "-2", Label: "← Back"},
+			{Key: "-2", Label: "<- Back"},
 		}
 
 		// Use DynamicSelect for CLI mode
@@ -1732,7 +1732,7 @@ func NextEpisodePromptRofi(userCurdConfig *CurdConfig) bool {
 	// Create options for the selection
 	options := []SelectionOption{
 		{Key: "yes", Label: fmt.Sprintf("Yes, start episode %d", nextEpisodeNum)},
-		{Key: "-2", Label: "← Back"},
+		{Key: "-2", Label: "<- Back"},
 	}
 
 	// Use DynamicSelect for Rofi mode
