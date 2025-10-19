@@ -189,38 +189,47 @@ func main() {
 	}
 
 	// Outer loop to allow returning to main menu
-	for {
-		// Reset anime struct for new selection
-		anime = internal.Anime{}
+	// Flag to skip SetupCurd when anime was reselected via back navigation
+	skipSetup := false
 
-		// Setup and select anime
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					if r == "BACK_TO_MAIN_MENU" {
-						// Don't do anything, just return from this function
-						// The outer loop will restart
-						return
+	for {
+		// Only reset and call SetupCurd if we're not coming from a back navigation
+		if !skipSetup {
+			// Reset anime struct for new selection
+			anime = internal.Anime{}
+
+			// Setup and select anime
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						if r == "BACK_TO_MAIN_MENU" {
+							// Don't do anything, just return from this function
+							// The outer loop will restart
+							return
+						}
+						// Re-panic if it's not our special signal
+						panic(r)
 					}
-					// Re-panic if it's not our special signal
-					panic(r)
-				}
+				}()
+
+				internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes)
 			}()
 
-			internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes)
-		}()
-
-		// Check if panic occurred (anime.AnilistId will be 0)
-		if anime.AnilistId == 0 {
-			// Back to main menu was triggered, reload anime list and restart
-			internal.CurdOut("Returning to main menu...")
-			internal.ClearScreen()
-			user.AnimeList, err = internal.GetProviderAnimeList(&userCurdConfig, user.Token, user.Id)
-			if err != nil {
-				internal.Log(fmt.Sprintf("Failed to reload anime list: %v", err))
+			// Check if panic occurred (anime.AnilistId will be 0)
+			if anime.AnilistId == 0 {
+				// Back to main menu was triggered, reload anime list and restart
+				internal.CurdOut("Returning to main menu...")
+				internal.ClearScreen()
+				user.AnimeList, err = internal.GetProviderAnimeList(&userCurdConfig, user.Token, user.Id)
+				if err != nil {
+					internal.Log(fmt.Sprintf("Failed to reload anime list: %v", err))
+				}
+				continue
 			}
-			continue
 		}
+
+		// Reset the skip flag for next iteration
+		skipSetup = false
 
 		temp_anime, err := internal.FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId))
 		if err != nil {
@@ -260,14 +269,23 @@ func main() {
 		}()
 
 		// Main loop (loop to keep starting new episodes)
+		// Flag to track if anime was reselected via back navigation
+		var animeReselected bool
+
 		// Wrap episode playback to catch BACK_TO_ANIME_SELECTION panic
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
 					if r == "BACK_TO_ANIME_SELECTION" {
+						// Reset anime struct for new selection
+						anime = internal.Anime{}
+
 						// Restart anime selection by calling SetupCurd again
 						internal.ClearScreen()
 						internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes)
+
+						// Set flag to indicate we reselected an anime
+						animeReselected = true
 						return
 					}
 					// Re-panic if it's not our signal
@@ -922,6 +940,13 @@ func main() {
 		}
 
 		}() // end episode playback wrapper function with defer/recover
+
+		// If anime was reselected via back button, continue the outer loop to start playback
+		if animeReselected {
+			internal.Log("Anime reselected, continuing outer loop for playback")
+			skipSetup = true // Skip SetupCurd on next iteration
+			continue
+		}
 
 		// If we reach here normally, the series ended or user quit
 		// Break the outer loop

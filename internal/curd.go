@@ -1215,6 +1215,40 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		}
 	}
 
+	// Check if anime is completed BEFORE setting episode number
+	if anime.TotalEpisodes > 0 && selectedAnilistAnime.Progress >= anime.TotalEpisodes {
+		CurdOut(fmt.Sprintf("You've completed all %d episodes of this anime!", anime.TotalEpisodes))
+		var answer string
+		if userCurdConfig.RofiSelection {
+			userInput, err := GetUserInputFromRofi("Would you like to rewatch from episode 1? (y/n)")
+			if err != nil {
+				Log("Error getting user input: " + err.Error())
+				ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
+			}
+			answer = userInput
+		} else {
+			fmt.Printf("Would you like to rewatch from episode 1? (y/n)\n")
+			fmt.Scanln(&answer)
+		}
+		if answer == "y" {
+			anime.Ep.Number = 1
+			anime.Rewatching = true
+
+			// Reset progress on MAL/AniList to 0 for rewatching
+			CurdOut("Resetting progress to start rewatching...")
+			err := UpdateProviderAnimeProgress(userCurdConfig, user.Token, anime.AnilistId, 0)
+			if err != nil {
+				Log(fmt.Sprintf("Error resetting progress: %v", err))
+				CurdOut("Warning: Failed to reset progress on your list")
+			} else {
+				CurdOut("Progress reset successfully!")
+			}
+		} else {
+			CurdOut("Returning to anime selection...")
+			panic("BACK_TO_ANIME_SELECTION")
+		}
+	}
+
 	if anime.TotalEpisodes == 0 { // If failed to get anime data
 		CurdOut("Failed to get anime data. Attempting to retrieve from anime list.")
 		animeList, err := SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
@@ -1252,7 +1286,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		} else {
 			anime.Ep.Number = selectedAnilistAnime.Progress + 1
 		}
-	} else if anime.TotalEpisodes < anime.Ep.Number { // Handle weird cases
+	} else if anime.TotalEpisodes > 0 && anime.TotalEpisodes < anime.Ep.Number { // Handle weird cases where episode > total
 		Log(fmt.Sprintf("Weird case: anime.TotalEpisodes < anime.Ep.Number: %v < %v", anime.TotalEpisodes, anime.Ep.Number))
 		var answer string
 		if userCurdConfig.RofiSelection {
