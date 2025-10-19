@@ -19,6 +19,8 @@ import (
 	"github.com/gen2brain/beeep"
 )
 
+// Global variable to store the last selected category for back navigation
+var lastSelectedCategory SelectionOption
 
 func EditConfig(configFilePath string) {
 	// Get the user's preferred editor from the EDITOR environment variable
@@ -784,13 +786,18 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		// Navigation loop: allow going back to category selection from anime selection
 		categorySelected := false
 		for !categorySelected {
-			// Skip category selection if Current flag is set
+			// Skip category selection if Current flag is set OR if we have a last selected category (back navigation)
 			var categorySelection SelectionOption
 			if userCurdConfig.CurrentCategory {
 				categorySelection = SelectionOption{
 					Key:   "CURRENT",
 					Label: "Currently Watching",
 				}
+			} else if lastSelectedCategory.Key != "" {
+				// Use the last selected category (user pressed back from episode playback)
+				categorySelection = lastSelectedCategory
+				lastSelectedCategory = SelectionOption{} // Reset after use
+				CurdOut(fmt.Sprintf("Returning to %s...", categorySelection.Label))
 			} else {
 				// Create category selection map
 				// Get ordered categories
@@ -827,6 +834,9 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 				ClearScreen()
 			}
+
+			// Save the category selection for potential back navigation
+			lastSelectedCategory = categorySelection
 
 			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 				animeListMapPreview = make(map[string]RofiSelectPreview)
@@ -880,8 +890,6 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				Log(fmt.Sprintf("Error selecting anime: %v", err))
 				ExitCurd(fmt.Errorf("Error selecting anime"))
 			}
-
-			Log(anilistSelectedOption)
 
 			if anilistSelectedOption.Key == "-1" {
 				ExitCurd(nil)
