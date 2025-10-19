@@ -972,6 +972,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 
 			// Try to find anime automatically using multiple matching strategies
+			// Set timeout for auto-matching (15 seconds)
+			matchingStartTime := time.Now()
+			matchingTimeout := 15 * time.Second
+
 			found := false
 			requiresConfirmation := false
 
@@ -988,8 +992,14 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 		}
 
+		// Check timeout after Strategy 1
+		if time.Since(matchingStartTime) > matchingTimeout {
+			Log("Auto-matching timeout after Strategy 1. Switching to manual selection.")
+			found = false
+		}
+
 		// Strategy 2: Check if option label starts with the anime name (MEDIUM CONFIDENCE)
-		if !found {
+		if !found && time.Since(matchingStartTime) <= matchingTimeout {
 			Log("Trying partial name match...")
 			normalizedQuery := strings.ToLower(strings.TrimSpace(userQuery))
 			for _, option := range animeList {
@@ -1005,8 +1015,14 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 		}
 
+		// Check timeout after Strategy 2
+		if time.Since(matchingStartTime) > matchingTimeout {
+			Log("Auto-matching timeout after Strategy 2. Switching to manual selection.")
+			found = false
+		}
+
 		// Strategy 3: Check if query is contained anywhere in label (LOWER CONFIDENCE)
-		if !found {
+		if !found && time.Since(matchingStartTime) <= matchingTimeout {
 			Log("Trying contains match...")
 			normalizedQuery := strings.ToLower(strings.TrimSpace(userQuery))
 			for _, option := range animeList {
@@ -1021,8 +1037,14 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 		}
 
+		// Check timeout after Strategy 3
+		if time.Since(matchingStartTime) > matchingTimeout {
+			Log("Auto-matching timeout after Strategy 3. Switching to manual selection.")
+			found = false
+		}
+
 		// Strategy 4: Try with English title if available
-		if !found && anime.Title.English != "" {
+		if !found && anime.Title.English != "" && time.Since(matchingStartTime) <= matchingTimeout {
 			Log(fmt.Sprintf("Trying with English title: %s", anime.Title.English))
 			normalizedEnglish := strings.ToLower(strings.TrimSpace(anime.Title.English))
 			for _, option := range animeList {
@@ -1041,6 +1063,21 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 					break
 				}
 			}
+		}
+
+		// Check timeout after Strategy 4
+		if time.Since(matchingStartTime) > matchingTimeout {
+			Log(fmt.Sprintf("Auto-matching timeout (%.2f seconds). Switching to manual selection.", time.Since(matchingStartTime).Seconds()))
+			CurdOut(fmt.Sprintf("Auto-matching took too long (>%.0f seconds), please select manually", matchingTimeout.Seconds()))
+			found = false
+			anime.AllanimeId = "" // Clear any partial match
+		}
+
+		// If automatic matching succeeded and doesn't require confirmation, exit the loop
+		if found && !requiresConfirmation && anime.AllanimeId != "" {
+			Log(fmt.Sprintf("Auto-match successful! Using AllanimeId: %s", anime.AllanimeId))
+			streamingSourceSelected = true
+			continue // Exit the streaming source selection loop
 		}
 
 		// If automatic matching failed, require manual selection
