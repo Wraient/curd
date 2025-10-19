@@ -908,6 +908,9 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				ExitCurd(fmt.Errorf("Error converting Anilist ID"))
 			}
 
+			// Clear screen after anime selection
+			ClearScreen()
+
 			// Successfully selected an anime, exit the loop
 			categorySelected = true
 
