@@ -362,12 +362,16 @@ func UpdateMALAnimeStatus(accessToken string, animeID int, status string, score,
 	if status != "" {
 		data.Set("status", status)
 	}
-	if score > 0 {
+	// Allow score to be set to any value >= 0 (0 means remove score)
+	if score >= 0 {
 		data.Set("score", strconv.Itoa(score))
 	}
+	// Only set episodes if it's a valid value (>= 0)
 	if episodesWatched >= 0 {
 		data.Set("num_watched_episodes", strconv.Itoa(episodesWatched))
 	}
+
+	Log(fmt.Sprintf("MAL Update Request - URL: %s, Data: %s", requestURL, data.Encode()))
 
 	req, err := http.NewRequest("PUT", requestURL, strings.NewReader(data.Encode()))
 	if err != nil {
@@ -390,9 +394,11 @@ func UpdateMALAnimeStatus(accessToken string, animeID int, status string, score,
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		Log(fmt.Sprintf("MAL Update Failed - Status: %d, Body: %s", resp.StatusCode, string(body)))
 		return fmt.Errorf("update failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
+	Log(fmt.Sprintf("MAL Update Success - Response: %s", string(body)))
 	return nil
 }
 

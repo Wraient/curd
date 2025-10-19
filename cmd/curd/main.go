@@ -188,49 +188,97 @@ func main() {
 		// internal.ExitCurd(fmt.Errorf("Added new anime!"))
 	}
 
-	internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes)
-
-	temp_anime, err := internal.FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId))
-	if err != nil {
-		internal.Log("Error finding anime by Anilist ID: " + err.Error())
-	}
-
-	if anime.TotalEpisodes == temp_anime.Progress {
-		internal.Log(temp_anime.Progress)
-		internal.Log(anime.TotalEpisodes)
-		internal.Log(user.AnimeList)
-		internal.Log("Rewatching anime: " + internal.GetAnimeName(anime))
-		anime.Rewatching = true
-	}
-
-	anime.Ep.Player.Speed = 1.0
-
-	// Get filler list concurrently
-	go func() {
-		// Get MAL ID first if not already set
-		if anime.MalId == 0 {
-			malID, err := internal.GetAnimeMalID(anime.AnilistId)
-			if err != nil {
-				internal.Log("Error getting MAL ID: " + err.Error())
-				return
-			}
-			anime.MalId = malID
-		}
-
-		fillerList, err := internal.FetchFillerEpisodes(anime.MalId)
-		if err != nil {
-			internal.Log("Error getting filler list: " + err.Error())
-		} else {
-			anime.FillerEpisodes = fillerList
-			internal.Log("Filler list fetched successfully")
-			// fmt.Println("Filler episodes: ", anime.FillerEpisodes)
-		}
-	}()
-
-	// Main loop (loop to keep starting new episodes)
+	// Outer loop to allow returning to main menu
 	for {
+		// Reset anime struct for new selection
+		anime = internal.Anime{}
 
-		internal.Log(anime)
+		// Setup and select anime
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					if r == "BACK_TO_MAIN_MENU" {
+						// Don't do anything, just return from this function
+						// The outer loop will restart
+						return
+					}
+					// Re-panic if it's not our special signal
+					panic(r)
+				}
+			}()
+
+			internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes)
+		}()
+
+		// Check if panic occurred (anime.AnilistId will be 0)
+		if anime.AnilistId == 0 {
+			// Back to main menu was triggered, reload anime list and restart
+			internal.CurdOut("Returning to main menu...")
+			internal.ClearScreen()
+			user.AnimeList, err = internal.GetProviderAnimeList(&userCurdConfig, user.Token, user.Id)
+			if err != nil {
+				internal.Log(fmt.Sprintf("Failed to reload anime list: %v", err))
+			}
+			continue
+		}
+
+		temp_anime, err := internal.FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId))
+		if err != nil {
+			internal.Log("Error finding anime by Anilist ID: " + err.Error())
+		}
+
+		if anime.TotalEpisodes == temp_anime.Progress {
+			internal.Log(temp_anime.Progress)
+			internal.Log(anime.TotalEpisodes)
+			internal.Log(user.AnimeList)
+			internal.Log("Rewatching anime: " + internal.GetAnimeName(anime))
+			anime.Rewatching = true
+		}
+
+		anime.Ep.Player.Speed = 1.0
+
+		// Get filler list concurrently
+		go func() {
+			// Get MAL ID first if not already set
+			if anime.MalId == 0 {
+				malID, err := internal.GetAnimeMalID(anime.AnilistId)
+				if err != nil {
+					internal.Log("Error getting MAL ID: " + err.Error())
+					return
+				}
+				anime.MalId = malID
+			}
+
+			fillerList, err := internal.FetchFillerEpisodes(anime.MalId)
+			if err != nil {
+				internal.Log("Error getting filler list: " + err.Error())
+			} else {
+				anime.FillerEpisodes = fillerList
+				internal.Log("Filler list fetched successfully")
+				// fmt.Println("Filler episodes: ", anime.FillerEpisodes)
+			}
+		}()
+
+		// Main loop (loop to keep starting new episodes)
+		// Wrap episode playback to catch BACK_TO_ANIME_SELECTION panic
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					if r == "BACK_TO_ANIME_SELECTION" {
+						// Restart anime selection by calling SetupCurd again
+						internal.ClearScreen()
+						internal.SetupCurd(&userCurdConfig, &anime, &user, &databaseAnimes)
+						return
+					}
+					// Re-panic if it's not our signal
+					panic(r)
+				}
+			}()
+
+		backToMenuRequested := false
+		episodeLoop:
+		for {
+			internal.Log(anime)
 
 		// Create a channel to signal when to exit the skip loop
 		var wg sync.WaitGroup
@@ -423,8 +471,23 @@ func main() {
 			}
 		}()
 
+		// Channel to signal back to main menu request
+		backToMenuCh := make(chan bool, 1)
+
 		// Thread for continuous next episode prompt in CLI mode (throughout episode duration)
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					if r == "BACK_TO_ANIME_SELECTION" {
+						// Signal to go back to anime selection
+						backToMenuCh <- true
+						return
+					}
+					// Re-panic if it's not our special signal
+					panic(r)
+				}
+			}()
+
 			if userCurdConfig.NextEpisodePrompt && !userCurdConfig.RofiSelection {
 				internal.NextEpisodePromptContinuous(&userCurdConfig, databaseFile, user.Token)
 				// If the function returns, it means user made a decision
@@ -448,6 +511,20 @@ func main() {
 			for {
 				select {
 				case <-skipLoopDone:
+					return
+				case <-backToMenuCh:
+					// User wants to go back to main menu
+					internal.Log("Received back to main menu signal")
+					backToMenuRequested = true
+					// Close the skip loop
+					select {
+					case isClosed := <-skipLoopClosed:
+						if !isClosed {
+							close(skipLoopDone)
+							skipLoopClosed <- true
+						}
+					default:
+					}
 					return
 				default:
 					time.Sleep(1 * time.Second)
@@ -718,6 +795,12 @@ func main() {
 		// Wait for all goroutines to finish before starting the next iteration
 		wg.Wait()
 
+		// Check if user wants to go back to anime selection
+		if backToMenuRequested {
+			internal.Log("Breaking episode loop to return to anime selection")
+			break episodeLoop // Break out of episode loop and restart selection
+		}
+
 		// Reset the WaitGroup for the next loop
 		wg = sync.WaitGroup{}
 
@@ -823,5 +906,25 @@ func main() {
 			return
 		}
 
-	}
+		} // end episode loop
+
+		// If back to anime selection was requested, trigger the panic signal
+		if backToMenuRequested {
+			internal.CurdOut("Going back to anime selection...")
+			internal.ClearScreen()
+			// Reload anime list
+			user.AnimeList, err = internal.GetProviderAnimeList(&userCurdConfig, user.Token, user.Id)
+			if err != nil {
+				internal.Log(fmt.Sprintf("Failed to reload anime list: %v", err))
+			}
+			// Trigger panic to go back to anime selection
+			panic("BACK_TO_ANIME_SELECTION")
+		}
+
+		}() // end episode playback wrapper function with defer/recover
+
+		// If we reach here normally, the series ended or user quit
+		// Break the outer loop
+		break
+	} // end outer loop (restart selection)
 }

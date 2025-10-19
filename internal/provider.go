@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -103,7 +104,8 @@ func UpdateProviderAnimeProgress(config *CurdConfig, token string, animeID, prog
 	provider := strings.ToLower(config.AnimeProvider)
 
 	if provider == "mal" {
-		return UpdateMALAnimeStatus(token, animeID, "", 0, progress)
+		// Pass -1 for score to skip updating it (only update episodes)
+		return UpdateMALAnimeStatus(token, animeID, "", -1, progress)
 	}
 
 	// Default to AniList
@@ -116,7 +118,8 @@ func UpdateProviderAnimeStatus(config *CurdConfig, token string, animeID int, st
 
 	if provider == "mal" {
 		malStatus := ConvertAnilistStatusToMAL(status)
-		return UpdateMALAnimeStatus(token, animeID, malStatus, 0, -1)
+		// Pass -1 for score and episodes to skip updating them (only update status)
+		return UpdateMALAnimeStatus(token, animeID, malStatus, -1, -1)
 	}
 
 	// Default to AniList
@@ -134,6 +137,54 @@ func RateProviderAnime(config *CurdConfig, token string, animeID int, score floa
 			malScore = 10
 		}
 		return UpdateMALAnimeStatus(token, animeID, "", malScore, -1)
+	}
+
+	// Default to AniList
+	return RateAnime(token, animeID)
+}
+
+// RateProviderAnimeWithPrompt prompts the user for a score and rates the anime on the configured provider
+func RateProviderAnimeWithPrompt(config *CurdConfig, token string, animeID int) error {
+	var score float64
+	var err error
+
+	if config.RofiSelection {
+		userInput, err := GetUserInputFromRofi("Enter a score for the anime (0-10)")
+		if err != nil {
+			Log(fmt.Sprintf("Failed to get score from Rofi: %v", err))
+			return err
+		}
+		score, err = strconv.ParseFloat(userInput, 64)
+		if err != nil {
+			Log(fmt.Sprintf("Failed to parse score: %v", err))
+			return err
+		}
+	} else {
+		CurdOut("Rate this anime (0-10): ")
+		fmt.Scanln(&score)
+	}
+
+	Log(fmt.Sprintf("User entered score: %.2f for anime ID: %d", score, animeID))
+
+	provider := strings.ToLower(config.AnimeProvider)
+
+	if provider == "mal" {
+		// MAL uses 0-10 integer scale
+		malScore := int(score)
+		if malScore > 10 {
+			malScore = 10
+		}
+		if malScore < 0 {
+			malScore = 0
+		}
+		Log(fmt.Sprintf("Calling UpdateMALAnimeStatus with score=%d for anime ID=%d", malScore, animeID))
+		err = UpdateMALAnimeStatus(token, animeID, "", malScore, -1)
+		if err != nil {
+			Log(fmt.Sprintf("UpdateMALAnimeStatus failed: %v", err))
+			return err
+		}
+		CurdOut(fmt.Sprintf("Successfully rated anime (ID: %d) with score: %d", animeID, malScore))
+		return nil
 	}
 
 	// Default to AniList

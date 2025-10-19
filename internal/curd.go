@@ -214,6 +214,7 @@ func CurdOut(data interface{}) {
 func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	// Create update options
 	updateOptions := []SelectionOption{
+		{Key: "-2", Label: "← Back"},
 		{Key: "CATEGORY", Label: "Change Anime Category"},
 		{Key: "PROGRESS", Label: "Change Progress"},
 		{Key: "SCORE", Label: "Add/Change Score"},
@@ -228,6 +229,11 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 
 	if updateSelection.Key == "-1" {
 		ExitCurd(nil)
+	}
+
+	// Handle back button
+	if updateSelection.Key == "-2" {
+		return
 	}
 
 	// Get user's anime list
@@ -367,6 +373,10 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		selectedAnime, err = DynamicSelectPreview(animeListMapPreview, false)
 	} else {
+		// Add back option
+		animeListOptions = append([]SelectionOption{
+			{Key: "-2", Label: "← Back"},
+		}, animeListOptions...)
 		selectedAnime, err = DynamicSelect(animeListOptions)
 	}
 	if err != nil {
@@ -376,6 +386,13 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 
 	if selectedAnime.Key == "-1" {
 		ExitCurd(nil)
+	}
+
+	// Handle back button - recursively call UpdateAnimeEntry
+	if selectedAnime.Key == "-2" {
+		ClearScreen()
+		UpdateAnimeEntry(userCurdConfig, user)
+		return
 	}
 
 	animeID, err := strconv.Atoi(selectedAnime.Key)
@@ -394,6 +411,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 	switch updateSelection.Key {
 	case "CATEGORY":
 		categories := []SelectionOption{
+			{Key: "-2", Label: "← Back"},
 			{Key: "CURRENT", Label: "Currently Watching"},
 			{Key: "COMPLETED", Label: "Completed"},
 			{Key: "PAUSED", Label: "On Hold"},
@@ -424,7 +442,14 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 			ExitCurd(nil)
 		}
 
-		err = UpdateAnimeStatus(user.Token, animeID, categorySelection.Key)
+		// Handle back button
+		if categorySelection.Key == "-2" {
+			ClearScreen()
+			UpdateAnimeEntry(userCurdConfig, user)
+			return
+		}
+
+		err = UpdateProviderAnimeStatus(userCurdConfig, user.Token, animeID, categorySelection.Key)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to update anime status: %v", err))
 			ExitCurd(fmt.Errorf("Failed to update anime status"))
@@ -455,7 +480,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 			ExitCurd(fmt.Errorf("Failed to convert progress to number"))
 		}
 
-		err = UpdateAnimeProgress(user.Token, animeID, progressNum)
+		err = UpdateProviderAnimeProgress(userCurdConfig, user.Token, animeID, progressNum)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to update anime progress: %v", err))
 			ExitCurd(fmt.Errorf("Failed to update anime progress"))
@@ -468,7 +493,7 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 		}
 		CurdOut(fmt.Sprintf("Current score: %s", currentScore))
 
-		err = RateAnime(user.Token, animeID)
+		err = RateProviderAnimeWithPrompt(userCurdConfig, user.Token, animeID)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to update anime score: %v", err))
 			ExitCurd(fmt.Errorf("Failed to update anime score"))
@@ -619,11 +644,20 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		anilistSelectedOption, err = DynamicSelectPreview(animeMapPreview, false)
 	} else {
+		// Add back option
+		animeOptions = append([]SelectionOption{
+			{Key: "-2", Label: "← Back"},
+		}, animeOptions...)
 		anilistSelectedOption, err = DynamicSelect(animeOptions)
 	}
 
 	if anilistSelectedOption.Key == "-1" {
 		ExitCurd(nil)
+	}
+
+	// Handle back button - return special marker
+	if anilistSelectedOption.Key == "-2" {
+		return SelectionOption{Key: "-2", Label: "← Back"}
 	}
 
 	if err != nil {
@@ -638,6 +672,7 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 
 	// Add category selection before adding to list
 	categories := []SelectionOption{
+		{Key: "-2", Label: "← Back"},
 		{Key: "CURRENT", Label: "Currently Watching"},
 		{Key: "COMPLETED", Label: "Completed"},
 		{Key: "PAUSED", Label: "On Hold"},
@@ -657,6 +692,11 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 
 	if categorySelection.Key == "-1" {
 		ExitCurd(nil)
+	}
+
+	// Handle back button - return special marker
+	if categorySelection.Key == "-2" {
+		return SelectionOption{Key: "-2", Label: "← Back"}
 	}
 
 	err = UpdateProviderAnimeStatus(userCurdConfig, user.Token, animeID, categorySelection.Key)
@@ -696,6 +736,9 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		ExitCurd(fmt.Errorf("Failed to get anime list\nYou can reset the token by running `curd -change-token`"))
 	}
 
+	// Declare selectedAnilistAnime for use throughout the function
+	var selectedAnilistAnime *Entry
+
 	// If continueLast flag is set, directly get the last watched anime
 	if anime.Ep.ContinueLast {
 		// Get the last anime ID from the curd_id file
@@ -726,167 +769,211 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		// anime.Ep.Player.PlaybackTime = animePointer.Ep.Player.PlaybackTime
 		// anime.Ep.Resume = true
 
-	} else {
-		// Skip category selection if Current flag is set
-		var categorySelection SelectionOption
-		if userCurdConfig.CurrentCategory {
-			categorySelection = SelectionOption{
-				Key:   "CURRENT",
-				Label: "Currently Watching",
-			}
-		} else {
-			// Create category selection map
-			// Get ordered categories
-			orderedCategories := getOrderedCategories(userCurdConfig)
-
-			// Use DynamicSelect with ordered categories directly
-			categorySelection, err = DynamicSelect(orderedCategories)
-
-			if err != nil {
-				Log(fmt.Sprintf("Failed to select category: %v", err))
-				ExitCurd(fmt.Errorf("Failed to select category"))
-			}
-
-			if categorySelection.Key == "-1" {
-				ExitCurd(nil)
-			}
-
-			// Handle options
-			if categorySelection.Key == "UPDATE" {
-				ClearScreen()
-				UpdateAnimeEntry(userCurdConfig, user)
-				ExitCurd(nil)
-			} else if categorySelection.Key == "UNTRACKED" {
-				ClearScreen()
-				WatchUntracked(userCurdConfig)
-			} else if categorySelection.Key == "CONTINUE_LAST" {
-				anime.Ep.ContinueLast = true
-			}
-
-			ClearScreen()
+		// Get the anime entry from user's list
+		selectedAnilistAnime, err = FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anilistID))
+		if err != nil {
+			Log(fmt.Sprintf("Can not find the anime in provider animelist: %v", err))
+			ExitCurd(fmt.Errorf("Can not find the anime in provider animelist"))
 		}
 
-		if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-			animeListMapPreview = make(map[string]RofiSelectPreview)
-			for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
-				title := entry.Media.Title.English
-				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-					title = entry.Media.Title.Romaji
+		// Set anime entry
+		anime.Title = selectedAnilistAnime.Media.Title
+		anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
+
+	} else {
+		// Navigation loop: allow going back to category selection from anime selection
+		categorySelected := false
+		for !categorySelected {
+			// Skip category selection if Current flag is set
+			var categorySelection SelectionOption
+			if userCurdConfig.CurrentCategory {
+				categorySelection = SelectionOption{
+					Key:   "CURRENT",
+					Label: "Currently Watching",
 				}
-				animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-					Title:      title,
-					CoverImage: entry.CoverImage,
+			} else {
+				// Create category selection map
+				// Get ordered categories
+				orderedCategories := getOrderedCategories(userCurdConfig)
+
+				// Use DynamicSelect with ordered categories directly
+				categorySelection, err = DynamicSelect(orderedCategories)
+
+				if err != nil {
+					Log(fmt.Sprintf("Failed to select category: %v", err))
+					ExitCurd(fmt.Errorf("Failed to select category"))
+				}
+
+				if categorySelection.Key == "-1" {
+					ExitCurd(nil)
+				}
+
+				// Handle options
+				if categorySelection.Key == "UPDATE" {
+					ClearScreen()
+					UpdateAnimeEntry(userCurdConfig, user)
+					// Don't exit - let the loop continue to allow going back
+					ClearScreen()
+					continue
+				} else if categorySelection.Key == "UNTRACKED" {
+					ClearScreen()
+					WatchUntracked(userCurdConfig)
+					// Don't exit - let the loop continue to allow going back
+					ClearScreen()
+					continue
+				} else if categorySelection.Key == "CONTINUE_LAST" {
+					anime.Ep.ContinueLast = true
+				}
+
+				ClearScreen()
+			}
+
+			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+				animeListMapPreview = make(map[string]RofiSelectPreview)
+				for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
+					title := entry.Media.Title.English
+					if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+						title = entry.Media.Title.Romaji
+					}
+					animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+						Title:      title,
+						CoverImage: entry.CoverImage,
+					}
+				}
+			} else {
+				animeListOptions = make([]SelectionOption, 0)
+				for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
+					title := entry.Media.Title.English
+					if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+						title = entry.Media.Title.Romaji
+					}
+					animeListOptions = append(animeListOptions, SelectionOption{
+						Key:   strconv.Itoa(entry.Media.ID),
+						Label: title,
+					})
 				}
 			}
-		} else {
-			animeListOptions = make([]SelectionOption, 0)
-			for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
-				title := entry.Media.Title.English
-				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-					title = entry.Media.Title.Romaji
-				}
+
+			// Anime selection with back option
+			var anilistSelectedOption SelectionOption
+			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+				anilistSelectedOption, err = DynamicSelectPreview(animeListMapPreview, true)
+			} else {
+				// Add "Back" option at the top
+				animeListOptions = append([]SelectionOption{
+					{
+						Key:   "-2",
+						Label: "← Back",
+					},
+				}, animeListOptions...)
+
+				// Add "Add new anime" option to the slice
 				animeListOptions = append(animeListOptions, SelectionOption{
-					Key:   strconv.Itoa(entry.Media.ID),
-					Label: title,
+					Key:   "add_new",
+					Label: "Add new anime",
 				})
+
+				anilistSelectedOption, err = DynamicSelect(animeListOptions)
 			}
+
+			if err != nil {
+				Log(fmt.Sprintf("Error selecting anime: %v", err))
+				ExitCurd(fmt.Errorf("Error selecting anime"))
+			}
+
+			Log(anilistSelectedOption)
+
+			if anilistSelectedOption.Key == "-1" {
+				ExitCurd(nil)
+			}
+
+			// Handle back button
+			if anilistSelectedOption.Key == "-2" {
+				ClearScreen()
+				continue // Go back to category selection
+			}
+
+			if anilistSelectedOption.Label == "add_new" || anilistSelectedOption.Key == "add_new" {
+				anilistSelectedOption = AddNewAnime(userCurdConfig, anime, user, databaseAnimes)
+				// If user pressed back in AddNewAnime, go back to category selection
+				if anilistSelectedOption.Key == "-2" {
+					ClearScreen()
+					continue
+				}
+			}
+
+			anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
+			if err != nil {
+				Log(fmt.Sprintf("Error converting Anilist ID: %v", err))
+				ExitCurd(fmt.Errorf("Error converting Anilist ID"))
+			}
+
+			// Successfully selected an anime, exit the loop
+			categorySelected = true
+
+			// Store the selected option for later use
+			selectedAnilistAnime, err = FindAnimeByAnilistID(user.AnimeList, anilistSelectedOption.Key)
+			if err != nil {
+				Log(fmt.Sprintf("Can not find the anime in anilist animelist: %v", err))
+				ExitCurd(fmt.Errorf("Can not find the anime in anilist animelist"))
+			}
+
+			// Set anime entry
+			anime.Title = selectedAnilistAnime.Media.Title
+			anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
+			anime.Ep.Number = selectedAnilistAnime.Progress + 1
+
 		}
 	}
 
-	var anilistSelectedOption SelectionOption
+	// Wrap the rest in a function with panic recovery to handle back navigation
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if r == "BACK_TO_ANIME_SELECTION" {
+					// Restart the SetupCurd to go back to anime selection
+					SetupCurd(userCurdConfig, anime, user, databaseAnimes)
+					return
+				}
+				// Re-panic if it's not our signal
+				panic(r)
+			}
+		}()
+
 	var selectedAllanimeAnime SelectionOption
 	var userQuery string
 
-	if anime.Ep.ContinueLast {
-		// Get the last watched anime ID from the curd_id file
-		curdIDPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_id")
-		curdIDBytes, err := os.ReadFile(curdIDPath)
-		if err != nil {
-			Log(fmt.Sprintf("Error reading curd_id file: %v", err))
-			ExitCurd(fmt.Errorf("Error reading curd_id file"))
-		}
-
-		lastWatchedID, err := strconv.Atoi(strings.TrimSpace(string(curdIDBytes)))
-		if err != nil {
-			Log(fmt.Sprintf("Error converting curd_id to integer: %v", err))
-			ExitCurd(fmt.Errorf("Error converting curd_id to integer"))
-		}
-
-		anime.AnilistId = lastWatchedID
-		anilistSelectedOption.Key = strconv.Itoa(lastWatchedID)
-	} else {
-		// Select anime to watch (Anilist)
-		var err error
-		if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-			anilistSelectedOption, err = DynamicSelectPreview(animeListMapPreview, true)
-		} else {
-			// Add "Add new anime" option to the slice
-			animeListOptions = append(animeListOptions, SelectionOption{
-				Key:   "add_new",
-				Label: "Add new anime",
-			})
-
-			anilistSelectedOption, err = DynamicSelect(animeListOptions)
-		}
-		if err != nil {
-			Log(fmt.Sprintf("Error selecting anime: %v", err))
-			ExitCurd(fmt.Errorf("Error selecting anime"))
-		}
-
-		Log(anilistSelectedOption)
-
-		if anilistSelectedOption.Key == "-1" {
-			ExitCurd(nil)
-		}
-
-		if anilistSelectedOption.Label == "add_new" || anilistSelectedOption.Key == "add_new" {
-			anilistSelectedOption = AddNewAnime(userCurdConfig, anime, user, databaseAnimes)
-		}
-
-		anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
-		if err != nil {
-			Log(fmt.Sprintf("Error converting Anilist ID: %v", err))
-			ExitCurd(fmt.Errorf("Error converting Anilist ID"))
-		}
-	}
+	// After the navigation loop, anime.AnilistId and anime.Title are already set
 	// Find anime in Local history
 	animePointer := LocalFindAnime(*databaseAnimes, anime.AnilistId, "")
 
-	// Get anime entry
-	selectedAnilistAnime, err := FindAnimeByAnilistID(user.AnimeList, anilistSelectedOption.Key)
-	if err != nil {
-		Log(fmt.Sprintf("Can not find the anime in anilist animelist: %v", err))
-		ExitCurd(fmt.Errorf("Can not find the anime in anilist animelist"))
-	}
-
-	// Set anime entry
-	anime.Title = selectedAnilistAnime.Media.Title
-	anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
-	anime.Ep.Number = selectedAnilistAnime.Progress + 1
-	var animeList []SelectionOption
 	userQuery = anime.Title.Romaji
+	var animeList []SelectionOption
 
 	// if anime not found in database, find it in animeList
 	if animePointer == nil {
-		Log("Anime not found in database, searching in animeList...")
-		// Get Anime list (All anime)
-		Log(fmt.Sprintf("Searching for anime with query: %s, SubOrDub: %s", userQuery, userCurdConfig.SubOrDub))
+		// Loop to allow going back from streaming source selection
+		streamingSourceSelected := false
+		for !streamingSourceSelected {
+			Log("Anime not found in database, searching in animeList...")
+			// Get Anime list (All anime)
+			Log(fmt.Sprintf("Searching for anime with query: %s, SubOrDub: %s", userQuery, userCurdConfig.SubOrDub))
 
-		animeList, err = SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to select anime: %v", err))
-			ExitCurd(fmt.Errorf("Failed to select anime"))
-		}
-		if len(animeList) == 0 {
-			ExitCurd(fmt.Errorf("No results found."))
-		}
+			animeList, err = SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
+			if err != nil {
+				Log(fmt.Sprintf("Failed to select anime: %v", err))
+				ExitCurd(fmt.Errorf("Failed to select anime"))
+			}
+			if len(animeList) == 0 {
+				ExitCurd(fmt.Errorf("No results found."))
+			}
 
-		// Try to find anime automatically using multiple matching strategies
-		found := false
-		requiresConfirmation := false
+			// Try to find anime automatically using multiple matching strategies
+			found := false
+			requiresConfirmation := false
 
-		// Strategy 1: Exact match with episode count (HIGH CONFIDENCE)
-		targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
+			// Strategy 1: Exact match with episode count (HIGH CONFIDENCE)
+			targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
 		for i, option := range animeList {
 			Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s'", i, option.Key, option.Label))
 			if option.Label == targetLabel {
@@ -967,17 +1054,31 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			} else {
 				CurdOut("Failed to automatically select anime")
 			}
+			// Add back option
+			animeList = append([]SelectionOption{
+				{Key: "-2", Label: "← Back"},
+			}, animeList...)
+
 			selectedAllanimeAnime, err := DynamicSelect(animeList)
 
 			if selectedAllanimeAnime.Key == "-1" {
 				ExitCurd(nil)
 			}
 
+			// Handle back button - go back to anime selection
+			if selectedAllanimeAnime.Key == "-2" {
+				ClearScreen()
+				// Signal to restart anime selection
+				panic("BACK_TO_ANIME_SELECTION")
+			}
+
 			if err != nil {
 				ExitCurd(fmt.Errorf("No anime available"))
 			}
 			anime.AllanimeId = selectedAllanimeAnime.Key
+			streamingSourceSelected = true
 		}
+		} // End of streaming source selection loop
 	} else {
 		// if anime found in database, use it
 		anime.AllanimeId = animePointer.AllanimeId
@@ -1123,6 +1224,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			anime.Ep.Number = anime.TotalEpisodes
 		}
 	}
+
+	}() // Close the anonymous function with defer/recover for back navigation
 }
 
 // CreateOrWriteTokenFile creates the token file if it doesn't exist and writes the token to it
@@ -1350,6 +1453,7 @@ func NextEpisodePromptCLI(userCurdConfig *CurdConfig) bool {
 	// Create options for the selection - no "quit" option since it's built into selection menu
 	options := []SelectionOption{
 		{Key: "yes", Label: fmt.Sprintf("Yes, continue to episode %d", nextEpisodeNum)},
+		{Key: "-2", Label: "← Back"},
 	}
 
 	// Use DynamicSelect for CLI mode
@@ -1364,6 +1468,12 @@ func NextEpisodePromptCLI(userCurdConfig *CurdConfig) bool {
 	if selectedOption.Key == "-1" {
 		// User selected to quit via the built-in quit option
 		CurdOut("Exiting")
+		return false
+	}
+
+	// Handle back button
+	if selectedOption.Key == "-2" {
+		CurdOut("Going back...")
 		return false
 	}
 
@@ -1389,6 +1499,7 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 		// Create options for the selection - no "quit" option since it's built into selection menu
 		options := []SelectionOption{
 			{Key: "yes", Label: "Yes, start next episode now"},
+			{Key: "-2", Label: "← Back"},
 		}
 
 		// Use DynamicSelect for CLI mode
@@ -1402,14 +1513,14 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 
 		if selectedOption.Key == "-1" {
 			// User selected to quit via the built-in quit option
-			
+
 			// Check completion percentage
 			percentageWatched := PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
-			
+
 			if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 				// Episode is considered completed, mark it and update progress
 				anime.Ep.IsCompleted = true
-				
+
 				// Update local database
 				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime))
 				if err != nil {
@@ -1427,15 +1538,55 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 						}
 					}()
 				}
-				
+
 				CurdOut(fmt.Sprintf("Episode completed (%.1f%% watched). Exiting.", percentageWatched))
 			} else {
 				CurdOut(fmt.Sprintf("Episode not completed (%.1f%% watched). Exiting.", percentageWatched))
 			}
-			
+
 			ExitMPV(anime.Ep.Player.SocketPath)
 			ExitCurd(nil)
 			return
+		}
+
+		if selectedOption.Key == "-2" {
+			// User selected to go back to main menu
+
+			// Check completion percentage
+			percentageWatched := PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
+
+			if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
+				// Episode is considered completed, mark it and update progress
+				anime.Ep.IsCompleted = true
+
+				// Update local database
+				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime))
+				if err != nil {
+					Log("Error updating local database on back: " + err.Error())
+				}
+
+				// Update progress if not rewatching
+				if !anime.Rewatching {
+					err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
+					if err != nil {
+						Log("Error updating progress on back: " + err.Error())
+					} else {
+						CurdOut(fmt.Sprintf("Episode marked as completed! Progress updated: %d", anime.Ep.Number))
+					}
+					// Give it a moment to update
+					time.Sleep(500 * time.Millisecond)
+				}
+
+				CurdOut(fmt.Sprintf("Episode completed (%.1f%% watched).", percentageWatched))
+			} else {
+				CurdOut(fmt.Sprintf("Episode not completed (%.1f%% watched).", percentageWatched))
+			}
+
+			ExitMPV(anime.Ep.Player.SocketPath)
+
+			// Signal that we want to go back to anime selection
+			// We'll use panic with a special recovery mechanism
+			panic("BACK_TO_ANIME_SELECTION")
 		}
 
 		if selectedOption.Key == "yes" {
@@ -1495,6 +1646,7 @@ func NextEpisodePromptRofi(userCurdConfig *CurdConfig) bool {
 	// Create options for the selection
 	options := []SelectionOption{
 		{Key: "yes", Label: fmt.Sprintf("Yes, start episode %d", nextEpisodeNum)},
+		{Key: "-2", Label: "← Back"},
 	}
 
 	// Use DynamicSelect for Rofi mode
@@ -1505,6 +1657,11 @@ func NextEpisodePromptRofi(userCurdConfig *CurdConfig) bool {
 	}
 
 	Log(fmt.Sprintf("Rofi User Selected Key: '%s', Label: '%s'", selectedOption.Key, selectedOption.Label))
+
+	// Handle back button - return false to stop playback
+	if selectedOption.Key == "-2" {
+		return false
+	}
 
 	return selectedOption.Key == "yes"
 }
