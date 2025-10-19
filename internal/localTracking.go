@@ -278,6 +278,11 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 		ExitCurd(fmt.Errorf("No results found."))
 	}
 
+	// Add back option
+	animeList = append([]SelectionOption{
+		{Key: "-2", Label: "<- Back"},
+	}, animeList...)
+
 	// Select anime from search results
 	selectedAnime, err := DynamicSelect(animeList)
 	if err != nil {
@@ -287,6 +292,11 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 
 	if selectedAnime.Key == "-1" {
 		ExitCurd(nil)
+	}
+
+	// Handle back button
+	if selectedAnime.Key == "-2" {
+		return
 	}
 
 	anime.AllanimeId = selectedAnime.Key

@@ -60,6 +60,9 @@ type CurdConfig struct {
 	AlternateScreen          bool     `config:"AlternateScreen"`
 	DiscordPresence          bool     `config:"DiscordPresence"`
 	DiscordClientId          string   `config:"DiscordClientId"`
+	AnimeProvider            string   `config:"AnimeProvider"`
+	MALClientID              string   `config:"MALClientID"`
+	MALClientSecret          string   `config:"MALClientSecret"`
 }
 
 // Default configuration values as a map
@@ -86,6 +89,9 @@ func defaultConfigMap() map[string]string {
 		"AlternateScreen":          "true",
 		"DiscordPresence":          "true",
 		"DiscordClientId":          "1287457464148820089",
+		"AnimeProvider":            "anilist",
+		"MALClientID":              "",
+		"MALClientSecret":          "",
 	}
 }
 
@@ -427,12 +433,22 @@ func GetTokenFromFile(tokenPath string) (string, error) {
 		return "", fmt.Errorf("failed to read token from file: %w", err)
 	}
 
-	// Try to parse as JSON first (new format)
-	var token AnilistToken
-	if err := json.Unmarshal(data, &token); err == nil {
-		// It's JSON format, check if token is valid
-		if isTokenValid(&token) {
-			return token.AccessToken, nil
+	// Try to parse as AnilistToken JSON format
+	var anilistToken AnilistToken
+	if err := json.Unmarshal(data, &anilistToken); err == nil && anilistToken.AccessToken != "" {
+		// It's AniList token format, check if token is valid
+		if isTokenValid(&anilistToken) {
+			return anilistToken.AccessToken, nil
+		}
+		return "", fmt.Errorf("token has expired")
+	}
+
+	// Try to parse as MALTokenResponse JSON format
+	var malToken MALTokenResponse
+	if err := json.Unmarshal(data, &malToken); err == nil && malToken.AccessToken != "" {
+		// It's MAL token format, check if token is valid
+		if time.Now().Before(malToken.ExpiresAt) {
+			return malToken.AccessToken, nil
 		}
 		return "", fmt.Errorf("token has expired")
 	}
@@ -446,38 +462,235 @@ func GetTokenFromFile(tokenPath string) (string, error) {
 	return plainToken, nil
 }
 
+// authenticateMALWithBrowser performs MAL OAuth authentication using browser
+func authenticateMALWithBrowser(config *CurdConfig, tokenPath string) (string, error) {
+	if config.MALClientID == "" {
+		return "", fmt.Errorf("MAL Client ID not configured. Please set MALClientID in your config file")
+	}
+	if config.MALClientSecret == "" {
+		return "", fmt.Errorf("MAL Client Secret not configured. Please set MALClientSecret in your config file")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Generate PKCE values
+	codeVerifier, err := GenerateCodeVerifier()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate code verifier: %w", err)
+	}
+
+	codeChallenge := GenerateCodeChallenge(codeVerifier)
+	state, err := GenerateState()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate state: %w", err)
+	}
+
+	// Start local server to handle OAuth callback
+	callbackCh := make(chan *MALTokenResponse, 1)
+	errCh := make(chan error, 1)
+	mux := http.NewServeMux()
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+
+	// Handle OAuth callback
+	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+		code := r.URL.Query().Get("code")
+		returnedState := r.URL.Query().Get("state")
+		errorParam := r.URL.Query().Get("error")
+
+		w.Header().Set("Content-Type", "text/html")
+
+		if errorParam != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Curd - MAL Authentication</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; text-align: center; background: #1a1a1a; color: white; }
+        .error { color: #f44336; font-size: 18px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="error">Authentication failed: %s</div>
+    <p>You can close this window and try again.</p>
+</body>
+</html>`, errorParam)
+			fmt.Fprint(w, html)
+			errCh <- fmt.Errorf("oauth error: %s", errorParam)
+			return
+		}
+
+		if returnedState != state {
+			w.WriteHeader(http.StatusBadRequest)
+			html := `<!DOCTYPE html>
+<html>
+<head>
+    <title>Curd - MAL Authentication</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; text-align: center; background: #1a1a1a; color: white; }
+        .error { color: #f44336; font-size: 18px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="error">State mismatch - possible CSRF attack</div>
+    <p>You can close this window and try again.</p>
+</body>
+</html>`
+			fmt.Fprint(w, html)
+			errCh <- fmt.Errorf("state mismatch")
+			return
+		}
+
+		if code == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			html := `<!DOCTYPE html>
+<html>
+<head>
+    <title>Curd - MAL Authentication</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; text-align: center; background: #1a1a1a; color: white; }
+        .error { color: #f44336; font-size: 18px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="error">No authorization code received</div>
+    <p>You can close this window and try again.</p>
+</body>
+</html>`
+			fmt.Fprint(w, html)
+			errCh <- fmt.Errorf("no authorization code received")
+			return
+		}
+
+		// Exchange code for token
+		go func() {
+			tokenResp, err := ExchangeCodeForToken(config.MALClientID, config.MALClientSecret, code, "http://localhost:8080/callback", codeVerifier)
+			if err != nil {
+				errCh <- fmt.Errorf("failed to exchange code for token: %w", err)
+				return
+			}
+			callbackCh <- tokenResp
+		}()
+
+		// Show success page
+		html := `<!DOCTYPE html>
+<html>
+<head>
+    <title>Curd - MAL Authentication</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; text-align: center; background: #1a1a1a; color: white; }
+        .success { color: #4CAF50; font-size: 18px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="success">✓ Authentication successful!</div>
+    <p>You can close this window and return to the terminal.</p>
+</body>
+</html>`
+		fmt.Fprint(w, html)
+	})
+
+	// Start server
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("failed to start server: %w", err)
+		}
+	}()
+	defer srv.Shutdown(ctx)
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Build and open auth URL
+	authURL := GetMALAuthorizationURL(config.MALClientID, "http://localhost:8080/callback", state, codeChallenge)
+
+	fmt.Println("Opening browser for MAL authentication...")
+	fmt.Printf("If the browser doesn't open automatically, visit: %s\n", authURL)
+
+	if err := browser.OpenURL(authURL); err != nil {
+		fmt.Printf("Failed to open browser automatically: %v\n", err)
+		fmt.Println("Please copy and paste the URL above into your browser")
+	}
+
+	// Wait for token
+	var tokenData *MALTokenResponse
+	select {
+	case tokenData = <-callbackCh:
+	case err := <-errCh:
+		return "", fmt.Errorf("authentication failed: %w", err)
+	case <-ctx.Done():
+		return "", fmt.Errorf("authentication timeout after 5 minutes")
+	}
+
+	data, err := json.Marshal(tokenData)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal token: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(tokenPath), 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	if err := os.WriteFile(tokenPath, data, 0600); err != nil {
+		return "", fmt.Errorf("failed to save token: %w", err)
+	}
+
+	fmt.Println("MAL authentication successful!")
+	return tokenData.AccessToken, nil
+}
+
 func ChangeToken(config *CurdConfig, user *User) {
 	var err error
-	tokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "anilist_token.json")
 
-	// Try browser-based OAuth first
-	fmt.Println("Starting browser-based authentication...")
-	user.Token, err = authenticateWithBrowser(tokenPath)
+	provider := strings.ToLower(config.AnimeProvider)
 
-	if err != nil {
-		Log("Browser authentication failed: " + err.Error())
-		fmt.Printf("Browser authentication failed: %v\n", err)
-		fmt.Println("Falling back to manual token entry...")
+	if provider == "mal" {
+		tokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "mal_token.json")
 
-		// Simple CLI fallback
-		fmt.Println("Please visit: https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token&redirect_uri=http://localhost:8000/oauth/callback")
-		fmt.Print("Copy and paste your access token here: ")
-		fmt.Scanln(&user.Token)
+		fmt.Println("Starting MAL browser-based authentication...")
+		user.Token, err = authenticateMALWithBrowser(config, tokenPath)
 
-		if user.Token == "" {
-			ExitCurd(fmt.Errorf("no token provided"))
+		if err != nil {
+			Log("MAL browser authentication failed: " + err.Error())
+			fmt.Printf("MAL authentication failed: %v\n", err)
+			ExitCurd(fmt.Errorf("MAL authentication failed: %w", err))
 		}
+	} else {
+		// AniList authentication
+		tokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "anilist_token.json")
 
-		// Save the manually entered token as JSON format
-		token := &AnilistToken{
-			AccessToken: user.Token,
-			TokenType:   "Bearer",
-			ExpiresIn:   31536000, // AniList tokens are valid for 1 year
-			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
-		}
+		// Try browser-based OAuth first
+		fmt.Println("Starting browser-based authentication...")
+		user.Token, err = authenticateWithBrowser(tokenPath)
 
-		if err := saveToken(tokenPath, token); err != nil {
-			ExitCurd(fmt.Errorf("failed to save token: %w", err))
+		if err != nil {
+			Log("Browser authentication failed: " + err.Error())
+			fmt.Printf("Browser authentication failed: %v\n", err)
+			fmt.Println("Falling back to manual token entry...")
+
+			// Simple CLI fallback
+			fmt.Println("Please visit: https://anilist.co/api/v2/oauth/authorize?client_id=20686&response_type=token&redirect_uri=http://localhost:8000/oauth/callback")
+			fmt.Print("Copy and paste your access token here: ")
+			fmt.Scanln(&user.Token)
+
+			if user.Token == "" {
+				ExitCurd(fmt.Errorf("no token provided"))
+			}
+
+			// Save the manually entered token as JSON format
+			token := &AnilistToken{
+				AccessToken: user.Token,
+				TokenType:   "Bearer",
+				ExpiresIn:   31536000, // AniList tokens are valid for 1 year
+				ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+			}
+
+			if err := saveToken(tokenPath, token); err != nil {
+				ExitCurd(fmt.Errorf("failed to save token: %w", err))
+			}
 		}
 	}
 
