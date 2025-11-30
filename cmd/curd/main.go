@@ -235,24 +235,19 @@ func main() {
 
 		// Get MalId and CoverImage (only if discord presence is enabled)
 		if userCurdConfig.DiscordPresence {
-			discordAvailable := true
-			err := internal.LoginClient(userCurdConfig.DiscordClientId)
+			anime.MalId, anime.CoverImage, err = internal.GetAnimeIDAndImage(anime.AnilistId)
 			if err != nil {
-				internal.Log("Discord connection failed, disabling presence: " + err.Error())
-				discordAvailable = false
-				userCurdConfig.DiscordPresence = false // Disable for this session
+				internal.Log("Error getting anime ID and image: " + err.Error())
 			}
-
-			if discordAvailable {
-				anime.MalId, anime.CoverImage, err = internal.GetAnimeIDAndImage(anime.AnilistId)
-				if err != nil {
-					internal.Log("Error getting anime ID and image: " + err.Error())
-				}
-				err = internal.DiscordPresence(anime, false)
-				if err != nil {
-					internal.Log("Discord presence error, disabling: " + err.Error())
-					userCurdConfig.DiscordPresence = false
-				}
+			// Initial Discord presence when starting episode
+			totalDuration := anime.Ep.Duration
+			if totalDuration == 0 {
+				totalDuration = 1500 // Default 25 minutes if duration unknown
+			}
+			err = internal.DiscordPresence(anime, false, 0, totalDuration, userCurdConfig.DiscordClientId)
+			if err != nil {
+				internal.Log("Discord presence error, disabling: " + err.Error())
+				userCurdConfig.DiscordPresence = false
 			}
 		} else if anime.MalId == 0 {
 			anime.MalId, err = internal.GetAnimeMalID(anime.AnilistId)
@@ -357,10 +352,22 @@ func main() {
 		}()
 
 		wg.Add(1)
-		// Thread to update Discord presence
+		// Thread to update Discord presence (optimized for state changes + seek detection)
 		go func() {
 			defer wg.Done()
 			if userCurdConfig.DiscordPresence {
+				var lastKnownPauseState bool = false
+				var lastKnownPosition int = 0
+				var lastStateCheck time.Time
+
+				// Helper function for absolute value
+				abs := func(x int) int {
+					if x < 0 {
+						return -x
+					}
+					return x
+				}
+
 				for {
 					select {
 					case <-skipLoopDone:
@@ -369,17 +376,68 @@ func main() {
 						isPaused, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "pause"})
 						if err != nil {
 							internal.Log("Error getting pause status: " + err.Error())
+							time.Sleep(5 * time.Second)
+							continue
 						}
+
 						if isPaused == nil {
 							isPaused = true
 						} else {
 							isPaused = isPaused.(bool)
 						}
-						err = internal.DiscordPresence(anime, isPaused.(bool))
-						if err != nil {
-							// internal.Log("Error setting Discord presence: "+err.Error())
+
+						// Always get current time position to detect seeks
+						currentPos := 0
+						timePos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
+						if err == nil && timePos != nil {
+							if pos, ok := timePos.(float64); ok {
+								currentPos = int(pos + 0.5) // Round to nearest integer
+							}
 						}
-						time.Sleep(1 * time.Second)
+
+						// Check for state changes or seeks
+						currentPauseState := isPaused.(bool)
+
+						// Account for expected position change during normal playback
+						expectedPositionChange := int(time.Since(lastStateCheck).Seconds())
+						if currentPauseState || lastStateCheck.IsZero() {
+							expectedPositionChange = 0 // No expected change if paused or first run
+						}
+
+						positionJump := abs(currentPos - lastKnownPosition)
+						unexpectedJump := positionJump - expectedPositionChange
+
+						// Only consider it a seek if the jump is significantly more than expected
+						isSeek := unexpectedJump > 10 && positionJump > 10
+
+						// Debug logging for seek detection
+						if isSeek {
+							internal.Log(fmt.Sprintf("Seek detected! positionJump: %d, expectedChange: %d, unexpectedJump: %d", positionJump, expectedPositionChange, unexpectedJump))
+						}
+
+						if currentPauseState != lastKnownPauseState ||
+							isSeek ||
+							lastStateCheck.IsZero() ||
+							time.Since(lastStateCheck) >= 30*time.Second {
+
+							// Use episode duration, but don't default to 25 minutes
+							totalDuration := anime.Ep.Duration
+							if totalDuration == 0 {
+								// If duration unknown, don't set end timestamp (shows elapsed only)
+								totalDuration = currentPos + 1 // Small duration to avoid divide by zero
+							}
+
+							err = internal.DiscordPresence(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId)
+							if err != nil {
+								internal.Log("Error setting Discord presence: " + err.Error())
+							}
+
+							lastKnownPauseState = currentPauseState
+							lastKnownPosition = currentPos
+							lastStateCheck = time.Now()
+						}
+
+						time.Sleep(5 * time.Second) // Check every 5 seconds
 					}
 				}
 			}
@@ -407,6 +465,22 @@ func main() {
 							if duration, ok := durationPos.(float64); ok {
 								anime.Ep.Duration = int(duration + 0.5) // Round to nearest integer
 								internal.Log(fmt.Sprintf("Video duration: %d seconds", anime.Ep.Duration))
+
+								// Update Discord with correct duration
+								if userCurdConfig.DiscordPresence {
+									isPaused, _ := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "pause"})
+									currentPos := 0
+									if timePos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"}); err == nil && timePos != nil {
+										if pos, ok := timePos.(float64); ok {
+											currentPos = int(pos + 0.5)
+										}
+									}
+									pauseState := false
+									if isPaused != nil {
+										pauseState = isPaused.(bool)
+									}
+									internal.DiscordPresence(anime, pauseState, currentPos, anime.Ep.Duration, userCurdConfig.DiscordClientId)
+								}
 							} else {
 								internal.Log("Error: duration is not a float64")
 							}
