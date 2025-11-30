@@ -235,25 +235,13 @@ func main() {
 
 		// Get MalId and CoverImage (only if discord presence is enabled)
 		if userCurdConfig.DiscordPresence {
-			discordAvailable := true
-			err := internal.LoginClient(userCurdConfig.DiscordClientId)
+			anime.MalId, anime.CoverImage, err = internal.GetAnimeIDAndImage(anime.AnilistId)
 			if err != nil {
-				internal.Log("Discord connection failed, disabling presence: " + err.Error())
-				discordAvailable = false
-				userCurdConfig.DiscordPresence = false // Disable for this session
+				internal.Log("Error getting anime ID and image: " + err.Error())
 			}
-
-			if discordAvailable {
-				anime.MalId, anime.CoverImage, err = internal.GetAnimeIDAndImage(anime.AnilistId)
-				if err != nil {
-					internal.Log("Error getting anime ID and image: " + err.Error())
-				}
-				err = internal.DiscordPresence(anime, false)
-				if err != nil {
-					internal.Log("Discord presence error, disabling: " + err.Error())
-					userCurdConfig.DiscordPresence = false
-				}
-			}
+			// Skip initial Discord presence - wait for MPV to provide real duration
+			// This avoids showing the default 25-minute duration before the video starts
+			internal.Log("Waiting for MPV to start to get actual video duration before showing Discord presence")
 		} else if anime.MalId == 0 {
 			anime.MalId, err = internal.GetAnimeMalID(anime.AnilistId)
 			if err != nil {
@@ -357,29 +345,108 @@ func main() {
 		}()
 
 		wg.Add(1)
-		// Thread to update Discord presence
+		// Thread to update Discord presence with simple position-gap seek detection
 		go func() {
 			defer wg.Done()
 			if userCurdConfig.DiscordPresence {
+				var lastKnownPauseState bool = false
+				var lastKnownPosition int = 0
+				var lastStateCheck time.Time
+				var discordPresenceInitialized bool = false // Track if Discord presence has been set with real duration
+
 				for {
 					select {
 					case <-skipLoopDone:
 						return
 					default:
+						// Get current state from MPV
 						isPaused, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "pause"})
 						if err != nil {
 							internal.Log("Error getting pause status: " + err.Error())
+							time.Sleep(5 * time.Second)
+							continue
 						}
+
 						if isPaused == nil {
 							isPaused = true
-						} else {
-							isPaused = isPaused.(bool)
 						}
-						err = internal.DiscordPresence(anime, isPaused.(bool))
-						if err != nil {
-							// internal.Log("Error setting Discord presence: "+err.Error())
+
+						// Get current time position
+						currentPos := 0
+						timePos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
+						if err == nil && timePos != nil {
+							if pos, ok := timePos.(float64); ok {
+								currentPos = int(pos + 0.5) // Round to nearest integer
+							}
 						}
-						time.Sleep(1 * time.Second)
+
+						currentPauseState := isPaused.(bool)
+
+						// Simple seek detection: position gap > 5 seconds
+						hasSeekEvent := false
+						if lastKnownPosition > 0 {
+							positionDiff := currentPos - lastKnownPosition
+							if positionDiff < -5 || positionDiff > 7 { // 5 sec backward or 7 sec forward (allowing normal playback + buffer)
+								hasSeekEvent = true
+							}
+						}
+
+						hasPlayPauseEvent := currentPauseState != lastKnownPauseState
+
+						// Determine if we should update Discord presence
+						shouldUpdate := false
+
+						// Force update every 30 seconds for Discord keep-alive
+						if lastStateCheck.IsZero() || time.Since(lastStateCheck) >= 30*time.Second {
+							shouldUpdate = true
+						}
+
+						// Update on pause state change
+						if hasPlayPauseEvent {
+							shouldUpdate = true
+						}
+
+						// Update on seek events
+						if hasSeekEvent {
+							shouldUpdate = true
+						}
+
+						if shouldUpdate {
+							// Only update Discord if we have real duration OR if presence was already initialized
+							totalDuration := anime.Ep.Duration
+							if totalDuration == 0 {
+								// Skip Discord updates until we have real duration from MPV
+								if !discordPresenceInitialized {
+									lastKnownPauseState = currentPauseState
+									lastKnownPosition = currentPos
+									lastStateCheck = time.Now()
+									time.Sleep(2 * time.Second)
+									continue
+								}
+								totalDuration = currentPos + 1 // Small duration to avoid divide by zero
+							} else {
+								discordPresenceInitialized = true // Mark as initialized once we have real duration
+							}
+
+							// Force update on seek events to bypass Discord's internal filtering
+							if hasSeekEvent {
+								err = internal.DiscordPresenceWithForce(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId, true)
+							} else {
+								err = internal.DiscordPresence(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId)
+							}
+
+							if err != nil {
+								internal.Log("Error setting Discord presence: " + err.Error())
+							}
+
+							lastKnownPauseState = currentPauseState
+							lastStateCheck = time.Now()
+						}
+
+						// Always update position for next comparison
+						lastKnownPosition = currentPos
+
+						time.Sleep(2 * time.Second) // Check every 2 seconds
 					}
 				}
 			}
@@ -407,6 +474,26 @@ func main() {
 							if duration, ok := durationPos.(float64); ok {
 								anime.Ep.Duration = int(duration + 0.5) // Round to nearest integer
 								internal.Log(fmt.Sprintf("Video duration: %d seconds", anime.Ep.Duration))
+
+								// Initialize Discord presence with correct duration (first time with real duration)
+								if userCurdConfig.DiscordPresence {
+									isPaused, _ := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "pause"})
+									currentPos := 0
+									if timePos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"}); err == nil && timePos != nil {
+										if pos, ok := timePos.(float64); ok {
+											currentPos = int(pos + 0.5)
+										}
+									}
+									pauseState := false
+									if isPaused != nil {
+										pauseState = isPaused.(bool)
+									}
+									internal.Log("Initializing Discord presence with real video duration")
+									err = internal.DiscordPresence(anime, pauseState, currentPos, anime.Ep.Duration, userCurdConfig.DiscordClientId)
+									if err != nil {
+										internal.Log("Discord presence error: " + err.Error())
+									}
+								}
 							} else {
 								internal.Log("Error: duration is not a float64")
 							}

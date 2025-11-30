@@ -2,53 +2,141 @@ package internal
 
 import (
 	"fmt"
-	"github.com/hugolgst/rich-go/client"
+	"github.com/tr1xem/go-discordrpc/client"
+	"time"
 )
 
+var discordClient *client.Client
+var isLoggedIn bool
+var lastPausedState bool
+var lastEpisodeNumber int
+var lastAnimeTitle string
+var lastUpdateTime time.Time
+var lastForceUpdateTime time.Time
+
 func LoginClient(clientId string) error {
-	err := client.Login(clientId)
-	if err != nil {
-		return err
+	if discordClient != nil && isLoggedIn {
+		return nil // Already logged in
 	}
+
+	discordClient = client.NewClient(clientId)
+
+	if err := discordClient.Login(); err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	isLoggedIn = true
 	return nil
 }
 
-func DiscordPresence(anime Anime, IsPaused bool) error {
+func DiscordPresence(anime Anime, IsPaused bool, currentPosition int, totalDuration int, clientId string) error {
+	return DiscordPresenceWithForce(anime, IsPaused, currentPosition, totalDuration, clientId, false)
+}
 
-	var state string
-	if IsPaused {
-		state = fmt.Sprintf("\nEpisode %d - %s (Paused)",
-			anime.Ep.Number,
-			FormatTime(anime.Ep.Player.PlaybackTime),
-		)
-	} else {
-		state = fmt.Sprintf("\nEpisode %d - %s / %s",
-			anime.Ep.Number,
-			FormatTime(anime.Ep.Player.PlaybackTime),
-			FormatTime(anime.Ep.Duration),
-		)
+func DiscordPresenceWithForce(anime Anime, IsPaused bool, currentPosition int, totalDuration int, clientId string, forceUpdate bool) error {
+	// Ensure client is logged in
+	if discordClient == nil || !isLoggedIn {
+		if err := LoginClient(clientId); err != nil {
+			return err
+		}
 	}
 
-	err := client.SetActivity(client.Activity{
-		Details:    fmt.Sprintf("%s", GetAnimeName(anime)), // Large text
+	currentAnimeTitle := GetAnimeName(anime)
+	now := time.Now()
+
+	shouldUpdate := false
+
+	if lastForceUpdateTime.IsZero() || time.Since(lastForceUpdateTime) >= 2*time.Minute {
+		shouldUpdate = true
+		lastForceUpdateTime = now
+	}
+
+	if lastUpdateTime.IsZero() ||
+		lastPausedState != IsPaused ||
+		lastEpisodeNumber != anime.Ep.Number ||
+		lastAnimeTitle != currentAnimeTitle ||
+		forceUpdate {
+		shouldUpdate = true
+	}
+
+	if !shouldUpdate {
+		return nil // Skip update
+	}
+
+	var timestamps *client.Timestamps
+	var SmallImage = "pause-button"
+	var SmallText = "pause-button"
+
+	startTime := now.Add(-time.Duration(currentPosition) * time.Second)
+
+	if IsPaused {
+		timestamps = &client.Timestamps{
+			Start: &startTime,
+			End:   nil, // No end time when paused
+		}
+		SmallImage = "pause-button"
+		SmallText = "Paused"
+	} else {
+		if totalDuration > 60 && totalDuration > currentPosition {
+			remainingSeconds := totalDuration - currentPosition
+			endTime := now.Add(time.Duration(remainingSeconds) * time.Second)
+			timestamps = &client.Timestamps{
+				Start: &startTime,
+				End:   &endTime,
+			}
+		} else {
+			// Duration unknown, show elapsed time only
+			timestamps = &client.Timestamps{
+				Start: &startTime,
+				End:   nil,
+			}
+		}
+		SmallImage = ""
+		SmallText = ""
+	}
+
+	err := discordClient.SetActivity(client.Activity{
+		Type:       3, // Watching
+		Name:       currentAnimeTitle,
+		Details:    currentAnimeTitle, // Large text
 		LargeImage: anime.CoverImage,
-		LargeText:  GetAnimeName(anime), // Would display while hovering over the large image
-		State:      state,
-		//SmallImage: anime.SmallCoverImage, // Image for the bottom left corner
-		//SmallText:  fmt.Sprintf("Episode: %s", anime.Ep.Title.English), // Text when hovering over the small image
+		LargeText:  currentAnimeTitle, // Would display while hovering over the large image
+		State:      fmt.Sprintf("Episode %d", anime.Ep.Number),
+		SmallImage: SmallImage,
+		SmallText:  SmallText,
+		Timestamps: timestamps,
 		Buttons: []*client.Button{
 			{
-				Label: "View on AniList", // Button label
+				Label: "View on AniList",                                           // Button label
 				Url:   fmt.Sprintf("https://anilist.co/anime/%d", anime.AnilistId), // Button link
 			},
 			{
-				Label: "View on MAL", // Button label
+				Label: "View on MAL",                                                // Button label
 				Url:   fmt.Sprintf("https://myanimelist.net/anime/%d", anime.MalId), // Button link
 			},
 		},
 	})
+
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to set Discord activity: %w", err)
+	}
+
+	lastPausedState = IsPaused
+	lastEpisodeNumber = anime.Ep.Number
+	lastAnimeTitle = currentAnimeTitle
+	lastUpdateTime = now
+	// fmt.Println("Discord presence updated!", time.Now())
+	return nil
+}
+
+func LogoutClient() error {
+	if discordClient != nil && isLoggedIn {
+		if err := discordClient.Logout(); err != nil {
+			return fmt.Errorf("logout failed: %w", err)
+		}
+		isLoggedIn = false
+		discordClient = nil
+		// fmt.Println("Discord RPC logged out!")
 	}
 	return nil
 }

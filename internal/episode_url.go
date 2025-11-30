@@ -87,7 +87,7 @@ func extractLinks(provider_id string) map[string]interface{} {
 				cleanedURL = protocol + "://" + rest
 			}
 		}
-		
+
 		Log(fmt.Sprintf("Direct external link detected: %s -> %s", provider_id, cleanedURL))
 		return map[string]interface{}{
 			"links": []interface{}{
@@ -97,7 +97,7 @@ func extractLinks(provider_id string) map[string]interface{} {
 			},
 		}
 	}
-	
+
 	// It's a relative path for allanime API
 	allanime_base := "https://allanime.day"
 	url := allanime_base + provider_id

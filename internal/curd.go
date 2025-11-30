@@ -19,7 +19,6 @@ import (
 	"github.com/gen2brain/beeep"
 )
 
-
 func EditConfig(configFilePath string) {
 	// Get the user's preferred editor from the EDITOR environment variable
 	editor := os.Getenv("EDITOR")
@@ -1327,7 +1326,7 @@ func NextEpisodePromptCLI(userCurdConfig *CurdConfig) bool {
 // This runs throughout the episode duration and handles completion logic
 func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string, userToken string) {
 	anime := GetGlobalAnime()
-	
+
 	for {
 		// Check if episode has started
 		if !anime.Ep.Started {
@@ -1355,14 +1354,14 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 
 		if selectedOption.Key == "-1" {
 			// User selected to quit via the built-in quit option
-			
+
 			// Check completion percentage
 			percentageWatched := PercentageWatched(anime.Ep.Player.PlaybackTime, anime.Ep.Duration)
-			
+
 			if int(percentageWatched) >= userCurdConfig.PercentageToMarkComplete {
 				// Episode is considered completed, mark it and update progress
 				anime.Ep.IsCompleted = true
-				
+
 				// Update local database
 				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime))
 				if err != nil {
@@ -1380,12 +1379,12 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 						}
 					}()
 				}
-				
+
 				CurdOut(fmt.Sprintf("Episode completed (%.1f%% watched). Exiting.", percentageWatched))
 			} else {
 				CurdOut(fmt.Sprintf("Episode not completed (%.1f%% watched). Exiting.", percentageWatched))
 			}
-			
+
 			ExitMPV(anime.Ep.Player.SocketPath)
 			ExitCurd(nil)
 			return
@@ -1394,13 +1393,13 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 		if selectedOption.Key == "yes" {
 			// User wants to start next episode immediately
 			anime.Ep.IsCompleted = true
-			
+
 			// Update database with completed episode first
 			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime))
 			if err != nil {
 				Log("Error updating local database with completed episode: " + err.Error())
 			}
-			
+
 			// Update Anilist progress for the completed episode if not rewatching
 			if !anime.Rewatching {
 				go func() {
@@ -1412,10 +1411,10 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 					}
 				}()
 			}
-			
+
 			// Increment to next episode and update database with next episode number and 0 playback time
 			anime.Ep.Number++
-			
+
 			// Use prefetched links if available for the next episode
 			if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
 				anime.Ep.Links = anime.Ep.NextEpisode.Links
@@ -1425,12 +1424,12 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 				anime.Ep.Links = []string{}
 				Log(fmt.Sprintf("No prefetched links available for episode %d, will fetch new ones", anime.Ep.Number))
 			}
-			
+
 			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
 			if err != nil {
 				Log("Error updating local database with next episode: " + err.Error())
 			}
-			
+
 			CurdOut("Starting next episode now...")
 			ExitMPV(anime.Ep.Player.SocketPath)
 			return // Exit this function, let the main loop handle next episode
