@@ -492,19 +492,19 @@ func StartMPVEventListener(ipcSocketPath string, eventCallback func(string, inte
 					// Handle specific MPV events
 					switch eventType {
 					case "playback-restart":
-						Log("🎯 *** PLAYBACK-RESTART EVENT DETECTED (SEEK) ***")
+						Log("PLAYBACK-RESTART EVENT DETECTED (SEEK)")
 						if eventCallback != nil {
 							eventCallback("playback-restart", true)
 						}
 
 					case "pause":
-						Log("⏸️ *** PAUSE EVENT DETECTED ***")
+						Log("PAUSE EVENT DETECTED")
 						if eventCallback != nil {
 							eventCallback("pause-event", true)
 						}
 
 					case "unpause":
-						Log("▶️ *** UNPAUSE EVENT DETECTED ***")
+						Log("UNPAUSE EVENT DETECTED")
 						if eventCallback != nil {
 							eventCallback("unpause-event", false)
 						}
@@ -513,7 +513,7 @@ func StartMPVEventListener(ipcSocketPath string, eventCallback func(string, inte
 						if name, exists := response["name"]; exists {
 							if data, exists := response["data"]; exists {
 								propertyName := name.(string)
-								Log(fmt.Sprintf("*** MPV PROPERTY CHANGE EVENT *** - %s: %v", propertyName, data))
+								Log(fmt.Sprintf("MPV PROPERTY CHANGE EVENT - %s: %v", propertyName, data))
 
 								// Call the callback with the event details
 								if eventCallback != nil {
@@ -573,27 +573,27 @@ func (detector *MPVEventListener) ProcessMPVEvent(propertyName string, data inte
 
 	switch propertyName {
 	case "playback-restart":
-		Log("🎯 Processing playback-restart event (SEEK DETECTED)...")
+		Log("Processing playback-restart event (SEEK DETECTED)...")
 		detector.SeekDetected = true
-		Log(fmt.Sprintf("🚨 *** SEEK EVENT DETECTED VIA PLAYBACK-RESTART *** FLAG SET TO TRUE at %s", time.Now().Format("15:04:05.000")))
+		Log(fmt.Sprintf("SEEK EVENT DETECTED VIA PLAYBACK-RESTART FLAG SET TO TRUE at %s", time.Now().Format("15:04:05.000")))
 
 	case "pause-event":
-		Log("⏸️ Processing pause event...")
+		Log("Processing pause event...")
 		detector.PlayPauseDetected = true
 		detector.LastPauseState = true
-		Log("🎬 *** PAUSE EVENT DETECTED ***")
+		Log("  PAUSE EVENT DETECTED ")
 
 	case "unpause-event":
-		Log("▶️ Processing unpause event...")
+		Log(" Processing unpause event...")
 		detector.PlayPauseDetected = true
 		detector.LastPauseState = false
-		Log("🎬 *** UNPAUSE EVENT DETECTED ***")
+		Log("UNPAUSE EVENT DETECTED")
 
 	case "time-pos":
 		Log("Processing time-pos event...")
 		if data != nil {
 			if position, ok := data.(float64); ok {
-				Log(fmt.Sprintf("📍 POSITION UPDATE: %f seconds (was: %f)", position, detector.LastPosition))
+				Log(fmt.Sprintf("POSITION UPDATE: %f seconds (was: %f)", position, detector.LastPosition))
 
 				if detector.LastPosition >= 0 {
 					// Check for significant position jump (potential seek) - backup method
@@ -602,7 +602,7 @@ func (detector *MPVEventListener) ProcessMPVEvent(propertyName string, data inte
 
 					if positionDiff < -2 || positionDiff > 5 { // Backwards seek or large forward jump
 						detector.SeekDetected = true
-						Log(fmt.Sprintf("🔍 *** BACKUP SEEK DETECTED *** Position jumped from %f to %f (diff: %f)",
+						Log(fmt.Sprintf("BACKUP SEEK DETECTED Position jumped from %f to %f (diff: %f)",
 							detector.LastPosition, position, positionDiff))
 					} else {
 						Log("Normal position progression - no seek detected")
@@ -623,11 +623,11 @@ func (detector *MPVEventListener) ProcessMPVEvent(propertyName string, data inte
 		Log("Processing pause property change...")
 		if data != nil {
 			if pauseState, ok := data.(bool); ok {
-				Log(fmt.Sprintf("⏯️ PAUSE STATE UPDATE: %t (was: %t)", pauseState, detector.LastPauseState))
+				Log(fmt.Sprintf(" PAUSE STATE UPDATE: %t (was: %t)", pauseState, detector.LastPauseState))
 
 				if detector.LastPauseState != pauseState {
 					detector.PlayPauseDetected = true
-					Log(fmt.Sprintf("🎬 *** PLAY/PAUSE PROPERTY CHANGE DETECTED *** Changed from %t to %t",
+					Log(fmt.Sprintf("PLAY/PAUSE PROPERTY CHANGE DETECTED Changed from %t to %t",
 						detector.LastPauseState, pauseState))
 				} else {
 					Log("Pause state unchanged - no play/pause event")
@@ -648,7 +648,7 @@ func (detector *MPVEventListener) ProcessMPVEvent(propertyName string, data inte
 				Log(fmt.Sprintf("Seeking state: %t", seeking))
 				if seeking {
 					detector.SeekDetected = true
-					Log("🎯 *** SEEKING PROPERTY CHANGE DETECTED *** MPV reported seeking=true")
+					Log("SEEKING PROPERTY CHANGE DETECTED  MPV reported seeking=true")
 				} else {
 					Log("Seeking ended (seeking=false)")
 				}
@@ -663,7 +663,7 @@ func (detector *MPVEventListener) ProcessMPVEvent(propertyName string, data inte
 		Log(fmt.Sprintf("Unknown event: %s", propertyName))
 	}
 
-	Log(fmt.Sprintf("=== EVENT PROCESSING COMPLETE ==="))
+	Log("=== EVENT PROCESSING COMPLETE ===")
 }
 
 // HasSeekOccurred checks and resets the seek detection flag
@@ -671,13 +671,13 @@ func (detector *MPVEventListener) HasSeekOccurred() bool {
 	detector.mu.Lock()
 	defer detector.mu.Unlock()
 
-	Log(fmt.Sprintf("🔍 HasSeekOccurred called at %s - SeekDetected flag: %t", time.Now().Format("15:04:05.000"), detector.SeekDetected))
+	// Log(fmt.Sprintf("HasSeekOccurred called at %s - SeekDetected flag: %t", time.Now().Format("15:04:05.000"), detector.SeekDetected))
 	if detector.SeekDetected {
 		detector.SeekDetected = false
-		Log(fmt.Sprintf("✅ Seek event consumed and reset at %s - RETURNING TRUE", time.Now().Format("15:04:05.000")))
+		Log(fmt.Sprintf("Seek event consumed and reset at %s - RETURNING TRUE", time.Now().Format("15:04:05.000")))
 		return true
 	}
-	Log(fmt.Sprintf("❌ No seek event at %s - RETURNING FALSE", time.Now().Format("15:04:05.000")))
+	// Log(fmt.Sprintf("No seek event at %s - RETURNING FALSE", time.Now().Format("15:04:05.000")))
 	return false
 }
 
@@ -686,12 +686,11 @@ func (detector *MPVEventListener) HasPlayPauseChanged() bool {
 	detector.mu.Lock()
 	defer detector.mu.Unlock()
 
-	Log(fmt.Sprintf("🔍 HasPlayPauseChanged called - PlayPauseDetected flag: %t", detector.PlayPauseDetected))
+	// Log(fmt.Sprintf("HasPlayPauseChanged called - PlayPauseDetected flag: %t", detector.PlayPauseDetected))
 	if detector.PlayPauseDetected {
 		detector.PlayPauseDetected = false
-		Log("✅ Play/pause event consumed and reset - RETURNING TRUE")
+		Log("Play/pause event consumed and reset - RETURNING TRUE")
 		return true
 	}
-	Log("❌ No play/pause event - RETURNING FALSE")
 	return false
 }
