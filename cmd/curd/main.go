@@ -352,7 +352,7 @@ func main() {
 		}()
 
 		wg.Add(1)
-		// Thread to update Discord presence (optimized for state changes + seek detection)
+		// Thread to update Discord presence with simple position-gap seek detection
 		go func() {
 			defer wg.Done()
 			if userCurdConfig.DiscordPresence {
@@ -360,19 +360,12 @@ func main() {
 				var lastKnownPosition int = 0
 				var lastStateCheck time.Time
 
-				// Helper function for absolute value
-				abs := func(x int) int {
-					if x < 0 {
-						return -x
-					}
-					return x
-				}
-
 				for {
 					select {
 					case <-skipLoopDone:
 						return
 					default:
+						// Get current state from MPV
 						isPaused, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "pause"})
 						if err != nil {
 							internal.Log("Error getting pause status: " + err.Error())
@@ -382,11 +375,9 @@ func main() {
 
 						if isPaused == nil {
 							isPaused = true
-						} else {
-							isPaused = isPaused.(bool)
 						}
 
-						// Always get current time position to detect seeks
+						// Get current time position
 						currentPos := 0
 						timePos, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
 						if err == nil && timePos != nil {
@@ -395,49 +386,63 @@ func main() {
 							}
 						}
 
-						// Check for state changes or seeks
 						currentPauseState := isPaused.(bool)
 
-						// Account for expected position change during normal playback
-						expectedPositionChange := int(time.Since(lastStateCheck).Seconds())
-						if currentPauseState || lastStateCheck.IsZero() {
-							expectedPositionChange = 0 // No expected change if paused or first run
+						// Simple seek detection: position gap > 5 seconds
+						hasSeekEvent := false
+						if lastKnownPosition > 0 {
+							positionDiff := currentPos - lastKnownPosition
+							if positionDiff < -5 || positionDiff > 7 { // 5 sec backward or 7 sec forward (allowing normal playback + buffer)
+								hasSeekEvent = true
+							}
 						}
 
-						positionJump := abs(currentPos - lastKnownPosition)
-						unexpectedJump := positionJump - expectedPositionChange
+						hasPlayPauseEvent := currentPauseState != lastKnownPauseState
 
-						// Only consider it a seek if the jump is significantly more than expected
-						isSeek := unexpectedJump > 10 && positionJump > 10
+						// Determine if we should update Discord presence
+						shouldUpdate := false
 
-						// Debug logging for seek detection
-						if isSeek {
-							internal.Log(fmt.Sprintf("Seek detected! positionJump: %d, expectedChange: %d, unexpectedJump: %d", positionJump, expectedPositionChange, unexpectedJump))
+						// Force update every 30 seconds for Discord keep-alive
+						if lastStateCheck.IsZero() || time.Since(lastStateCheck) >= 30*time.Second {
+							shouldUpdate = true
 						}
 
-						if currentPauseState != lastKnownPauseState ||
-							isSeek ||
-							lastStateCheck.IsZero() ||
-							time.Since(lastStateCheck) >= 30*time.Second {
+						// Update on pause state change
+						if hasPlayPauseEvent {
+							shouldUpdate = true
+						}
 
-							// Use episode duration, but don't default to 25 minutes
+						// Update on seek events
+						if hasSeekEvent {
+							shouldUpdate = true
+						}
+
+						if shouldUpdate {
+							// Use episode duration
 							totalDuration := anime.Ep.Duration
 							if totalDuration == 0 {
-								// If duration unknown, don't set end timestamp (shows elapsed only)
 								totalDuration = currentPos + 1 // Small duration to avoid divide by zero
 							}
 
-							err = internal.DiscordPresence(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId)
+							// Force update on seek events to bypass Discord's internal filtering
+							if hasSeekEvent {
+								err = internal.DiscordPresenceWithForce(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId, true)
+							} else {
+								err = internal.DiscordPresence(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId)
+							}
+
 							if err != nil {
 								internal.Log("Error setting Discord presence: " + err.Error())
 							}
 
 							lastKnownPauseState = currentPauseState
-							lastKnownPosition = currentPos
 							lastStateCheck = time.Now()
 						}
 
-						time.Sleep(5 * time.Second) // Check every 5 seconds
+						// Always update position for next comparison
+						lastKnownPosition = currentPos
+
+						time.Sleep(2 * time.Second) // Check every 2 seconds
 					}
 				}
 			}

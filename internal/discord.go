@@ -30,6 +30,10 @@ func LoginClient(clientId string) error {
 }
 
 func DiscordPresence(anime Anime, IsPaused bool, currentPosition int, totalDuration int, clientId string) error {
+	return DiscordPresenceWithForce(anime, IsPaused, currentPosition, totalDuration, clientId, false)
+}
+
+func DiscordPresenceWithForce(anime Anime, IsPaused bool, currentPosition int, totalDuration int, clientId string, forceUpdate bool) error {
 	// Ensure client is logged in
 	if discordClient == nil || !isLoggedIn {
 		if err := LoginClient(clientId); err != nil {
@@ -52,7 +56,8 @@ func DiscordPresence(anime Anime, IsPaused bool, currentPosition int, totalDurat
 	if lastUpdateTime.IsZero() ||
 		lastPausedState != IsPaused ||
 		lastEpisodeNumber != anime.Ep.Number ||
-		lastAnimeTitle != currentAnimeTitle {
+		lastAnimeTitle != currentAnimeTitle ||
+		forceUpdate {
 		shouldUpdate = true
 	}
 
