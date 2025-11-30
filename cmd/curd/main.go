@@ -239,16 +239,9 @@ func main() {
 			if err != nil {
 				internal.Log("Error getting anime ID and image: " + err.Error())
 			}
-			// Initial Discord presence when starting episode
-			totalDuration := anime.Ep.Duration
-			if totalDuration == 0 {
-				totalDuration = 1500 // Default 25 minutes if duration unknown
-			}
-			err = internal.DiscordPresence(anime, false, 0, totalDuration, userCurdConfig.DiscordClientId)
-			if err != nil {
-				internal.Log("Discord presence error, disabling: " + err.Error())
-				userCurdConfig.DiscordPresence = false
-			}
+			// Skip initial Discord presence - wait for MPV to provide real duration
+			// This avoids showing the default 25-minute duration before the video starts
+			internal.Log("Waiting for MPV to start to get actual video duration before showing Discord presence")
 		} else if anime.MalId == 0 {
 			anime.MalId, err = internal.GetAnimeMalID(anime.AnilistId)
 			if err != nil {
@@ -359,6 +352,7 @@ func main() {
 				var lastKnownPauseState bool = false
 				var lastKnownPosition int = 0
 				var lastStateCheck time.Time
+				var discordPresenceInitialized bool = false // Track if Discord presence has been set with real duration
 
 				for {
 					select {
@@ -418,10 +412,20 @@ func main() {
 						}
 
 						if shouldUpdate {
-							// Use episode duration
+							// Only update Discord if we have real duration OR if presence was already initialized
 							totalDuration := anime.Ep.Duration
 							if totalDuration == 0 {
+								// Skip Discord updates until we have real duration from MPV
+								if !discordPresenceInitialized {
+									lastKnownPauseState = currentPauseState
+									lastKnownPosition = currentPos
+									lastStateCheck = time.Now()
+									time.Sleep(2 * time.Second)
+									continue
+								}
 								totalDuration = currentPos + 1 // Small duration to avoid divide by zero
+							} else {
+								discordPresenceInitialized = true // Mark as initialized once we have real duration
 							}
 
 							// Force update on seek events to bypass Discord's internal filtering
@@ -471,7 +475,7 @@ func main() {
 								anime.Ep.Duration = int(duration + 0.5) // Round to nearest integer
 								internal.Log(fmt.Sprintf("Video duration: %d seconds", anime.Ep.Duration))
 
-								// Update Discord with correct duration
+								// Initialize Discord presence with correct duration (first time with real duration)
 								if userCurdConfig.DiscordPresence {
 									isPaused, _ := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "pause"})
 									currentPos := 0
@@ -484,7 +488,11 @@ func main() {
 									if isPaused != nil {
 										pauseState = isPaused.(bool)
 									}
-									internal.DiscordPresence(anime, pauseState, currentPos, anime.Ep.Duration, userCurdConfig.DiscordClientId)
+									internal.Log("Initializing Discord presence with real video duration")
+									err = internal.DiscordPresence(anime, pauseState, currentPos, anime.Ep.Duration, userCurdConfig.DiscordClientId)
+									if err != nil {
+										internal.Log("Discord presence error: " + err.Error())
+									}
 								}
 							} else {
 								internal.Log("Error: duration is not a float64")

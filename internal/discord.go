@@ -44,10 +44,8 @@ func DiscordPresenceWithForce(anime Anime, IsPaused bool, currentPosition int, t
 	currentAnimeTitle := GetAnimeName(anime)
 	now := time.Now()
 
-	// Check if we need to update based on significant changes
 	shouldUpdate := false
 
-	// Force update every 2 minutes for Discord keep-alive
 	if lastForceUpdateTime.IsZero() || time.Since(lastForceUpdateTime) >= 2*time.Minute {
 		shouldUpdate = true
 		lastForceUpdateTime = now
@@ -79,8 +77,7 @@ func DiscordPresenceWithForce(anime Anime, IsPaused bool, currentPosition int, t
 		SmallImage = "pause-button"
 		SmallText = "Paused"
 	} else {
-		// Only set end time if we have a reasonable duration (more than 1 minute total)
-		if totalDuration > 60 && totalDuration > currentPosition { // Real duration (more than 1 minute total)
+		if totalDuration > 60 && totalDuration > currentPosition {
 			remainingSeconds := totalDuration - currentPosition
 			endTime := now.Add(time.Duration(remainingSeconds) * time.Second)
 			timestamps = &client.Timestamps{
@@ -104,12 +101,7 @@ func DiscordPresenceWithForce(anime Anime, IsPaused bool, currentPosition int, t
 		Details:    currentAnimeTitle, // Large text
 		LargeImage: anime.CoverImage,
 		LargeText:  currentAnimeTitle, // Would display while hovering over the large image
-		State: fmt.Sprintf("Episode %d%s", anime.Ep.Number, func() string {
-			if IsPaused {
-				return " (Paused)"
-			}
-			return ""
-		}()),
+		State:      fmt.Sprintf("Episode %d", anime.Ep.Number),
 		SmallImage: SmallImage,
 		SmallText:  SmallText,
 		Timestamps: timestamps,
@@ -133,8 +125,7 @@ func DiscordPresenceWithForce(anime Anime, IsPaused bool, currentPosition int, t
 	lastEpisodeNumber = anime.Ep.Number
 	lastAnimeTitle = currentAnimeTitle
 	lastUpdateTime = now
-
-	fmt.Println("Discord presence updated!", time.Now())
+	// fmt.Println("Discord presence updated!", time.Now())
 	return nil
 }
 
