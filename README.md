@@ -361,7 +361,6 @@ config file is located at ```~/.config/curd/curd.conf```
 
 ## Todo (fix)
 - Use Powershell for windows token input instead of notepad or cmd
-- Find a way to get "Watching" instead of "Playing" Activity type in discord rpc (Implemented in [Dantotsu](https://github.com/aayush2622/Dartotsu) and [Premid](https://github.com/PreMiD/PreMiD))
 - Add a better way to do commands in windows (Convinience for users)
 
 ## Dependencies
