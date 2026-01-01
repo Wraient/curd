@@ -574,14 +574,19 @@ func PopulateConfig(configMap map[string]string) CurdConfig {
 }
 
 func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
-	// Define the default categories and their labels
+	// Define the default categories and all available labels
 	defaultOrder := []string{"CURRENT", "ALL", "UNTRACKED", "UPDATE", "CONTINUE_LAST"}
-	defaultLabels := map[string]string{
+	availableLabels := map[string]string{
 		"CURRENT":       "Currently Watching",
 		"ALL":           "Show All",
 		"UNTRACKED":     "Untracked Watching",
 		"UPDATE":        "Update (Episode, Status, Score)",
 		"CONTINUE_LAST": "Continue Last Session",
+		"PLANNING":      "Plan to Watch",
+		"COMPLETED":     "Completed",
+		"PAUSED":        "Paused",
+		"DROPPED":       "Dropped",
+		"REWATCHING":    "Rewatching",
 	}
 
 	// Create ordered list to store final result
@@ -592,19 +597,11 @@ func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
 	if userCurdConfig.MenuOrder == "" {
 		finalOrder = defaultOrder
 	} else {
-		// First, process user-specified order
+		// Only show items explicitly specified by user
 		menuItems := strings.Split(userCurdConfig.MenuOrder, ",")
 		for _, key := range menuItems {
 			key = strings.TrimSpace(key)
-			if _, exists := defaultLabels[key]; exists && !seen[key] {
-				finalOrder = append(finalOrder, key)
-				seen[key] = true
-			}
-		}
-
-		// Add remaining default items at the end
-		for _, key := range defaultOrder {
-			if !seen[key] {
+			if _, exists := availableLabels[key]; exists && !seen[key] {
 				finalOrder = append(finalOrder, key)
 				seen[key] = true
 			}
@@ -616,7 +613,7 @@ func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
 	for _, key := range finalOrder {
 		orderedCategories = append(orderedCategories, SelectionOption{
 			Key:   key,
-			Label: defaultLabels[key],
+			Label: availableLabels[key],
 		})
 	}
 

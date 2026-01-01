@@ -358,6 +358,7 @@ config file is located at ```~/.config/curd/curd.conf```
 | `Player`                  | String     | `mpv` (redundant rn)                      | Specifies the media player used for streaming or playing anime.                                   |
 | `SaveMpvSpeed`            | Boolean    | `true`, `false`                           | Retains the playback speed set in MPV for next episode.                                           |
 | `SkipFiller`              | Boolean    | `true`, `false`                           | Skips filler episodes when supported.                                                             |
+| `MenuOrder`               | String     | Comma-separated list                      | Controls which menu items appear and their order. Available options: `CURRENT`, `ALL`, `UNTRACKED`, `UPDATE`, `CONTINUE_LAST`, `PLANNING`, `COMPLETED`, `PAUSED`, `DROPPED`, `REWATCHING`. Only listed items will be shown. Default: `CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST` |
 
 ## Todo (fix)
 - Use Powershell for windows token input instead of notepad or cmd
