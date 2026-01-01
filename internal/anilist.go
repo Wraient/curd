@@ -910,3 +910,204 @@ func GetAnimeDataByID(id int, token string) (Anime, error) {
 
 	return anime, nil
 }
+
+// SequelInfo holds information about a sequel anime
+type SequelInfo struct {
+	ID         int
+	Title      AnimeTitle
+	CoverImage string
+	Episodes   int
+	Status     string // "FINISHED", "RELEASING", "NOT_YET_RELEASED"
+}
+
+// GetAnimeSequel fetches sequel information for a given anime from AniList
+func GetAnimeSequel(animeID int, token string) (*SequelInfo, error) {
+	url := "https://graphql.anilist.co"
+	query := `
+	query ($id: Int) {
+		Media(id: $id, type: ANIME) {
+			relations {
+				edges {
+					relationType
+					node {
+						id
+						title {
+							romaji
+							english
+						}
+						coverImage {
+							large
+						}
+						episodes
+						status
+					}
+				}
+			}
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"id": animeID,
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+
+	response, err := makePostRequest(url, query, variables, headers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get anime relations: %w", err)
+	}
+
+	data, ok := response["data"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: data field missing")
+	}
+
+	media, ok := data["Media"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: Media field missing")
+	}
+
+	relations, ok := media["relations"].(map[string]interface{})
+	if !ok {
+		return nil, nil // No relations found
+	}
+
+	edges, ok := relations["edges"].([]interface{})
+	if !ok || len(edges) == 0 {
+		return nil, nil // No edges found
+	}
+
+	// Look for a SEQUEL relation
+	for _, edge := range edges {
+		edgeData, ok := edge.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		relationType, ok := edgeData["relationType"].(string)
+		if !ok || relationType != "SEQUEL" {
+			continue
+		}
+
+		node, ok := edgeData["node"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		sequel := &SequelInfo{}
+
+		// Parse ID
+		if id, ok := node["id"].(float64); ok {
+			sequel.ID = int(id)
+		}
+
+		// Parse title
+		if title, ok := node["title"].(map[string]interface{}); ok {
+			if romaji, ok := title["romaji"].(string); ok {
+				sequel.Title.Romaji = romaji
+			}
+			if english, ok := title["english"].(string); ok {
+				sequel.Title.English = english
+			}
+		}
+
+		// Parse cover image
+		if coverImage, ok := node["coverImage"].(map[string]interface{}); ok {
+			if large, ok := coverImage["large"].(string); ok {
+				sequel.CoverImage = large
+			}
+		}
+
+		// Parse episodes
+		if episodes, ok := node["episodes"].(float64); ok {
+			sequel.Episodes = int(episodes)
+		}
+
+		// Parse status
+		if status, ok := node["status"].(string); ok {
+			sequel.Status = status
+		}
+
+		return sequel, nil
+	}
+
+	return nil, nil // No sequel found
+}
+
+// AddAnimeToList adds an anime to a specified list (CURRENT, PLANNING, PAUSED, DROPPED)
+func AddAnimeToList(animeID int, status string, token string) error {
+	url := "https://graphql.anilist.co"
+	mutation := `
+	mutation ($mediaId: Int, $status: MediaListStatus) {
+		SaveMediaListEntry (mediaId: $mediaId, status: $status) {
+			id
+			status
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"mediaId": animeID,
+		"status":  status,
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+
+	_, err := makePostRequest(url, mutation, variables, headers)
+	if err != nil {
+		return fmt.Errorf("failed to add anime to list: %w", err)
+	}
+
+	statusMap := map[string]string{
+		"CURRENT":   "Currently Watching",
+		"COMPLETED": "Completed",
+		"PAUSED":    "On Hold",
+		"DROPPED":   "Dropped",
+		"PLANNING":  "Plan to Watch",
+	}
+
+	CurdOut(fmt.Sprintf("Anime added to: %s", statusMap[status]))
+	return nil
+}
+
+// FindSequelInAnimeList searches for a sequel in the user's anime list and returns its status
+func FindSequelInAnimeList(list AnimeList, sequelID int) (string, bool) {
+	// Check all categories
+	for _, entry := range list.Watching {
+		if entry.Media.ID == sequelID {
+			return "CURRENT", true
+		}
+	}
+	for _, entry := range list.Planning {
+		if entry.Media.ID == sequelID {
+			return "PLANNING", true
+		}
+	}
+	for _, entry := range list.Completed {
+		if entry.Media.ID == sequelID {
+			return "COMPLETED", true
+		}
+	}
+	for _, entry := range list.Paused {
+		if entry.Media.ID == sequelID {
+			return "PAUSED", true
+		}
+	}
+	for _, entry := range list.Dropped {
+		if entry.Media.ID == sequelID {
+			return "DROPPED", true
+		}
+	}
+	for _, entry := range list.Rewatching {
+		if entry.Media.ID == sequelID {
+			return "REWATCHING", true
+		}
+	}
+
+	return "", false
+}

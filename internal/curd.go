@@ -1442,8 +1442,6 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 						err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
 						if err != nil {
 							Log("Error updating Anilist progress on quit: " + err.Error())
-						} else {
-							CurdOut(fmt.Sprintf("Episode marked as completed! Progress updated: %d", anime.Ep.Number))
 						}
 					}()
 				}
@@ -1474,8 +1472,6 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 					err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
 					if err != nil {
 						Log("Error updating Anilist progress: " + err.Error())
-					} else {
-						CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
 					}
 				}()
 			}
@@ -1546,9 +1542,8 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 				err := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
 				if err != nil {
 					Log("Error updating Anilist progress: " + err.Error())
-				} else {
-					CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", prevEpisode))
 				}
+				// Note: UpdateAnimeProgress already outputs a message on success
 			}()
 		}
 
@@ -1596,8 +1591,6 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 			err = UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
 			if err != nil {
 				Log("Error updating Anilist progress: " + err.Error())
-			} else {
-				CurdOut(fmt.Sprintf("Anime progress updated! Latest watched episode: %d", prevEpisode))
 			}
 		}()
 	}
@@ -1640,11 +1633,209 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userT
 				err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
 				if err != nil {
 					Log("Error updating anime status to completed: " + err.Error())
-				} else {
-					CurdOut("Anime status updated to completed!")
 				}
+				// Note: UpdateAnimeStatus already outputs a message on success
 			}()
+		}
+	}
+
+	// Check for sequel after completion (only if this is the last episode)
+	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes {
+		handleSequelCheck(userCurdConfig, anime, userToken)
+	}
+}
+
+// handleSequelCheck checks for sequels and prompts the user accordingly
+func handleSequelCheck(userCurdConfig *CurdConfig, anime *Anime, userToken string) {
+	// Recover from any panics in this function to prevent crashes
+	defer func() {
+		if r := recover(); r != nil {
+			Log(fmt.Sprintf("Recovered from panic in handleSequelCheck: %v", r))
+		}
+	}()
+
+	// Fetch sequel information
+	sequel, err := GetAnimeSequel(anime.AnilistId, userToken)
+	if err != nil {
+		Log(fmt.Sprintf("Error fetching sequel information: %v", err))
+		return
+	}
+
+	if sequel == nil {
+		Log("No sequel found for this anime")
+		return
+	}
+
+	// Get sequel title based on user's language preference
+	sequelTitle := sequel.Title.Romaji
+	if sequel.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
+		sequelTitle = sequel.Title.English
+	}
+
+	Log(fmt.Sprintf("Found sequel: %s (ID: %d)", sequelTitle, sequel.ID))
+
+	// Check if sequel is not yet released
+	if sequel.Status == "NOT_YET_RELEASED" {
+		CurdOut(fmt.Sprintf("A sequel '%s' is announced but not yet released.", sequelTitle))
+		return
+	}
+
+	// Fetch user's anime list to check if sequel is already there
+	userId, _, err := GetAnilistUserID(userToken)
+	if err != nil {
+		Log(fmt.Sprintf("Error getting user ID: %v", err))
+		return
+	}
+
+	userData, err := GetUserData(userToken, userId)
+	if err != nil {
+		Log(fmt.Sprintf("Error getting user data: %v", err))
+		return
+	}
+
+	// Check if userData is valid before parsing
+	if userData == nil || userData["data"] == nil {
+		Log("User data is nil or malformed, skipping sequel list check")
+		// Still show the sequel prompt, but assume it's not in any list
+		promptSequelNotInList(sequel, sequelTitle, userToken, anime)
+		return
+	}
+
+	userAnimeList := ParseAnimeList(userData)
+	sequelStatus, isInList := FindSequelInAnimeList(userAnimeList, sequel.ID)
+
+	if !isInList {
+		// Sequel is not in any list - ask if user wants to add it
+		CurdOut(fmt.Sprintf("A sequel is available: %s", sequelTitle))
+
+		options := []SelectionOption{
+			{Key: "watching", Label: "Add to Watching list"},
+			{Key: "planning", Label: "Add to Plan to Watch"},
+			{Key: "skip", Label: "No thanks"},
+		}
+
+		selectedOption, err := DynamicSelect(options)
+		if err != nil {
+			Log(fmt.Sprintf("Error in sequel prompt: %v", err))
+			return
+		}
+
+		switch selectedOption.Key {
+		case "watching":
+			err = AddAnimeToList(sequel.ID, "CURRENT", userToken)
+			if err != nil {
+				Log(fmt.Sprintf("Error adding sequel to watching list: %v", err))
+				CurdOut("Failed to add sequel to watching list")
+			} else {
+				CurdOut(fmt.Sprintf("Added '%s' to your Watching list!", sequelTitle))
+			}
+		case "planning":
+			err = AddAnimeToList(sequel.ID, "PLANNING", userToken)
+			if err != nil {
+				Log(fmt.Sprintf("Error adding sequel to planning list: %v", err))
+				CurdOut("Failed to add sequel to Plan to Watch")
+			} else {
+				CurdOut(fmt.Sprintf("Added '%s' to your Plan to Watch list!", sequelTitle))
+			}
+		case "skip", "-1":
+			Log("User declined to add sequel")
+		}
+	} else {
+		// Sequel is already in a list
+		switch sequelStatus {
+		case "CURRENT":
+			// Already in watching list
+			CurdOut(fmt.Sprintf("The sequel '%s' is already in your Watching list!", sequelTitle))
+
+		case "PLANNING":
+			// In planning list - ask if user wants to move to watching
+			CurdOut(fmt.Sprintf("The sequel '%s' is in your Plan to Watch list. Move to Watching?", sequelTitle))
+
+			options := []SelectionOption{
+				{Key: "yes", Label: "Yes, move to Watching list"},
+				{Key: "no", Label: "No, keep in Plan to Watch"},
+			}
+
+			selectedOption, err := DynamicSelect(options)
+			if err != nil {
+				Log(fmt.Sprintf("Error in sequel planning prompt: %v", err))
+				return
+			}
+
+			if selectedOption.Key == "yes" {
+				err = AddAnimeToList(sequel.ID, "CURRENT", userToken)
+				if err != nil {
+					Log(fmt.Sprintf("Error moving sequel to watching list: %v", err))
+					CurdOut("Failed to move sequel to Watching list")
+				} else {
+					CurdOut(fmt.Sprintf("Moved '%s' to Watching list!", sequelTitle))
+				}
+			}
+
+		case "COMPLETED":
+			CurdOut(fmt.Sprintf("You've already completed the sequel '%s'!", sequelTitle))
+
+		case "PAUSED", "DROPPED":
+			CurdOut(fmt.Sprintf("The sequel '%s' is in your %s list.", sequelTitle, sequelStatus))
+
+			options := []SelectionOption{
+				{Key: "yes", Label: "Move to Watching list"},
+				{Key: "no", Label: "No thanks"},
+			}
+
+			selectedOption, err := DynamicSelect(options)
+			if err != nil {
+				Log(fmt.Sprintf("Error in sequel resume prompt: %v", err))
+				return
+			}
+
+			if selectedOption.Key == "yes" {
+				err = AddAnimeToList(sequel.ID, "CURRENT", userToken)
+				if err != nil {
+					Log(fmt.Sprintf("Error moving sequel to watching list: %v", err))
+					CurdOut("Failed to move sequel to Watching list")
+				} else {
+					CurdOut(fmt.Sprintf("Moved '%s' to Watching list!", sequelTitle))
+				}
+			}
 		}
 	}
 }
 
+// promptSequelNotInList prompts user to add sequel when we can't check their list
+func promptSequelNotInList(sequel *SequelInfo, sequelTitle string, userToken string, anime *Anime) {
+	CurdOut(fmt.Sprintf("A sequel is available: %s", sequelTitle))
+
+	options := []SelectionOption{
+		{Key: "watching", Label: "Add to Watching list"},
+		{Key: "planning", Label: "Add to Plan to Watch"},
+		{Key: "skip", Label: "No thanks"},
+	}
+
+	selectedOption, err := DynamicSelect(options)
+	if err != nil {
+		Log(fmt.Sprintf("Error in sequel prompt: %v", err))
+		return
+	}
+
+	switch selectedOption.Key {
+	case "watching":
+		err = AddAnimeToList(sequel.ID, "CURRENT", userToken)
+		if err != nil {
+			Log(fmt.Sprintf("Error adding sequel to watching list: %v", err))
+			CurdOut("Failed to add sequel to watching list")
+		} else {
+			CurdOut(fmt.Sprintf("Added '%s' to your Watching list!", sequelTitle))
+		}
+	case "planning":
+		err = AddAnimeToList(sequel.ID, "PLANNING", userToken)
+		if err != nil {
+			Log(fmt.Sprintf("Error adding sequel to planning list: %v", err))
+			CurdOut("Failed to add sequel to Plan to Watch")
+		} else {
+			CurdOut(fmt.Sprintf("Added '%s' to your Plan to Watch list!", sequelTitle))
+		}
+	case "skip", "-1":
+		Log("User declined to add sequel")
+	}
+}
