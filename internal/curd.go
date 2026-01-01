@@ -218,263 +218,293 @@ func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
 		{Key: "SCORE", Label: "Add/Change Score"},
 	}
 
-	// Select update option
-	updateSelection, err := DynamicSelect(updateOptions)
-	if err != nil {
-		Log(fmt.Sprintf("Failed to select update option: %v", err))
-		ExitCurd(fmt.Errorf("Failed to select update option"))
-	}
-
-	if updateSelection.Key == "-1" {
-		ExitCurd(nil)
-	}
-
-	// Get user's anime list
-	var animeListOptions []SelectionOption
-	var animeListMapPreview map[string]RofiSelectPreview
-
-	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-		animeListMapPreview = make(map[string]RofiSelectPreview)
-		// Include anime from all categories
-		for _, entry := range user.AnimeList.Watching {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-				Title:      title,
-				CoverImage: entry.CoverImage,
-			}
-		}
-		for _, entry := range user.AnimeList.Completed {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-				Title:      title,
-				CoverImage: entry.CoverImage,
-			}
-		}
-		for _, entry := range user.AnimeList.Paused {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-				Title:      title,
-				CoverImage: entry.CoverImage,
-			}
-		}
-		for _, entry := range user.AnimeList.Dropped {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-				Title:      title,
-				CoverImage: entry.CoverImage,
-			}
-		}
-		for _, entry := range user.AnimeList.Planning {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-				Title:      title,
-				CoverImage: entry.CoverImage,
-			}
-		}
-		for _, entry := range user.AnimeList.Rewatching {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-				Title:      title,
-				CoverImage: entry.CoverImage,
-			}
-		}
-	} else {
-		animeListOptions = make([]SelectionOption, 0)
-		// Include anime from all categories
-		for _, entry := range user.AnimeList.Watching {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListOptions = append(animeListOptions, SelectionOption{
-				Key:   strconv.Itoa(entry.Media.ID),
-				Label: title,
-			})
-		}
-		for _, entry := range user.AnimeList.Completed {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListOptions = append(animeListOptions, SelectionOption{
-				Key:   strconv.Itoa(entry.Media.ID),
-				Label: title,
-			})
-		}
-		for _, entry := range user.AnimeList.Paused {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListOptions = append(animeListOptions, SelectionOption{
-				Key:   strconv.Itoa(entry.Media.ID),
-				Label: title,
-			})
-		}
-		for _, entry := range user.AnimeList.Dropped {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListOptions = append(animeListOptions, SelectionOption{
-				Key:   strconv.Itoa(entry.Media.ID),
-				Label: title,
-			})
-		}
-		for _, entry := range user.AnimeList.Planning {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListOptions = append(animeListOptions, SelectionOption{
-				Key:   strconv.Itoa(entry.Media.ID),
-				Label: title,
-			})
-		}
-		for _, entry := range user.AnimeList.Rewatching {
-			title := entry.Media.Title.English
-			if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-				title = entry.Media.Title.Romaji
-			}
-			animeListOptions = append(animeListOptions, SelectionOption{
-				Key:   strconv.Itoa(entry.Media.ID),
-				Label: title,
-			})
-		}
-	}
-
-	// Select anime to update
-	var selectedAnime SelectionOption
-	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-		selectedAnime, err = DynamicSelectPreview(animeListMapPreview, false)
-	} else {
-		selectedAnime, err = DynamicSelect(animeListOptions)
-	}
-	if err != nil {
-		Log(fmt.Sprintf("Failed to select anime: %v", err))
-		ExitCurd(fmt.Errorf("Failed to select anime"))
-	}
-
-	if selectedAnime.Key == "-1" {
-		ExitCurd(nil)
-	}
-
-	animeID, err := strconv.Atoi(selectedAnime.Key)
-	if err != nil {
-		Log(fmt.Sprintf("Failed to convert anime ID: %v", err))
-		ExitCurd(fmt.Errorf("Failed to convert anime ID"))
-	}
-
-	// After getting animeID, get the current anime entry
-	selectedAnilistAnime, err := FindAnimeByAnilistID(user.AnimeList, selectedAnime.Key)
-	if err != nil {
-		Log(fmt.Sprintf("Can not find the anime in anilist animelist: %v", err))
-		ExitCurd(fmt.Errorf("Can not find the anime in anilist animelist"))
-	}
-	ClearScreen()
-	switch updateSelection.Key {
-	case "CATEGORY":
-		categories := []SelectionOption{
-			{Key: "CURRENT", Label: "Currently Watching"},
-			{Key: "COMPLETED", Label: "Completed"},
-			{Key: "PAUSED", Label: "On Hold"},
-			{Key: "DROPPED", Label: "Dropped"},
-			{Key: "PLANNING", Label: "Plan to Watch"},
-			{Key: "REPEATING", Label: "Rewatching"}, // Anilist uses REPEATING for rewatching
-		}
-
-		currentStatus := "None"
-		if selectedAnilistAnime.Status != "" {
-			// Find the label for the current status
-			for _, cat := range categories {
-				if cat.Key == selectedAnilistAnime.Status {
-					currentStatus = cat.Label
-					break
-				}
-			}
-		}
-		CurdOut(fmt.Sprintf("Current category: %s", currentStatus))
-
-		categorySelection, err := DynamicSelect(categories)
+	// Navigation loop for update option selection
+updateOptionLoop:
+	for {
+		// Select update option
+		updateSelection, err := DynamicSelect(updateOptions)
 		if err != nil {
-			Log(fmt.Sprintf("Failed to select category: %v", err))
-			ExitCurd(fmt.Errorf("Failed to select category"))
+			Log(fmt.Sprintf("Failed to select update option: %v", err))
+			ExitCurd(fmt.Errorf("Failed to select update option"))
 		}
 
-		if categorySelection.Key == "-1" {
+		if updateSelection.Key == "-1" {
 			ExitCurd(nil)
 		}
 
-		err = UpdateAnimeStatus(user.Token, animeID, categorySelection.Key)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to update anime status: %v", err))
-			ExitCurd(fmt.Errorf("Failed to update anime status"))
+		// Back from update selection returns to home menu
+		if updateSelection.Key == "-2" {
+			return // Return to caller (home menu)
 		}
 
-	case "PROGRESS":
-		currentProgress := "None"
-		if selectedAnilistAnime.Progress > 0 {
-			currentProgress = strconv.Itoa(selectedAnilistAnime.Progress)
-		}
+		// Get user's anime list
+		var animeListOptions []SelectionOption
+		var animeListMapPreview map[string]RofiSelectPreview
 
-		var progress string
-		if userCurdConfig.RofiSelection {
-			progress, err = GetUserInputFromRofi(fmt.Sprintf("Current progress: %s\nEnter new progress (episode number)", currentProgress))
-			if err != nil {
-				Log(fmt.Sprintf("Failed to get progress input: %v", err))
-				ExitCurd(fmt.Errorf("Failed to get progress input"))
+		if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+			animeListMapPreview = make(map[string]RofiSelectPreview)
+			// Include anime from all categories
+			for _, entry := range user.AnimeList.Watching {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+					Title:      title,
+					CoverImage: entry.CoverImage,
+				}
+			}
+			for _, entry := range user.AnimeList.Completed {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+					Title:      title,
+					CoverImage: entry.CoverImage,
+				}
+			}
+			for _, entry := range user.AnimeList.Paused {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+					Title:      title,
+					CoverImage: entry.CoverImage,
+				}
+			}
+			for _, entry := range user.AnimeList.Dropped {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+					Title:      title,
+					CoverImage: entry.CoverImage,
+				}
+			}
+			for _, entry := range user.AnimeList.Planning {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+					Title:      title,
+					CoverImage: entry.CoverImage,
+				}
+			}
+			for _, entry := range user.AnimeList.Rewatching {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+					Title:      title,
+					CoverImage: entry.CoverImage,
+				}
 			}
 		} else {
-			CurdOut(fmt.Sprintf("Current progress: %s", currentProgress))
-			CurdOut("Enter new progress (episode number):")
-			fmt.Scanln(&progress)
+			animeListOptions = make([]SelectionOption, 0)
+			// Include anime from all categories
+			for _, entry := range user.AnimeList.Watching {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListOptions = append(animeListOptions, SelectionOption{
+					Key:   strconv.Itoa(entry.Media.ID),
+					Label: title,
+				})
+			}
+			for _, entry := range user.AnimeList.Completed {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListOptions = append(animeListOptions, SelectionOption{
+					Key:   strconv.Itoa(entry.Media.ID),
+					Label: title,
+				})
+			}
+			for _, entry := range user.AnimeList.Paused {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListOptions = append(animeListOptions, SelectionOption{
+					Key:   strconv.Itoa(entry.Media.ID),
+					Label: title,
+				})
+			}
+			for _, entry := range user.AnimeList.Dropped {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListOptions = append(animeListOptions, SelectionOption{
+					Key:   strconv.Itoa(entry.Media.ID),
+					Label: title,
+				})
+			}
+			for _, entry := range user.AnimeList.Planning {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListOptions = append(animeListOptions, SelectionOption{
+					Key:   strconv.Itoa(entry.Media.ID),
+					Label: title,
+				})
+			}
+			for _, entry := range user.AnimeList.Rewatching {
+				title := entry.Media.Title.English
+				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+					title = entry.Media.Title.Romaji
+				}
+				animeListOptions = append(animeListOptions, SelectionOption{
+					Key:   strconv.Itoa(entry.Media.ID),
+					Label: title,
+				})
+			}
 		}
 
-		progressNum, err := strconv.Atoi(progress)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to convert progress to number: %v", err))
-			ExitCurd(fmt.Errorf("Failed to convert progress to number"))
-		}
+		// Anime selection loop
+	animeSelectLoop:
+		for {
+			// Select anime to update
+			var selectedAnime SelectionOption
+			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+				selectedAnime, err = DynamicSelectPreview(animeListMapPreview, false)
+			} else {
+				selectedAnime, err = DynamicSelect(animeListOptions)
+			}
+			if err != nil {
+				Log(fmt.Sprintf("Failed to select anime: %v", err))
+				ExitCurd(fmt.Errorf("Failed to select anime"))
+			}
 
-		err = UpdateAnimeProgress(user.Token, animeID, progressNum)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to update anime progress: %v", err))
-			ExitCurd(fmt.Errorf("Failed to update anime progress"))
-		}
+			if selectedAnime.Key == "-1" {
+				ExitCurd(nil)
+			}
 
-	case "SCORE":
-		currentScore := "None"
-		if selectedAnilistAnime.Score > 0 {
-			currentScore = strconv.Itoa(int(selectedAnilistAnime.Score))
-		}
-		CurdOut(fmt.Sprintf("Current score: %s", currentScore))
+			// Back from anime selection goes to update option selection
+			if selectedAnime.Key == "-2" {
+				ClearScreen()
+				continue updateOptionLoop
+			}
 
-		err = RateAnime(user.Token, animeID)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to update anime score: %v", err))
-			ExitCurd(fmt.Errorf("Failed to update anime score"))
+			animeID, err := strconv.Atoi(selectedAnime.Key)
+			if err != nil {
+				Log(fmt.Sprintf("Failed to convert anime ID: %v", err))
+				ExitCurd(fmt.Errorf("Failed to convert anime ID"))
+			}
+
+			// After getting animeID, get the current anime entry
+			selectedAnilistAnime, err := FindAnimeByAnilistID(user.AnimeList, selectedAnime.Key)
+			if err != nil {
+				Log(fmt.Sprintf("Can not find the anime in anilist animelist: %v", err))
+				ExitCurd(fmt.Errorf("Can not find the anime in anilist animelist"))
+			}
+			ClearScreen()
+
+			// Final selection loop (for category/progress/score)
+			for {
+				switch updateSelection.Key {
+				case "CATEGORY":
+					categories := []SelectionOption{
+						{Key: "CURRENT", Label: "Currently Watching"},
+						{Key: "COMPLETED", Label: "Completed"},
+						{Key: "PAUSED", Label: "On Hold"},
+						{Key: "DROPPED", Label: "Dropped"},
+						{Key: "PLANNING", Label: "Plan to Watch"},
+						{Key: "REPEATING", Label: "Rewatching"}, // Anilist uses REPEATING for rewatching
+					}
+
+					currentStatus := "None"
+					if selectedAnilistAnime.Status != "" {
+						// Find the label for the current status
+						for _, cat := range categories {
+							if cat.Key == selectedAnilistAnime.Status {
+								currentStatus = cat.Label
+								break
+							}
+						}
+					}
+					CurdOut(fmt.Sprintf("Current category: %s", currentStatus))
+
+					categorySelection, err := DynamicSelect(categories)
+					if err != nil {
+						Log(fmt.Sprintf("Failed to select category: %v", err))
+						ExitCurd(fmt.Errorf("Failed to select category"))
+					}
+
+					if categorySelection.Key == "-1" {
+						ExitCurd(nil)
+					}
+
+					// Back from category selection goes to anime selection
+					if categorySelection.Key == "-2" {
+						ClearScreen()
+						continue animeSelectLoop
+					}
+
+					err = UpdateAnimeStatus(user.Token, animeID, categorySelection.Key)
+					if err != nil {
+						Log(fmt.Sprintf("Failed to update anime status: %v", err))
+						ExitCurd(fmt.Errorf("Failed to update anime status"))
+					}
+
+				case "PROGRESS":
+					currentProgress := "None"
+					if selectedAnilistAnime.Progress > 0 {
+						currentProgress = strconv.Itoa(selectedAnilistAnime.Progress)
+					}
+
+					var progress string
+					if userCurdConfig.RofiSelection {
+						progress, err = GetUserInputFromRofi(fmt.Sprintf("Current progress: %s\nEnter new progress (episode number)", currentProgress))
+						if err != nil {
+							Log(fmt.Sprintf("Failed to get progress input: %v", err))
+							ExitCurd(fmt.Errorf("Failed to get progress input"))
+						}
+					} else {
+						CurdOut(fmt.Sprintf("Current progress: %s", currentProgress))
+						CurdOut("Enter new progress (episode number):")
+						fmt.Scanln(&progress)
+					}
+
+					progressNum, err := strconv.Atoi(progress)
+					if err != nil {
+						Log(fmt.Sprintf("Failed to convert progress to number: %v", err))
+						ExitCurd(fmt.Errorf("Failed to convert progress to number"))
+					}
+
+					err = UpdateAnimeProgress(user.Token, animeID, progressNum)
+					if err != nil {
+						Log(fmt.Sprintf("Failed to update anime progress: %v", err))
+						ExitCurd(fmt.Errorf("Failed to update anime progress"))
+					}
+
+				case "SCORE":
+					currentScore := "None"
+					if selectedAnilistAnime.Score > 0 {
+						currentScore = strconv.Itoa(int(selectedAnilistAnime.Score))
+					}
+					CurdOut(fmt.Sprintf("Current score: %s", currentScore))
+
+					err = RateAnime(user.Token, animeID)
+					if err != nil {
+						Log(fmt.Sprintf("Failed to update anime score: %v", err))
+						ExitCurd(fmt.Errorf("Failed to update anime score"))
+					}
+				}
+
+				CurdOut("Anime updated successfully!")
+				return
+			}
 		}
 	}
-
-	CurdOut("Anime updated successfully!")
 }
 
 func UpdateCurd(repo, fileName string) error {
@@ -714,6 +744,12 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		user.AnimeList = ParseAnimeList(anilistUserData)
 	}
 
+	// Variables for selection results (used in both branches and after)
+	var anilistSelectedOption SelectionOption
+	var selectedAllanimeAnime SelectionOption
+	var userQuery string
+	_ = selectedAllanimeAnime // Used later in the function
+
 	// If continueLast flag is set, directly get the last watched anime
 	if anime.Ep.ContinueLast {
 		// Get the last anime ID from the curd_id file
@@ -738,6 +774,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 		// Set the anime details
 		anime.AnilistId = animePointer.AnilistId
+		anilistSelectedOption.Key = strconv.Itoa(animePointer.AnilistId)
 		// anime.AllanimeId = animePointer.AllanimeId
 		// anime.Title = animePointer.Title
 		// anime.Ep.Number = animePointer.Ep.Number
@@ -745,126 +782,157 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		// anime.Ep.Resume = true
 
 	} else {
-		// Skip category selection if Current flag is set
-		var categorySelection SelectionOption
-		if userCurdConfig.CurrentCategory {
-			categorySelection = SelectionOption{
-				Key:   "CURRENT",
-				Label: "Currently Watching",
-			}
-		} else {
-			// Create category selection map
-			// Get ordered categories
-			orderedCategories := getOrderedCategories(userCurdConfig)
+		// Navigation loop for category and anime selection
+	categorySelectionLoop:
+		for {
+			// Skip category selection if Current flag is set
+			var categorySelection SelectionOption
+			if userCurdConfig.CurrentCategory {
+				categorySelection = SelectionOption{
+					Key:   "CURRENT",
+					Label: "Currently Watching",
+				}
+			} else {
+				// Create category selection map
+				// Get ordered categories
+				orderedCategories := getOrderedCategories(userCurdConfig)
 
-			// Use DynamicSelect with ordered categories directly
-			categorySelection, err = DynamicSelect(orderedCategories)
+				// Use DynamicSelect with ordered categories directly
+				categorySelection, err = DynamicSelect(orderedCategories)
 
-			if err != nil {
-				Log(fmt.Sprintf("Failed to select category: %v", err))
-				ExitCurd(fmt.Errorf("Failed to select category"))
-			}
+				if err != nil {
+					Log(fmt.Sprintf("Failed to select category: %v", err))
+					ExitCurd(fmt.Errorf("Failed to select category"))
+				}
 
-			if categorySelection.Key == "-1" {
-				ExitCurd(nil)
-			}
+				if categorySelection.Key == "-1" {
+					ExitCurd(nil)
+				}
 
-			// Handle options
-			if categorySelection.Key == "UPDATE" {
+				// Handle options
+				if categorySelection.Key == "UPDATE" {
+					ClearScreen()
+					UpdateAnimeEntry(userCurdConfig, user)
+					// If UpdateAnimeEntry returns, user pressed back - continue to category selection
+					ClearScreen()
+					continue categorySelectionLoop
+				} else if categorySelection.Key == "UNTRACKED" {
+					ClearScreen()
+					WatchUntracked(userCurdConfig)
+					// If WatchUntracked returns, user pressed back OR watched is done- continue to category selection
+					ClearScreen()
+					continue categorySelectionLoop
+				} else if categorySelection.Key == "CONTINUE_LAST" {
+					anime.Ep.ContinueLast = true
+				}
+
 				ClearScreen()
-				UpdateAnimeEntry(userCurdConfig, user)
-				ExitCurd(nil)
-			} else if categorySelection.Key == "UNTRACKED" {
-				ClearScreen()
-				WatchUntracked(userCurdConfig)
-			} else if categorySelection.Key == "CONTINUE_LAST" {
-				anime.Ep.ContinueLast = true
 			}
 
-			ClearScreen()
-		}
-
-		if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-			animeListMapPreview = make(map[string]RofiSelectPreview)
-			for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
-				title := entry.Media.Title.English
-				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-					title = entry.Media.Title.Romaji
+			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+				animeListMapPreview = make(map[string]RofiSelectPreview)
+				for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
+					title := entry.Media.Title.English
+					if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+						title = entry.Media.Title.Romaji
+					}
+					animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+						Title:      title,
+						CoverImage: entry.CoverImage,
+					}
 				}
-				animeListMapPreview[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-					Title:      title,
-					CoverImage: entry.CoverImage,
+			} else {
+				animeListOptions = make([]SelectionOption, 0)
+				for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
+					title := entry.Media.Title.English
+					if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
+						title = entry.Media.Title.Romaji
+					}
+					animeListOptions = append(animeListOptions, SelectionOption{
+						Key:   strconv.Itoa(entry.Media.ID),
+						Label: title,
+					})
 				}
 			}
-		} else {
-			animeListOptions = make([]SelectionOption, 0)
-			for _, entry := range getEntriesByCategory(user.AnimeList, categorySelection.Key) {
-				title := entry.Media.Title.English
-				if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-					title = entry.Media.Title.Romaji
+
+			// Anime selection loop (for back navigation)
+		animeSelectionLoop:
+			for {
+				if anime.Ep.ContinueLast {
+					// Get the last watched anime ID from the curd_id file
+					curdIDPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_id")
+					curdIDBytes, err := os.ReadFile(curdIDPath)
+					if err != nil {
+						Log(fmt.Sprintf("Error reading curd_id file: %v", err))
+						ExitCurd(fmt.Errorf("Error reading curd_id file"))
+					}
+
+					lastWatchedID, err := strconv.Atoi(strings.TrimSpace(string(curdIDBytes)))
+					if err != nil {
+						Log(fmt.Sprintf("Error converting curd_id to integer: %v", err))
+						ExitCurd(fmt.Errorf("Error converting curd_id to integer"))
+					}
+
+					anime.AnilistId = lastWatchedID
+					anilistSelectedOption.Key = strconv.Itoa(lastWatchedID)
+					break categorySelectionLoop
 				}
-				animeListOptions = append(animeListOptions, SelectionOption{
-					Key:   strconv.Itoa(entry.Media.ID),
-					Label: title,
-				})
+
+				// Select anime to watch (Anilist)
+				var err error
+				if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+					anilistSelectedOption, err = DynamicSelectPreview(animeListMapPreview, true)
+				} else {
+					// Add "Add new anime" option to the slice
+					tempOptions := make([]SelectionOption, len(animeListOptions))
+					copy(tempOptions, animeListOptions)
+					tempOptions = append(tempOptions, SelectionOption{
+						Key:   "add_new",
+						Label: "Add new anime",
+					})
+
+					anilistSelectedOption, err = DynamicSelect(tempOptions)
+				}
+				if err != nil {
+					Log(fmt.Sprintf("Error selecting anime: %v", err))
+					ExitCurd(fmt.Errorf("Error selecting anime"))
+				}
+
+				Log(anilistSelectedOption)
+
+				if anilistSelectedOption.Key == "-1" {
+					ExitCurd(nil)
+				}
+
+				// Handle back navigation - go back to category selection
+				if anilistSelectedOption.Key == "-2" {
+					if userCurdConfig.CurrentCategory {
+						// If CurrentCategory is forced, back means quit
+						ExitCurd(nil)
+					}
+					ClearScreen()
+					continue categorySelectionLoop
+				}
+
+				if anilistSelectedOption.Label == "add_new" || anilistSelectedOption.Key == "add_new" {
+					addResult := AddNewAnime(userCurdConfig, anime, user, databaseAnimes)
+					if addResult.Key == "-2" {
+						// Back from add new anime goes to anime selection
+						ClearScreen()
+						continue animeSelectionLoop
+					}
+					anilistSelectedOption = addResult
+				}
+
+				anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
+				if err != nil {
+					Log(fmt.Sprintf("Error converting Anilist ID: %v", err))
+					ExitCurd(fmt.Errorf("Error converting Anilist ID"))
+				}
+
+				// Successfully selected anime, break out of both loops
+				break categorySelectionLoop
 			}
-		}
-	}
-
-	var anilistSelectedOption SelectionOption
-	var selectedAllanimeAnime SelectionOption
-	var userQuery string
-
-	if anime.Ep.ContinueLast {
-		// Get the last watched anime ID from the curd_id file
-		curdIDPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_id")
-		curdIDBytes, err := os.ReadFile(curdIDPath)
-		if err != nil {
-			Log(fmt.Sprintf("Error reading curd_id file: %v", err))
-			ExitCurd(fmt.Errorf("Error reading curd_id file"))
-		}
-
-		lastWatchedID, err := strconv.Atoi(strings.TrimSpace(string(curdIDBytes)))
-		if err != nil {
-			Log(fmt.Sprintf("Error converting curd_id to integer: %v", err))
-			ExitCurd(fmt.Errorf("Error converting curd_id to integer"))
-		}
-
-		anime.AnilistId = lastWatchedID
-		anilistSelectedOption.Key = strconv.Itoa(lastWatchedID)
-	} else {
-		// Select anime to watch (Anilist)
-		var err error
-		if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-			anilistSelectedOption, err = DynamicSelectPreview(animeListMapPreview, true)
-		} else {
-			// Add "Add new anime" option to the slice
-			animeListOptions = append(animeListOptions, SelectionOption{
-				Key:   "add_new",
-				Label: "Add new anime",
-			})
-
-			anilistSelectedOption, err = DynamicSelect(animeListOptions)
-		}
-		if err != nil {
-			Log(fmt.Sprintf("Error selecting anime: %v", err))
-			ExitCurd(fmt.Errorf("Error selecting anime"))
-		}
-
-		Log(anilistSelectedOption)
-
-		if anilistSelectedOption.Key == "-1" {
-			ExitCurd(nil)
-		}
-
-		if anilistSelectedOption.Label == "add_new" || anilistSelectedOption.Key == "add_new" {
-			anilistSelectedOption = AddNewAnime(userCurdConfig, anime, user, databaseAnimes)
-		}
-
-		anime.AnilistId, err = strconv.Atoi(anilistSelectedOption.Key)
-		if err != nil {
-			Log(fmt.Sprintf("Error converting Anilist ID: %v", err))
-			ExitCurd(fmt.Errorf("Error converting Anilist ID"))
 		}
 	}
 	// Find anime in Local history
@@ -1579,3 +1647,4 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userT
 		}
 	}
 }
+

@@ -254,43 +254,52 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 	var err error
 	var anime Anime
 
-	// Get anime name from user
-	if userCurdConfig.RofiSelection {
-		userInput, err := GetUserInputFromRofi("Enter the anime name")
-		if err != nil {
-			Log("Error getting user input: " + err.Error())
-			ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
+	// Anime search and selection loop
+	for {
+		// Get anime name from user
+		if userCurdConfig.RofiSelection {
+			userInput, err := GetUserInputFromRofi("Enter the anime name")
+			if err != nil {
+				Log("Error getting user input: " + err.Error())
+				ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
+			}
+			query = userInput
+		} else {
+			CurdOut("Enter the anime name:")
+			fmt.Scanln(&query)
 		}
-		query = userInput
-	} else {
-		CurdOut("Enter the anime name:")
-		fmt.Scanln(&query)
-	}
 
-	// Search for the anime
-	animeList, err = SearchAnime(query, userCurdConfig.SubOrDub)
-	if err != nil {
-		Log(fmt.Sprintf("Failed to search anime: %v", err))
-		ExitCurd(fmt.Errorf("Failed to search anime"))
-	}
+		// Search for the anime
+		animeList, err = SearchAnime(query, userCurdConfig.SubOrDub)
+		if err != nil {
+			Log(fmt.Sprintf("Failed to search anime: %v", err))
+			ExitCurd(fmt.Errorf("Failed to search anime"))
+		}
 
-	if len(animeList) == 0 {
-		ExitCurd(fmt.Errorf("No results found."))
-	}
+		if len(animeList) == 0 {
+			ExitCurd(fmt.Errorf("No results found."))
+		}
 
-	// Select anime from search results
-	selectedAnime, err := DynamicSelect(animeList)
-	if err != nil {
-		Log(fmt.Sprintf("Failed to select anime: %v", err))
-		ExitCurd(fmt.Errorf("Failed to select anime"))
-	}
+		// Select anime from search results
+		selectedAnime, err := DynamicSelect(animeList)
+		if err != nil {
+			Log(fmt.Sprintf("Failed to select anime: %v", err))
+			ExitCurd(fmt.Errorf("Failed to select anime"))
+		}
 
-	if selectedAnime.Key == "-1" {
-		ExitCurd(nil)
-	}
+		if selectedAnime.Key == "-1" {
+			ExitCurd(nil)
+		}
 
-	anime.AllanimeId = selectedAnime.Key
-	anime.Title.English = selectedAnime.Label
+		// Back goes to home menu
+		if selectedAnime.Key == "-2" {
+			return // Return to caller (home menu)
+		}
+
+		anime.AllanimeId = selectedAnime.Key
+		anime.Title.English = selectedAnime.Label
+		break
+	}
 
 	// Get episode number
 	var episodeNumber int
@@ -413,3 +422,4 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 	}
 
 }
+

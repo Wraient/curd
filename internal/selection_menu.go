@@ -27,6 +27,7 @@ type Model struct {
 	terminalHeight int
 	scrollOffset   int
 	addNewOption   bool
+	isHomeMenu     bool // If true, ESC quits; if false, ESC goes back
 }
 
 var (
@@ -82,6 +83,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			// Return quit selection option directly
+			return m, tea.Quit
+		case "esc":
+			// ESC: quit on home menu, go back on sub-menus
+			if m.isHomeMenu {
+				// Quit
+				m.filteredKeys = []SelectionOption{{Key: "-1", Label: "Quit"}}
+				m.selected = 0
+			} else {
+				// Go back
+				m.filteredKeys = []SelectionOption{{Key: "-2", Label: "Back"}}
+				m.selected = 0
+			}
 			return m, tea.Quit
 		case "backspace":
 			if len(m.filter) > 0 {
@@ -200,6 +213,10 @@ func (m *Model) filterOptions() {
 	if m.addNewOption {
 		m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Add new anime", Key: "add_new"})
 	}
+	// Add Back option before Quit (only for non-home menus)
+	if !m.isHomeMenu {
+		m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Back", Key: "-2"})
+	}
 	m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Quit", Key: "-1"})
 }
 
@@ -231,6 +248,8 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 	if addnewoption {
 		rofiInput.WriteString("Add new anime\n")
 	}
+	// Add Back option before Quit (this is always a sub-menu when using preview)
+	rofiInput.WriteString("Back\n")
 	rofiInput.WriteString("Quit\n")
 
 	// Run rofi
@@ -244,7 +263,8 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 	if err := cmd.Run(); err != nil {
 		Log(fmt.Sprintf("Rofi stderr: %s", stderr.String()))
 		Log(fmt.Sprintf("Rofi stdout: %s", stdout.String()))
-		return SelectionOption{}, fmt.Errorf("failed to execute rofi: %w", err)
+		// ESC pressed or rofi closed - return back
+		return SelectionOption{Key: "-2", Label: "Back"}, nil
 	}
 
 	selected := strings.TrimSpace(stdout.String())
@@ -252,9 +272,12 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 	// Handle special cases
 	switch selected {
 	case "":
-		return SelectionOption{}, fmt.Errorf("no selection made")
+		// Empty selection - go back
+		return SelectionOption{Key: "-2", Label: "Back"}, nil
 	case "Add new anime":
 		return SelectionOption{Label: "Add new anime", Key: "add_new"}, nil
+	case "Back":
+		return SelectionOption{Label: "Back", Key: "-2"}, nil
 	case "Quit":
 		return SelectionOption{Label: "Quit", Key: "-1"}, nil
 	}
@@ -333,7 +356,7 @@ func showCachedImagePreview(imageURL string) error {
 	return nil
 }
 
-func RofiSelect(options []SelectionOption) (SelectionOption, error) {
+func RofiSelect(options []SelectionOption, isHomeMenu bool) (SelectionOption, error) {
 	userCurdConfig := GetGlobalConfig()
 	if userCurdConfig.StoragePath == "" {
 		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
@@ -345,6 +368,10 @@ func RofiSelect(options []SelectionOption) (SelectionOption, error) {
 		optionsList = append(optionsList, opt.Label)
 	}
 
+	// Add "Back" option before "Quit" (only for non-home menus)
+	if !isHomeMenu {
+		optionsList = append(optionsList, "Back")
+	}
 	// Add "Quit" option at the end
 	optionsList = append(optionsList, "Quit")
 	optionsString := strings.Join(optionsList, "\n")
@@ -360,7 +387,11 @@ func RofiSelect(options []SelectionOption) (SelectionOption, error) {
 	err := cmd.Run()
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
-			return SelectionOption{Key: "-1", Label: ""}, nil
+			// ESC pressed or rofi closed: go back on sub-menus, quit on home menu
+			if isHomeMenu {
+				return SelectionOption{Key: "-1", Label: "Quit"}, nil
+			}
+			return SelectionOption{Key: "-2", Label: "Back"}, nil
 		}
 		return SelectionOption{}, fmt.Errorf("failed to run Rofi: %v", err)
 	}
@@ -370,7 +401,13 @@ func RofiSelect(options []SelectionOption) (SelectionOption, error) {
 	// Handle special cases
 	switch selected {
 	case "":
-		return SelectionOption{Key: "-1", Label: ""}, nil
+		// Empty selection: go back on sub-menus, quit on home menu
+		if isHomeMenu {
+			return SelectionOption{Key: "-1", Label: "Quit"}, nil
+		}
+		return SelectionOption{Key: "-2", Label: "Back"}, nil
+	case "Back":
+		return SelectionOption{Label: "Back", Key: "-2"}, nil
 	case "Quit":
 		return SelectionOption{Label: "Quit", Key: "-1"}, nil
 	}
@@ -386,12 +423,22 @@ func RofiSelect(options []SelectionOption) (SelectionOption, error) {
 }
 
 func DynamicSelectFromSlice(options []SelectionOption) (SelectionOption, error) {
+	// Detect if this is a home menu by checking for category keys
+	isHomeMenu := false
+	for _, opt := range options {
+		if opt.Key == "ALL" || opt.Key == "CURRENT" {
+			isHomeMenu = true
+			break
+		}
+	}
+
 	if GetGlobalConfig().RofiSelection {
-		return RofiSelect(options)
+		return RofiSelect(options, isHomeMenu)
 	}
 
 	model := &Model{
 		allOptions: options,
+		isHomeMenu: isHomeMenu,
 	}
 	model.filterOptions() // Initialize filtered options
 
@@ -419,32 +466,39 @@ func DynamicSelectFromSlice(options []SelectionOption) (SelectionOption, error) 
 
 // DynamicSelect displays a simple selection prompt without extra features
 func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
-	if GetGlobalConfig().RofiSelection {
-		return RofiSelect(options)
-	}
-
-	// Sort options if this contains menu categories
+	// Detect if this is a home menu by checking for category keys
+	isHomeMenu := false
 	for _, opt := range options {
 		if opt.Key == "ALL" || opt.Key == "CURRENT" {
-			menuOrder := strings.Split(GetGlobalConfig().MenuOrder, ",")
-			optMap := make(map[string]SelectionOption)
-			for _, opt := range options {
-				optMap[opt.Key] = opt
-			}
-
-			sorted := make([]SelectionOption, 0, len(options))
-			for _, key := range menuOrder {
-				if opt, exists := optMap[key]; exists {
-					sorted = append(sorted, opt)
-				}
-			}
-			options = sorted
+			isHomeMenu = true
 			break
 		}
 	}
 
+	if GetGlobalConfig().RofiSelection {
+		return RofiSelect(options, isHomeMenu)
+	}
+
+	// Sort options if this contains menu categories
+	if isHomeMenu {
+		menuOrder := strings.Split(GetGlobalConfig().MenuOrder, ",")
+		optMap := make(map[string]SelectionOption)
+		for _, opt := range options {
+			optMap[opt.Key] = opt
+		}
+
+		sorted := make([]SelectionOption, 0, len(options))
+		for _, key := range menuOrder {
+			if opt, exists := optMap[key]; exists {
+				sorted = append(sorted, opt)
+			}
+		}
+		options = sorted
+	}
+
 	model := &Model{
 		allOptions: options,
+		isHomeMenu: isHomeMenu,
 	}
 	model.filterOptions() // Initialize filtered options
 
@@ -472,3 +526,4 @@ func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
 	}
 	return SelectionOption{}, nil
 }
+
