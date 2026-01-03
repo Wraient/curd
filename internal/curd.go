@@ -1653,10 +1653,7 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userT
 		selectedOption, err := DynamicSelect(scoreOptions)
 		if err != nil {
 			Log(fmt.Sprintf("Error in score prompt selection: %v", err))
-			return
-		}
-
-		if selectedOption.Key == "yes" {
+		} else if selectedOption.Key == "yes" {
 			err = RateAnime(userToken, anime.AnilistId)
 			if err != nil {
 				Log(fmt.Sprintf("Error rating anime: %v", err))
@@ -1666,17 +1663,18 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userT
 			}
 		}
 		// Back (-2) and no are treated as skip
+	}
 
-		// Update anime status to completed on AniList
-		if !anime.Rewatching {
-			go func() {
-				err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
-				if err != nil {
-					Log("Error updating anime status to completed: " + err.Error())
-				}
-				// Note: UpdateAnimeStatus already outputs a message on success
-			}()
-		}
+	// Update anime status to completed on AniList
+	// This is done regardless of scoring preference
+	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !anime.Rewatching {
+		go func() {
+			err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
+			if err != nil {
+				Log("Error updating anime status to completed: " + err.Error())
+			}
+			// Note: UpdateAnimeStatus already outputs a message on success
+		}()
 	}
 
 	// Check for sequel after completion (only if this is the last episode)
