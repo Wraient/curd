@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"errors"
 )
 
 var logFile = "debug.log"
@@ -114,9 +115,14 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 			return "", err
 		}
 
-		// Create command for Windows
-		command = exec.Command(mpvPath, mpvArgs...)
-	} else {
+		if _, err := os.Stat(mpvPath); err == nil {
+			command = exec.Command(mpvPath, mpvArgs...)
+
+		} else if errors.Is(err, os.ErrNotExist) {
+			//for windows with mpv on PATH
+			command = exec.Command("mpv", mpvArgs...)
+
+		} else {
 		// Create command for Unix-like systems
 		command = exec.Command("mpv", mpvArgs...)
 	}
