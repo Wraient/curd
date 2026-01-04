@@ -123,6 +123,10 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 			command = exec.Command("mpv", mpvArgs...)
 
 		} else {
+			Log("Failed to get mpv path.")
+			return "", err
+		}
+	} else {
 		// Create command for Unix-like systems
 		command = exec.Command("mpv", mpvArgs...)
 	}
