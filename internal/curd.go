@@ -1469,6 +1469,11 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 				// Episode is considered completed, mark it and update progress
 				anime.Ep.IsCompleted = true
 
+				// Handle completion if this was the last episode
+				if anime.Ep.Number == anime.TotalEpisodes {
+					HandleLastEpisodeCompletion(userCurdConfig, anime, userToken)
+				}
+
 				// Update local database
 				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime))
 				if err != nil {

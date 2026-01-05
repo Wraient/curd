@@ -190,7 +190,7 @@ func main() {
 		internal.Log("Error finding anime by Anilist ID: " + err.Error())
 	}
 
-	if anime.TotalEpisodes == temp_anime.Progress {
+	if anime.TotalEpisodes == temp_anime.Progress && temp_anime.Status != "CURRENT" {
 		internal.Log(temp_anime.Progress)
 		internal.Log(anime.TotalEpisodes)
 		internal.Log(user.AnimeList)
@@ -567,6 +567,10 @@ func main() {
 											internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
 										} else {
 											// Episode was already marked as completed above
+											// Handle completion if this was the last episode
+											if anime.Ep.Number == anime.TotalEpisodes {
+												internal.HandleLastEpisodeCompletion(&userCurdConfig, &anime, user.Token)
+											}
 											// Update local database with completed episode
 											err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
 											if err != nil {
