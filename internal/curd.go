@@ -1577,13 +1577,11 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 
 		// Update Anilist progress for the last episode if not rewatching
 		if !anime.Rewatching {
-			go func() {
-				err := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
-				if err != nil {
-					Log("Error updating Anilist progress: " + err.Error())
-				}
-				// Note: UpdateAnimeProgress already outputs a message on success
-			}()
+			err := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
+			if err != nil {
+				Log("Error updating Anilist progress: " + err.Error())
+			}
+			// Note: UpdateAnimeProgress already outputs a message on success
 		}
 
 		CurdOut("Series completed!")
@@ -1668,13 +1666,11 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userT
 	// Update anime status to completed on AniList
 	// This is done regardless of scoring preference
 	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !anime.Rewatching {
-		go func() {
-			err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
-			if err != nil {
-				Log("Error updating anime status to completed: " + err.Error())
-			}
-			// Note: UpdateAnimeStatus already outputs a message on success
-		}()
+		err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
+		if err != nil {
+			Log("Error updating anime status to completed: " + err.Error())
+		}
+		// Note: UpdateAnimeStatus already outputs a message on success
 	}
 
 	// Check for sequel after completion (only if this is the last episode)
