@@ -95,6 +95,7 @@ type Media struct {
 	Episodes int        `json:"episodes"`
 	ID       int        `json:"id"`
 	Title    AnimeTitle `json:"title"`
+	Status   string     `json:"status"`
 }
 
 type Entry struct {

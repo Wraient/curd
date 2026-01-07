@@ -964,6 +964,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		// Set anime entry
 		anime.Title = selectedAnilistAnime.Media.Title
 		anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
+		anime.IsAiring = selectedAnilistAnime.Media.Status == "RELEASING" || selectedAnilistAnime.Media.Status == "NOT_YET_RELEASED"
 		anime.Ep.Number = selectedAnilistAnime.Progress + 1
 		var animeList []SelectionOption
 		userQuery = anime.Title.Romaji
@@ -1644,7 +1645,7 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 // HandleLastEpisodeCompletion handles scoring and completion for the last episode
 func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userToken string) {
 	// Check if this is the last episode and scoring is enabled
-	if userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes {
+	if userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !anime.IsAiring {
 		// Prompt user to score the anime
 		CurdOut("You've completed this anime! Would you like to rate it?")
 
@@ -1670,7 +1671,7 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userT
 
 	// Update anime status to completed on AniList
 	// This is done regardless of scoring preference
-	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !anime.Rewatching {
+	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !anime.Rewatching && !anime.IsAiring {
 		err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
 		if err != nil {
 			Log("Error updating anime status to completed: " + err.Error())

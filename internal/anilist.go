@@ -449,6 +449,7 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 							english
 							native
 						}
+						status
 					}
 					status
 					score
@@ -489,6 +490,7 @@ func GetUserDataPreview(token string, userID int) (map[string]interface{}, error
 							english
 							native
 						}
+						status
 					}
 					status
 					score
@@ -779,6 +781,7 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 						Romaji:   safeString(media["title"].(map[string]interface{})["romaji"]),
 						Japanese: safeString(media["title"].(map[string]interface{})["native"]),
 					},
+					Status: safeString(media["status"]),
 				},
 				Progress: toInt(entryData["progress"]),
 				Score:    entryData["score"].(float64),
