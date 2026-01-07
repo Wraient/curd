@@ -921,10 +921,12 @@ type SequelInfo struct {
 	CoverImage string
 	Episodes   int
 	Status     string // "FINISHED", "RELEASING", "NOT_YET_RELEASED"
+	SiteURL    string
 }
 
 // GetAnimeSequel fetches sequel information for a given anime from AniList
-func GetAnimeSequel(animeID int, token string) (*SequelInfo, error) {
+// GetAnimeSequel fetches sequel information for a given anime from AniList
+func GetAnimeSequel(animeID int, token string) ([]SequelInfo, error) {
 	url := "https://graphql.anilist.co"
 	query := `
 	query ($id: Int) {
@@ -943,6 +945,7 @@ func GetAnimeSequel(animeID int, token string) (*SequelInfo, error) {
 						}
 						episodes
 						status
+						siteUrl
 					}
 				}
 			}
@@ -983,6 +986,8 @@ func GetAnimeSequel(animeID int, token string) (*SequelInfo, error) {
 		return nil, nil // No edges found
 	}
 
+	var sequels []SequelInfo
+
 	// Look for a SEQUEL relation
 	for _, edge := range edges {
 		edgeData, ok := edge.(map[string]interface{})
@@ -1000,7 +1005,7 @@ func GetAnimeSequel(animeID int, token string) (*SequelInfo, error) {
 			continue
 		}
 
-		sequel := &SequelInfo{}
+		var sequel SequelInfo
 
 		// Parse ID
 		if id, ok := node["id"].(float64); ok {
@@ -1034,10 +1039,19 @@ func GetAnimeSequel(animeID int, token string) (*SequelInfo, error) {
 			sequel.Status = status
 		}
 
-		return sequel, nil
+		// Parse siteUrl
+		if siteUrl, ok := node["siteUrl"].(string); ok {
+			sequel.SiteURL = siteUrl
+		}
+
+		sequels = append(sequels, sequel)
 	}
 
-	return nil, nil // No sequel found
+	if len(sequels) == 0 {
+		return nil, nil // No sequel found
+	}
+
+	return sequels, nil
 }
 
 // AddAnimeToList adds an anime to a specified list (CURRENT, PLANNING, PAUSED, DROPPED)

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gen2brain/beeep"
+	"github.com/pkg/browser"
 )
 
 func EditConfig(configFilePath string) {
@@ -1695,16 +1696,42 @@ func handleSequelCheck(userCurdConfig *CurdConfig, anime *Anime, userToken strin
 	}()
 
 	// Fetch sequel information
-	sequel, err := GetAnimeSequel(anime.AnilistId, userToken)
+	sequels, err := GetAnimeSequel(anime.AnilistId, userToken)
 	if err != nil {
 		Log(fmt.Sprintf("Error fetching sequel information: %v", err))
 		return
 	}
 
-	if sequel == nil {
+	if len(sequels) == 0 {
 		Log("No sequel found for this anime")
 		return
 	}
+
+	if len(sequels) > 1 {
+		CurdOut("Multiple sequels found for this anime.")
+		options := []SelectionOption{
+			{Key: "yes", Label: "Open AniList page to view sequels"},
+			{Key: "no", Label: "Ignore"},
+		}
+
+		selectedOption, err := DynamicSelect(options)
+		if err != nil {
+			Log(fmt.Sprintf("Error in multiple sequel prompt: %v", err))
+			return
+		}
+
+		if selectedOption.Key == "yes" {
+			url := fmt.Sprintf("https://anilist.co/anime/%d", anime.AnilistId)
+			CurdOut(fmt.Sprintf("Opening %s", url))
+			if err := browser.OpenURL(url); err != nil {
+				Log(fmt.Sprintf("Error opening browser: %v", err))
+				CurdOut("Failed to open browser.")
+			}
+		}
+		return
+	}
+
+	sequel := &sequels[0]
 
 	// Get sequel title based on user's language preference
 	sequelTitle := sequel.Title.Romaji
