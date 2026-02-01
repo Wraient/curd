@@ -295,6 +295,42 @@ func main() {
 		internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime))
 		internal.Log(anime.Ep.Player.SocketPath)
 
+		// Handle Android Intent external player
+		if anime.Ep.Player.SocketPath == "android-intent" {
+			internal.CurdOut(fmt.Sprintf("\nOpened external player for Episode %d.", anime.Ep.Number))
+			internal.CurdOut("Press Enter when you have finished watching...")
+
+			// Wait for user input to confirm completion
+			var input string
+			fmt.Scanln(&input)
+
+			// Mark as completed
+			anime.Ep.IsCompleted = true
+
+			// Update progress for the finished episode
+			// Local update
+			internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, internal.GetAnimeName(anime))
+
+			// Check if we should continue to next episode
+			// On Android we always prompt because we don't know exactly when video ended
+			shouldContinue := internal.NextEpisodePromptCLI(&userCurdConfig)
+
+			if shouldContinue {
+				internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
+				continue
+			} else {
+				// Handle completion if this was the last episode
+				if anime.Ep.Number == anime.TotalEpisodes {
+					internal.HandleLastEpisodeCompletion(&userCurdConfig, &anime, user.Token)
+				}
+				// Update progress for the just finished episode (StartNextEpisode usually does this for previous ep, but here we exit)
+				if !anime.Rewatching {
+					internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+				}
+				internal.ExitCurd(nil)
+			}
+		}
+
 		wg.Add(1)
 		// Get episode data
 		go func() {

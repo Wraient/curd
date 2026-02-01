@@ -3,6 +3,7 @@ package internal
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"errors"
 )
 
 var logFile = "debug.log"
@@ -104,6 +104,28 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	// Add any additional arguments passed
 	if len(args) > 0 {
 		mpvArgs = append(mpvArgs, args...)
+	}
+
+	// Check for Android environment
+	amPath, err := exec.LookPath("am")
+	isAndroid := runtime.GOOS == "android" || (err == nil && amPath != "")
+
+	if isAndroid {
+		// Only use MPV on Android via intent
+		cmdArgs := []string{
+			"start", "--user", "0",
+			"-a", "android.intent.action.VIEW",
+			"-d", link,
+			"-n", "is.xyz.mpv/.MPVActivity",
+		}
+
+		command = exec.Command("am", cmdArgs...)
+		err = command.Start()
+		if err != nil {
+			CurdOut("Error: Failed to start android intent")
+			return "", fmt.Errorf("failed to start android intent: %w", err)
+		}
+		return "android-intent", nil
 	}
 
 	if runtime.GOOS == "windows" {
