@@ -5,7 +5,7 @@ Works on Windows and Linux
 
 ## Join the discord server
 
-https://discord.gg/cNaNVEE3B6
+https://discord.gg/rrpBfu2gHq
 
 ## Demo Video
 Normal mode:
