@@ -259,6 +259,7 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	playerArgs := mpvArgs
 	if isIINAPlayer(effectivePlayerName, resolvedPlayerBinary) {
 		playerArgs = translateMPVArgsForIINA(mpvArgs)
+		playerArgs = append(playerArgs, "--no-stdin")
 	}
 
 	command = exec.Command(resolvedPlayerBinary, playerArgs...)
