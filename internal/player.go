@@ -3,7 +3,6 @@ package internal
 import (
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,14 +15,135 @@ import (
 
 var logFile = "debug.log"
 
-func getMPVPath() (string, error) {
+func getBundledMPVPath() (string, error) {
 	exePath, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
 	exeDir := filepath.Dir(exePath)
-	mpvPath := filepath.Join(exeDir, "bin", "mpv.exe") // Adjust the relative path
+	mpvPath := filepath.Join(exeDir, "bin", "mpv.exe")
 	return mpvPath, nil
+}
+
+func resolveExecutable(binary string) (string, error) {
+	binary = strings.TrimSpace(binary)
+	if binary == "" {
+		return "", fmt.Errorf("empty binary name")
+	}
+
+	if filepath.IsAbs(binary) || strings.Contains(binary, "/") || strings.Contains(binary, "\\") {
+		if _, err := os.Stat(binary); err == nil {
+			return binary, nil
+		}
+		return "", fmt.Errorf("binary path not found: %s", binary)
+	}
+
+	resolvedPath, err := exec.LookPath(binary)
+	if err != nil {
+		return "", err
+	}
+
+	return resolvedPath, nil
+}
+
+func candidatePlayerBinaries(configuredPlayer string) []string {
+	player := strings.TrimSpace(configuredPlayer)
+	if player == "" {
+		player = "mpv"
+	}
+
+	var candidates []string
+	addUnique := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if existing == value {
+				return
+			}
+		}
+		candidates = append(candidates, value)
+	}
+
+	addUnique(player)
+
+	if strings.EqualFold(player, "iina") {
+		// iina is mpv-based and may be exposed either on PATH or via app bundle.
+		addUnique("iina")
+		if runtime.GOOS == "darwin" {
+			addUnique("/Applications/IINA.app/Contents/MacOS/IINA")
+		}
+	}
+
+	return candidates
+}
+
+func resolveMPVBinary() (string, error) {
+	if runtime.GOOS == "windows" {
+		bundledMPVPath, err := getBundledMPVPath()
+		if err == nil {
+			if _, statErr := os.Stat(bundledMPVPath); statErr == nil {
+				return bundledMPVPath, nil
+			}
+		}
+	}
+
+	return resolveExecutable("mpv")
+}
+
+func resolveConfiguredPlayerBinary(configuredPlayer string) (string, string, error) {
+	configuredPlayer = strings.TrimSpace(configuredPlayer)
+	if configuredPlayer == "" {
+		configuredPlayer = "mpv"
+	}
+
+	for _, candidate := range candidatePlayerBinaries(configuredPlayer) {
+		resolvedPath, err := resolveExecutable(candidate)
+		if err == nil {
+			return resolvedPath, configuredPlayer, nil
+		}
+	}
+
+	mpvPath, mpvErr := resolveMPVBinary()
+	if mpvErr != nil {
+		return "", "", fmt.Errorf("configured player %q was not found and fallback to mpv failed: %w", configuredPlayer, mpvErr)
+	}
+
+	if !strings.EqualFold(configuredPlayer, "mpv") {
+		warning := fmt.Sprintf("Configured player '%s' was not found. Falling back to mpv.", configuredPlayer)
+		CurdOut(warning)
+		Log(warning)
+	}
+
+	return mpvPath, "mpv", nil
+}
+
+func isIINAPlayer(effectivePlayerName string, resolvedPlayerBinary string) bool {
+	if strings.EqualFold(strings.TrimSpace(effectivePlayerName), "iina") {
+		return true
+	}
+
+	binaryName := strings.TrimSuffix(filepath.Base(resolvedPlayerBinary), filepath.Ext(resolvedPlayerBinary))
+	return strings.EqualFold(binaryName, "iina")
+}
+
+func translateMPVArgsForIINA(mpvArgs []string) []string {
+	translated := make([]string, 0, len(mpvArgs))
+	for _, arg := range mpvArgs {
+		if strings.HasPrefix(arg, "--") {
+			if strings.HasPrefix(arg, "--mpv-") {
+				translated = append(translated, arg)
+				continue
+			}
+			translated = append(translated, "--mpv-"+strings.TrimPrefix(arg, "--"))
+			continue
+		}
+
+		translated = append(translated, arg)
+	}
+
+	return translated
 }
 
 func StartVideo(link string, args []string, title string, anime *Anime) (string, error) {
@@ -98,13 +218,14 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	args = append(args, "--force-window=yes", "--idle=yes")
 	args = append(args, titleArgs...)
 
-	// Prepare arguments for mpv
+	// Prepare arguments for mpv-compatible players.
 	var mpvArgs []string
-	mpvArgs = append(mpvArgs, "--no-terminal", "--really-quiet", fmt.Sprintf("--input-ipc-server=%s", mpvSocketPath), link)
+	mpvArgs = append(mpvArgs, "--no-terminal", "--really-quiet", fmt.Sprintf("--input-ipc-server=%s", mpvSocketPath))
 	// Add any additional arguments passed
 	if len(args) > 0 {
 		mpvArgs = append(mpvArgs, args...)
 	}
+	mpvArgs = append(mpvArgs, link)
 
 	// Check for Android environment
 	amPath, err := exec.LookPath("am")
@@ -128,36 +249,25 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 		return "android-intent", nil
 	}
 
-	if runtime.GOOS == "windows" {
-		// Get the path to mpv.exe for Windows
-		mpvPath, err := getMPVPath()
-		if err != nil {
-			CurdOut("Error: Failed to get MPV path")
-			Log("Failed to get mpv path.")
-			return "", err
-		}
-
-		if _, err := os.Stat(mpvPath); err == nil {
-			command = exec.Command(mpvPath, mpvArgs...)
-
-		} else if errors.Is(err, os.ErrNotExist) {
-			//for windows with mpv on PATH
-			command = exec.Command("mpv", mpvArgs...)
-
-		} else {
-			Log("Failed to get mpv path.")
-			return "", err
-		}
-	} else {
-		// Create command for Unix-like systems
-		command = exec.Command("mpv", mpvArgs...)
+	resolvedPlayerBinary, effectivePlayerName, err := resolveConfiguredPlayerBinary(userConfig.Player)
+	if err != nil {
+		CurdOut("Error: Failed to resolve media player")
+		Log(fmt.Sprintf("Player resolution failed for '%s': %v", userConfig.Player, err))
+		return "", err
 	}
 
-	// Start the mpv process
+	playerArgs := mpvArgs
+	if isIINAPlayer(effectivePlayerName, resolvedPlayerBinary) {
+		playerArgs = translateMPVArgsForIINA(mpvArgs)
+	}
+
+	command = exec.Command(resolvedPlayerBinary, playerArgs...)
+
+	// Start the selected mpv-compatible player process
 	err = command.Start()
 	if err != nil {
-		CurdOut("Error: Failed to start mpv process")
-		return "", fmt.Errorf("failed to start mpv: %w", err)
+		CurdOut(fmt.Sprintf("Error: Failed to start %s process", effectivePlayerName))
+		return "", fmt.Errorf("failed to start %s: %w", effectivePlayerName, err)
 	}
 
 	// Wait for the socket to become available with retries
