@@ -454,6 +454,17 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 					status
 					score
 					progress
+					repeat
+					startedAt {
+						year
+						month
+						day
+					}
+					completedAt {
+						year
+						month
+						day
+					}
 				}
 			}
 		}
@@ -495,6 +506,17 @@ func GetUserDataPreview(token string, userID int) (map[string]interface{}, error
 					status
 					score
 					progress
+					repeat
+					startedAt {
+						year
+						month
+						day
+					}
+					completedAt {
+						year
+						month
+						day
+					}
 				}
 			}
 		}
@@ -562,18 +584,95 @@ func SearchAnimeByTitle(jsonData map[string]interface{}, searchTitle string) []m
 
 // Function to update anime progress
 func UpdateAnimeProgress(token string, mediaID, progress int) error {
+	err := SaveAnimeListEntry(token, mediaID, nil, &progress, nil, nil, nil)
+	if err != nil {
+		return err
+	}
+
+	CurdOut(fmt.Sprint("Anime progress updated! Latest watched episode: ", progress))
+	return nil
+}
+
+func UpdateAnimeStatus(token string, mediaID int, status string) error {
+	err := SaveAnimeListEntry(token, mediaID, &status, nil, nil, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to update anime status: %w", err)
+	}
+
+	statusMap := map[string]string{
+		"CURRENT":   "Currently Watching",
+		"COMPLETED": "Completed",
+		"PAUSED":    "On Hold",
+		"DROPPED":   "Dropped",
+		"PLANNING":  "Plan to Watch",
+		"REPEATING": "Rewatching",
+	}
+
+	CurdOut(fmt.Sprintf("Anime status updated to: %s", statusMap[status]))
+	return nil
+}
+
+func SaveAnimeListEntry(token string, mediaID int, status *string, progress *int, repeat *int, startedAt *FuzzyDate, completedAt *FuzzyDate) error {
 	url := "https://graphql.anilist.co"
 	query := `
-	mutation($mediaId: Int, $progress: Int) {
-		SaveMediaListEntry(mediaId: $mediaId, progress: $progress) {
+	mutation(
+		$mediaId: Int
+		$status: MediaListStatus
+		$progress: Int
+		$repeat: Int
+		$startedAt: FuzzyDateInput
+		$completedAt: FuzzyDateInput
+	) {
+		SaveMediaListEntry(
+			mediaId: $mediaId
+			status: $status
+			progress: $progress
+			repeat: $repeat
+			startedAt: $startedAt
+			completedAt: $completedAt
+		) {
 			id
+			status
 			progress
+			repeat
+			startedAt {
+				year
+				month
+				day
+			}
+			completedAt {
+				year
+				month
+				day
+			}
 		}
 	}`
 
 	variables := map[string]interface{}{
-		"mediaId":  mediaID,
-		"progress": progress,
+		"mediaId": mediaID,
+	}
+	if status != nil {
+		variables["status"] = *status
+	}
+	if progress != nil {
+		variables["progress"] = *progress
+	}
+	if repeat != nil {
+		variables["repeat"] = *repeat
+	}
+	if startedAt != nil && (startedAt.Year != 0 || startedAt.Month != 0 || startedAt.Day != 0) {
+		variables["startedAt"] = map[string]int{
+			"year":  startedAt.Year,
+			"month": startedAt.Month,
+			"day":   startedAt.Day,
+		}
+	}
+	if completedAt != nil && (completedAt.Year != 0 || completedAt.Month != 0 || completedAt.Day != 0) {
+		variables["completedAt"] = map[string]int{
+			"year":  completedAt.Year,
+			"month": completedAt.Month,
+			"day":   completedAt.Day,
+		}
 	}
 
 	headers := map[string]string{
@@ -585,46 +684,13 @@ func UpdateAnimeProgress(token string, mediaID, progress int) error {
 	if err != nil {
 		return err
 	}
-
-	CurdOut(fmt.Sprint("Anime progress updated! Latest watched episode: ", progress))
 	return nil
 }
 
-func UpdateAnimeStatus(token string, mediaID int, status string) error {
-	url := "https://graphql.anilist.co"
-	query := `
-	mutation($mediaId: Int, $status: MediaListStatus) {
-		SaveMediaListEntry(mediaId: $mediaId, status: $status) {
-			id
-			status
-		}
-	}`
-
-	variables := map[string]interface{}{
-		"mediaId": mediaID,
-		"status":  status,
-	}
-
-	headers := map[string]string{
-		"Authorization": "Bearer " + token,
-		"Content-Type":  "application/json",
-	}
-
-	_, err := makePostRequest(url, query, variables, headers)
-	if err != nil {
-		return fmt.Errorf("failed to update anime status: %w", err)
-	}
-
-	statusMap := map[string]string{
-		"CURRENT":   "Currently Watching",
-		"COMPLETED": "Completed",
-		"PAUSED":    "On Hold",
-		"DROPPED":   "Dropped",
-		"PLANNING":  "Plan to Watch",
-	}
-
-	CurdOut(fmt.Sprintf("Anime status updated to: %s", statusMap[status]))
-	return nil
+func CompleteAnimeRewatch(token string, anime Anime) error {
+	status := "COMPLETED"
+	repeat := anime.Repeat + 1
+	return SaveAnimeListEntry(token, anime.AnilistId, &status, nil, &repeat, &anime.StartedAt, &anime.CompletedAt)
 }
 
 // Function to rate an anime on AniList
@@ -755,6 +821,19 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 		return ""
 	}
 
+	parseFuzzyDate := func(value interface{}) FuzzyDate {
+		dateMap, ok := value.(map[string]interface{})
+		if !ok || dateMap == nil {
+			return FuzzyDate{}
+		}
+
+		return FuzzyDate{
+			Year:  toInt(dateMap["year"]),
+			Month: toInt(dateMap["month"]),
+			Day:   toInt(dateMap["day"]),
+		}
+	}
+
 	// Access the list entries in the input map
 	if input["data"] == nil {
 		Log("Anilist request failed")
@@ -783,9 +862,12 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 					},
 					Status: safeString(media["status"]),
 				},
-				Progress: toInt(entryData["progress"]),
-				Score:    entryData["score"].(float64),
-				Status:   safeString(entryData["status"]), // Ensure status is fetched safely
+				Progress:    toInt(entryData["progress"]),
+				Repeat:      toInt(entryData["repeat"]),
+				Score:       entryData["score"].(float64),
+				Status:      safeString(entryData["status"]), // Ensure status is fetched safely
+				StartedAt:   parseFuzzyDate(entryData["startedAt"]),
+				CompletedAt: parseFuzzyDate(entryData["completedAt"]),
 			}
 
 			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
@@ -1086,6 +1168,7 @@ func AddAnimeToList(animeID int, status string, token string) error {
 		"PAUSED":    "On Hold",
 		"DROPPED":   "Dropped",
 		"PLANNING":  "Plan to Watch",
+		"REPEATING": "Rewatching",
 	}
 
 	CurdOut(fmt.Sprintf("Anime added to: %s", statusMap[status]))
