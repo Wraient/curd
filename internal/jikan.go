@@ -104,3 +104,40 @@ func makeGetRequest(url string, headers map[string]string) (map[string]interface
 
 	return responseData, nil
 }
+
+// FetchJikanPictures fetches the pictures for an anime using the Jikan API.
+// It returns a list of all raw image URLs.
+func FetchJikanPictures(malID int) ([]string, error) {
+	url := fmt.Sprintf("https://api.jikan.moe/v4/anime/%d/pictures", malID)
+
+	response, err := makeGetRequest(url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Jikan API request failed: %v", err)
+	}
+
+	dataList, ok := response["data"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid Jikan API response format")
+	}
+
+	var urls []string
+	for _, item := range dataList {
+		if mapItem, ok := item.(map[string]interface{}); ok {
+			for _, format := range []string{"jpg", "webp"} {
+				if formatData, ok := mapItem[format].(map[string]interface{}); ok {
+					if imgURL, ok := formatData["image_url"].(string); ok && imgURL != "" {
+						urls = append(urls, imgURL)
+					}
+					if smallURL, ok := formatData["small_image_url"].(string); ok && smallURL != "" {
+						urls = append(urls, smallURL)
+					}
+					if largeURL, ok := formatData["large_image_url"].(string); ok && largeURL != "" {
+						urls = append(urls, largeURL)
+					}
+				}
+			}
+		}
+	}
+
+	return urls, nil
+}

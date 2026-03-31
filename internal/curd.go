@@ -985,26 +985,85 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				ExitCurd(fmt.Errorf("No results found."))
 			}
 
-			// find anime in animeList by searching through the options
-			targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
+			// Automatic mapping using Thumbnail clues
+			// 1. Try AniList and MAL thumbnail matching
 			found := false
+			anilistIDStr := strconv.Itoa(anime.AnilistId)
+			var jikanUrls []string
+			fetchedJikan := false
+
+			// Helper regex
+			// AniList regex extracts ID from strings like "bx155348-" or "/155348.jpg"
+			anilistRegex := regexp.MustCompile(`anilistcdn/media/anime/cover/(?:large|medium)/(?:bx)?(\d+)`)
+			// MyAnimeList regex extracts the filename like "120128.jpg"
+			malRegex := regexp.MustCompile(`myanimelist\.net/images/anime/[^/]+/([^/]+\.jpg)`)
+
 			for i, option := range animeList {
-				Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s'", i, option.Key, option.Label))
-				if option.Label == targetLabel {
-					anime.AllanimeId = option.Key
-					Log(fmt.Sprintf("Found exact match! Setting AllanimeId to: %s", anime.AllanimeId))
-					found = true
-					break
+				Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s', Thumbnail='%s'", i, option.Key, option.Label, option.Thumbnail))
+
+				if strings.Contains(option.Thumbnail, "anilist.co") {
+					matches := anilistRegex.FindStringSubmatch(option.Thumbnail)
+					if len(matches) > 1 && matches[1] == anilistIDStr {
+						anime.AllanimeId = option.Key
+						Log(fmt.Sprintf("Found Anilist Thumbnail match! Setting AllanimeId to: %s", anime.AllanimeId))
+						found = true
+						break
+					}
+				} else if strings.Contains(option.Thumbnail, "myanimelist.net") {
+					matches := malRegex.FindStringSubmatch(option.Thumbnail)
+					if len(matches) > 1 {
+						fileName := matches[1]
+						
+						// Fetch Jikan pictures lazily (only once)
+						if !fetchedJikan {
+							if anime.MalId == 0 {
+								anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
+							}
+							if anime.MalId != 0 {
+								urls, err := FetchJikanPictures(anime.MalId)
+								if err != nil {
+									Log(fmt.Sprintf("Failed to fetch Jikan pictures: %v", err))
+								} else {
+									jikanUrls = urls
+								}
+							}
+							fetchedJikan = true
+						}
+
+						for _, url := range jikanUrls {
+							if strings.HasSuffix(url, "/"+fileName) || strings.Contains(url, fileName) {
+								anime.AllanimeId = option.Key
+								Log(fmt.Sprintf("Found MyAnimeList Thumbnail match (%s)! Setting AllanimeId to: %s", fileName, anime.AllanimeId))
+								found = true
+								break
+							}
+						}
+					}
+					if found {
+						break
+					}
 				}
 			}
 
+			// 2. Fallback to naive title/episode match
 			if !found {
-				Log(fmt.Sprintf("No exact match found for label '%s'. Will require manual selection.", targetLabel))
+				targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
+				for _, option := range animeList {
+					if option.Label == targetLabel {
+						anime.AllanimeId = option.Key
+						Log(fmt.Sprintf("Found exact text match! Setting AllanimeId to: %s", anime.AllanimeId))
+						found = true
+						break
+					}
+				}
+				if !found {
+					Log(fmt.Sprintf("No exact match found for label '%s'. Will require manual selection.", targetLabel))
+				}
 			}
 
 			// If unable to get Allanime id automatically get manually
 			if anime.AllanimeId == "" {
-				CurdOut("Failed to automatically select anime")
+				CurdOut("We didn't find any matches. Please select manually.")
 				selectedAllanimeAnime, err := DynamicSelect(animeList)
 
 				if selectedAllanimeAnime.Key == "-1" {

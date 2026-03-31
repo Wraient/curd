@@ -128,6 +128,7 @@ type SelectionOptionImage struct {
 
 // SelectionOption holds the label and the internal key
 type SelectionOption struct {
-	Label string
-	Key   string
+	Label     string
+	Key       string
+	Thumbnail string
 }
