@@ -244,6 +244,11 @@ if not errorlevel 1 (
 if exist "%%OLD%%" del /F /Q "%%OLD%%" >NUL 2>NUL
 if exist "%%TARGET%%" move /Y "%%TARGET%%" "%%OLD%%" >NUL
 move /Y "%%SOURCE%%" "%%TARGET%%" >NUL
+if errorlevel 1 (
+    if exist "%%OLD%%" move /Y "%%OLD%%" "%%TARGET%%" >NUL 2>NUL
+    del /F /Q "%%~f0" >NUL 2>NUL
+    exit /B 1
+)
 if exist "%%OLD%%" del /F /Q "%%OLD%%" >NUL 2>NUL
 del /F /Q "%%~f0" >NUL 2>NUL
 `, executablePath, tmpPath, executablePath, os.Getpid(), os.Getpid())
