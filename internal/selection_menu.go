@@ -124,7 +124,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.filteredKeys[m.selected].Key == "add_new" {
 				CurdOut("Adding a new anime...")
-				m.filteredKeys[m.selected] = SelectionOption{"add_new", "0"}
+				m.filteredKeys[m.selected] = SelectionOption{Label: "add_new", Key: "0"}
 				return m, tea.Quit
 			}
 			return m, tea.Quit

@@ -15,6 +15,7 @@ type anime struct {
 	ID                string      `json:"_id"`
 	Name              string      `json:"name"`
 	EnglishName       string      `json:"englishName"`
+	Thumbnail         string      `json:"thumbnail"`
 	AvailableEpisodes interface{} `json:"availableEpisodes"`
 }
 
@@ -64,6 +65,7 @@ func SearchAnime(query, mode string) ([]SelectionOption, error) {
 				_id
 				name
 				englishName
+				thumbnail
 				availableEpisodes
 				__typename
 			}
@@ -147,8 +149,9 @@ func SearchAnime(query, mode string) ([]SelectionOption, error) {
 		}
 
 		animeList = append(animeList, SelectionOption{
-			Key:   anime.ID,
-			Label: fmt.Sprintf("%s (%s episodes)", displayName, episodesStr),
+			Key:       anime.ID,
+			Label:     fmt.Sprintf("%s (%s episodes)", displayName, episodesStr),
+			Thumbnail: anime.Thumbnail,
 		})
 	}
 	return animeList, nil
