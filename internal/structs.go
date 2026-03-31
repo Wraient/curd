@@ -14,9 +14,18 @@ type Anime struct {
 	MalId          int        `json:"mal_id"`
 	AnilistId      int        `json:"anilist_id"` // Assuming you have an Anilist ID in your struct
 	Rewatching     bool
+	Repeat         int
+	StartedAt      FuzzyDate
+	CompletedAt    FuzzyDate
 	AllanimeId     string // Can be populated as necessary
 	FillerEpisodes []int
 	IsAiring       bool
+}
+
+type FuzzyDate struct {
+	Year  int `json:"year"`
+	Month int `json:"month"`
+	Day   int `json:"day"`
 }
 
 type Skip struct {
@@ -99,11 +108,14 @@ type Media struct {
 }
 
 type Entry struct {
-	Media      Media   `json:"media"`
-	Progress   int     `json:"progress"`
-	Score      float64 `json:"score"`
-	Status     string  `json:"status"`
-	CoverImage string  `json:"coverImage"`
+	Media       Media     `json:"media"`
+	Progress    int       `json:"progress"`
+	Repeat      int       `json:"repeat"`
+	Score       float64   `json:"score"`
+	Status      string    `json:"status"`
+	StartedAt   FuzzyDate `json:"startedAt"`
+	CompletedAt FuzzyDate `json:"completedAt"`
+	CoverImage  string    `json:"coverImage"`
 }
 
 type AnimeList struct {

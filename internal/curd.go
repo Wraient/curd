@@ -726,6 +726,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 	var err error
 	var anilistUserData map[string]interface{}
 	var anilistUserDataPreview map[string]interface{}
+	var startingRewatch bool
 
 	// Filter anime list based on selected category
 	var animeListOptions []SelectionOption
@@ -763,6 +764,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 	// Navigation loop for the entire setup process
 	for {
+		startingRewatch = false
+
 		// If continueLast flag is set, directly get the last watched anime
 		if anime.Ep.ContinueLast {
 			// Get the last anime ID from the curd_id file
@@ -966,9 +969,46 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.Title = selectedAnilistAnime.Media.Title
 		anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
 		anime.IsAiring = selectedAnilistAnime.Media.Status == "RELEASING" || selectedAnilistAnime.Media.Status == "NOT_YET_RELEASED"
+		anime.Rewatching = selectedAnilistAnime.Status == "REPEATING"
+		anime.Repeat = selectedAnilistAnime.Repeat
+		anime.StartedAt = selectedAnilistAnime.StartedAt
+		anime.CompletedAt = selectedAnilistAnime.CompletedAt
 		anime.Ep.Number = selectedAnilistAnime.Progress + 1
 		var animeList []SelectionOption
 		userQuery = anime.Title.Romaji
+
+		if selectedAnilistAnime.Status == "COMPLETED" {
+			status := "REPEATING"
+			progress := 0
+			err = SaveAnimeListEntry(user.Token, anime.AnilistId, &status, &progress, nil, &anime.StartedAt, &anime.CompletedAt)
+			if err != nil {
+				Log(fmt.Sprintf("Error starting anime rewatch: %v", err))
+				ExitCurd(fmt.Errorf("Failed to move anime to rewatching"))
+			}
+
+			anime.Rewatching = true
+			anime.Ep.Number = 1
+			anime.Ep.Player.PlaybackTime = 0
+			anime.Ep.Resume = false
+			startingRewatch = true
+			CurdOut("Moved anime to Rewatching and restarting from episode 1.")
+
+			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
+				anilistUserDataPreview, err = GetUserDataPreview(user.Token, user.Id)
+				if err != nil {
+					Log("Error refreshing anime list: " + err.Error())
+					ExitCurd(err)
+				}
+				user.AnimeList = ParseAnimeList(anilistUserDataPreview)
+			} else {
+				anilistUserData, err = GetUserData(user.Token, user.Id)
+				if err != nil {
+					Log("Error refreshing anime list: " + err.Error())
+					ExitCurd(err)
+				}
+				user.AnimeList = ParseAnimeList(anilistUserData)
+			}
+		}
 
 		// if anime not found in database, find it in animeList
 		if animePointer == nil {
@@ -1013,7 +1053,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 					matches := malRegex.FindStringSubmatch(option.Thumbnail)
 					if len(matches) > 1 {
 						fileName := matches[1]
-						
+
 						// Fetch Jikan pictures lazily (only once)
 						if !fetchedJikan {
 							if anime.MalId == 0 {
@@ -1094,6 +1134,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 		}
 
+		if startingRewatch {
+			anime.Ep.Player.PlaybackTime = 0
+			anime.Ep.Resume = false
+		}
+
 		if selectedAllanimeAnime.Key == "-1" {
 			ExitCurd(nil)
 		}
@@ -1105,6 +1150,17 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				isInWatchingList = true
 				break
 			}
+		}
+		if !isInWatchingList {
+			for _, entry := range user.AnimeList.Rewatching {
+				if entry.Media.ID == anime.AnilistId {
+					isInWatchingList = true
+					break
+				}
+			}
+		}
+		if anime.Rewatching {
+			isInWatchingList = true
 		}
 
 		if !isInWatchingList {
@@ -1444,7 +1500,10 @@ func getEntriesByCategory(list AnimeList, category string) []Entry {
 		allEntries = append(allEntries, list.Rewatching...)
 		return allEntries
 	case "CURRENT":
-		return list.Watching
+		currentEntries := make([]Entry, 0, len(list.Watching)+len(list.Rewatching))
+		currentEntries = append(currentEntries, list.Watching...)
+		currentEntries = append(currentEntries, list.Rewatching...)
+		return currentEntries
 	case "COMPLETED":
 		return list.Completed
 	case "PAUSED":
@@ -1541,15 +1600,12 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 					Log("Error updating local database on quit: " + err.Error())
 				}
 
-				// Update Anilist progress if not rewatching
-				if !anime.Rewatching {
-					go func() {
-						err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
-						if err != nil {
-							Log("Error updating Anilist progress on quit: " + err.Error())
-						}
-					}()
-				}
+				go func() {
+					err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
+					if err != nil {
+						Log("Error updating Anilist progress on quit: " + err.Error())
+					}
+				}()
 
 				CurdOut(fmt.Sprintf("Episode completed (%.1f%% watched). Exiting.", percentageWatched))
 			} else {
@@ -1571,15 +1627,12 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 				Log("Error updating local database with completed episode: " + err.Error())
 			}
 
-			// Update Anilist progress for the completed episode if not rewatching
-			if !anime.Rewatching {
-				go func() {
-					err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
-					if err != nil {
-						Log("Error updating Anilist progress: " + err.Error())
-					}
-				}()
-			}
+			go func() {
+				err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
+				if err != nil {
+					Log("Error updating Anilist progress: " + err.Error())
+				}
+			}()
 
 			// Increment to next episode and update database with next episode number and 0 playback time
 			anime.Ep.Number++
@@ -1641,14 +1694,11 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 		// Handle scoring and completion for the last episode
 		HandleLastEpisodeCompletion(userCurdConfig, anime, userToken)
 
-		// Update Anilist progress for the last episode if not rewatching
-		if !anime.Rewatching {
-			err := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
-			if err != nil {
-				Log("Error updating Anilist progress: " + err.Error())
-			}
-			// Note: UpdateAnimeProgress already outputs a message on success
+		err := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
+		if err != nil {
+			Log("Error updating Anilist progress: " + err.Error())
 		}
+		// Note: UpdateAnimeProgress already outputs a message on success
 
 		CurdOut("Series completed!")
 		ExitCurd(nil)
@@ -1688,15 +1738,12 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 		Log("Error updating local database: " + err.Error())
 	}
 
-	// Update Anilist progress for the previous episode if not rewatching
-	if !anime.Rewatching {
-		go func() {
-			err = UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
-			if err != nil {
-				Log("Error updating Anilist progress: " + err.Error())
-			}
-		}()
-	}
+	go func() {
+		err = UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
+		if err != nil {
+			Log("Error updating Anilist progress: " + err.Error())
+		}
+	}()
 
 	// Output message to user
 	CurdOut(fmt.Sprint("Starting next episode: ", anime.Ep.Number))
@@ -1729,14 +1776,21 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userT
 		// Back (-2) and no are treated as skip
 	}
 
-	// Update anime status to completed on AniList
-	// This is done regardless of scoring preference
-	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !anime.Rewatching && !anime.IsAiring {
-		err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
-		if err != nil {
-			Log("Error updating anime status to completed: " + err.Error())
+	// Update anime status to completed on AniList.
+	// For rewatches, preserve the original completion date and only increment repeat count.
+	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !anime.IsAiring {
+		if anime.Rewatching {
+			err := CompleteAnimeRewatch(userToken, *anime)
+			if err != nil {
+				Log("Error completing anime rewatch: " + err.Error())
+			}
+		} else {
+			err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
+			if err != nil {
+				Log("Error updating anime status to completed: " + err.Error())
+			}
+			// Note: UpdateAnimeStatus already outputs a message on success
 		}
-		// Note: UpdateAnimeStatus already outputs a message on success
 	}
 
 	// Check for sequel after completion (only if this is the last episode)
