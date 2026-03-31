@@ -82,13 +82,19 @@ func main() {
 
 	flag.Parse()
 
+	currentVersion := internal.ResolveCurrentVersion(version)
+
 	// Check version before screen clearing
 	if *versionFlag {
 		internal.RestoreScreen()
-		if version == "" {
-			version = "1.2.0"
+		if currentVersion == "" {
+			if version == "" {
+				currentVersion = "1.2.0"
+			} else {
+				currentVersion = version
+			}
 		}
-		fmt.Printf("Curd version: %s\n", version)
+		fmt.Printf("Curd version: %s\n", currentVersion)
 		os.Exit(0)
 	}
 
@@ -96,13 +102,12 @@ func main() {
 
 	if *updateScript {
 		repo := "wraient/curd"
-		fileName := "curd"
-
-		if err := internal.UpdateCurd(repo, fileName); err != nil {
+		updateMessage, err := internal.UpdateCurd(repo)
+		if err != nil {
 			internal.CurdOut(fmt.Sprintf("Error updating executable: %v\n", err))
 			internal.ExitCurd(err)
 		} else {
-			internal.CurdOut("Program Updated!")
+			internal.CurdOut(updateMessage)
 			internal.ExitCurd(nil)
 		}
 	}
@@ -140,6 +145,9 @@ func main() {
 		internal.EditConfig(configFilePath)
 		return
 	}
+
+	internal.NotifyAboutCachedUpdate(currentVersion, userCurdConfig.StoragePath)
+	internal.StartBackgroundReleaseCheck(currentVersion, userCurdConfig.StoragePath)
 
 	// Set SubOrDub based on the flags
 	if *subFlag {
