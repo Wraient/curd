@@ -151,11 +151,28 @@ func extractLinks(provider_id string) map[string]interface{} {
 // - []string: a list of links for specified episode.
 // - error: an error if the episode is not found or if there is an issue during the search.
 func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
+	preferredMode := normalizeTranslationType(config.SubOrDub)
+	links, err := getEpisodeURLForMode(id, preferredMode, epNo)
+	if err == nil {
+		return links, nil
+	}
+
+	fallbackMode := alternateTranslationType(preferredMode)
+	fallbackLinks, fallbackErr := getEpisodeURLForMode(id, fallbackMode, epNo)
+	if fallbackErr == nil {
+		Log(fmt.Sprintf("Falling back to %s for anime %s episode %d", fallbackMode, id, epNo))
+		return fallbackLinks, nil
+	}
+
+	return nil, err
+}
+
+func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 	query := `query($showId:String!,$translationType:VaildTranslationTypeEnumType!,$episodeString:String!){episode(showId:$showId,translationType:$translationType,episodeString:$episodeString){episodeString sourceUrls}}`
 
 	variables := map[string]string{
 		"showId":          id,
-		"translationType": config.SubOrDub,
+		"translationType": normalizeTranslationType(mode),
 		"episodeString":   fmt.Sprintf("%d", epNo),
 	}
 

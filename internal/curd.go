@@ -1089,7 +1089,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			if !found {
 				targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
 				for _, option := range animeList {
-					if option.Label == targetLabel {
+					if fmt.Sprintf("%s (%d episodes)", option.Title, selectedAnilistAnime.Media.Episodes) == targetLabel {
 						anime.AllanimeId = option.Key
 						Log(fmt.Sprintf("Found exact text match! Setting AllanimeId to: %s", anime.AllanimeId))
 						found = true
