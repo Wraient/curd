@@ -32,6 +32,7 @@ type episodesResponse struct {
 
 // episodesList performs the API call and fetches the episodes list
 func EpisodesList(showID, mode string) ([]string, error) {
+	preferredMode := normalizeTranslationType(mode)
 	const (
 		agent        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
 		allanimeRef  = "https://allanime.to"
@@ -77,7 +78,17 @@ func EpisodesList(showID, mode string) ([]string, error) {
 	}
 
 	// Extract and sort the episodes
-	episodes = extractEpisodes(response.Data.Show.AvailableEpisodesDetail, mode)
+	episodes = extractEpisodes(response.Data.Show.AvailableEpisodesDetail, preferredMode)
+	if len(episodes) == 0 {
+		fallbackMode := alternateTranslationType(preferredMode)
+		episodes = extractEpisodes(response.Data.Show.AvailableEpisodesDetail, fallbackMode)
+		if len(episodes) > 0 {
+			Log(fmt.Sprintf("Falling back to %s episode list for anime %s", fallbackMode, showID))
+		}
+	}
+	if len(episodes) == 0 {
+		return episodes, fmt.Errorf("no episodes found for anime %s", showID)
+	}
 	return episodes, nil
 }
 

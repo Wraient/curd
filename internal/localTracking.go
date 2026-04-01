@@ -297,7 +297,13 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 		}
 
 		anime.AllanimeId = selectedAnime.Key
-		anime.Title.English = selectedAnime.Label
+		if selectedAnime.Title != "" {
+			anime.Title.English = selectedAnime.Title
+			anime.Title.Romaji = selectedAnime.Title
+		} else {
+			anime.Title.English = selectedAnime.Label
+			anime.Title.Romaji = selectedAnime.Label
+		}
 		break
 	}
 
@@ -422,4 +428,3 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 	}
 
 }
-

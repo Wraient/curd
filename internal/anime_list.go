@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	// "strings"
+	"strings"
 )
 
 type anime struct {
@@ -27,6 +27,20 @@ type response struct {
 	} `json:"data"`
 }
 
+func normalizeTranslationType(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), "dub") {
+		return "dub"
+	}
+	return "sub"
+}
+
+func alternateTranslationType(mode string) string {
+	if normalizeTranslationType(mode) == "dub" {
+		return "sub"
+	}
+	return "dub"
+}
+
 // func main() {
 // 	// Get environment variables
 // 	mode := "sub"
@@ -43,6 +57,42 @@ type response struct {
 // }
 
 func SearchAnime(query, mode string) ([]SelectionOption, error) {
+	preferredMode := normalizeTranslationType(mode)
+	alternateMode := alternateTranslationType(preferredMode)
+
+	preferredResults, preferredErr := searchAnimeByMode(query, preferredMode, preferredMode)
+	alternateResults, alternateErr := searchAnimeByMode(query, alternateMode, preferredMode)
+
+	if preferredErr != nil {
+		Log(fmt.Sprintf("Failed searching %s results for %q: %v", preferredMode, query, preferredErr))
+	}
+	if alternateErr != nil {
+		Log(fmt.Sprintf("Failed searching %s results for %q: %v", alternateMode, query, alternateErr))
+	}
+
+	if preferredErr != nil && alternateErr != nil {
+		return nil, preferredErr
+	}
+
+	animeList := make([]SelectionOption, 0, len(preferredResults)+len(alternateResults))
+	seen := make(map[string]struct{}, len(preferredResults)+len(alternateResults))
+
+	for _, option := range preferredResults {
+		animeList = append(animeList, option)
+		seen[option.Key] = struct{}{}
+	}
+
+	for _, option := range alternateResults {
+		if _, exists := seen[option.Key]; exists {
+			continue
+		}
+		animeList = append(animeList, option)
+	}
+
+	return animeList, nil
+}
+
+func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, error) {
 	userCurdConfig := GetGlobalConfig()
 	if userCurdConfig == nil {
 		logFile = os.ExpandEnv("$HOME/.local/share/curd/debug.log")
@@ -56,7 +106,9 @@ func SearchAnime(query, mode string) ([]SelectionOption, error) {
 		allanimeAPI  = "https://api." + allanimeBase + "/api"
 	)
 
-	// Prepare the anime list
+	mode = normalizeTranslationType(mode)
+	preferredMode = normalizeTranslationType(preferredMode)
+
 	animeList := make([]SelectionOption, 0)
 
 	searchGql := `query($search: SearchInput, $limit: Int, $page: Int, $translationType: VaildTranslationTypeEnumType, $countryOrigin: VaildCountryOriginEnumType) {
@@ -134,23 +186,30 @@ func SearchAnime(query, mode string) ([]SelectionOption, error) {
 	for _, anime := range response.Data.Shows.Edges {
 		var episodesStr string
 		if episodes, ok := anime.AvailableEpisodes.(map[string]interface{}); ok {
-			if subEpisodes, ok := episodes["sub"].(float64); ok {
-				episodesStr = fmt.Sprintf("%d", int(subEpisodes))
+			if modeEpisodes, ok := episodes[mode].(float64); ok {
+				episodesStr = fmt.Sprintf("%d", int(modeEpisodes))
 			} else {
-				Log(subEpisodes)
 				episodesStr = "Unknown"
 			}
+		} else {
+			episodesStr = "Unknown"
 		}
 
 		// Use English name if available and configured, otherwise use default name
 		displayName := anime.Name
-		if anime.EnglishName != "" && userCurdConfig.AnimeNameLanguage == "english" {
+		if anime.EnglishName != "" && userCurdConfig != nil && userCurdConfig.AnimeNameLanguage == "english" {
 			displayName = anime.EnglishName
 		}
 
+		label := fmt.Sprintf("%s (%s episodes)", displayName, episodesStr)
+		if mode != preferredMode {
+			label = fmt.Sprintf("%s [%s]", label, mode)
+		}
+
 		animeList = append(animeList, SelectionOption{
+			Title:     displayName,
 			Key:       anime.ID,
-			Label:     fmt.Sprintf("%s (%s episodes)", displayName, episodesStr),
+			Label:     label,
 			Thumbnail: anime.Thumbnail,
 		})
 	}
