@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,23 +16,32 @@ import (
 
 var version string // Will be set by ldflags during build
 
+func resolveConfigPath(args []string, defaultPath string) string {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--config" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(arg, "--config=") {
+			return strings.TrimPrefix(arg, "--config=")
+		}
+	}
+
+	return defaultPath
+}
+
 func main() {
 	var anime internal.Anime
 	var user internal.User
 
 	internal.SetGlobalAnime(&anime)
 
-	var homeDir string
-	if runtime.GOOS == "windows" {
-		homeDir = os.Getenv("USERPROFILE")
-	} else {
-		homeDir = os.Getenv("HOME")
-	}
-
-	configFilePath := filepath.Join(homeDir, ".config", "curd", "curd.conf")
+	platform := internal.DetectPlatform()
+	configFilePath := resolveConfigPath(os.Args[1:], internal.DefaultConfigPathForPlatform(platform))
+	platform = internal.InferPlatformForConfigPath(configFilePath, platform)
 
 	// load curd userCurdConfig
-	userCurdConfig, err := internal.LoadConfig(configFilePath)
+	userCurdConfig, err := internal.LoadConfigForPlatform(configFilePath, platform)
 	if err != nil {
 		fmt.Println("Error loading config:", err)
 		return
@@ -43,10 +53,13 @@ func main() {
 	internal.ClearLogFile(logFile)
 
 	// Flags configured here cause userconfig needs to be changed.
-	flag.StringVar(&userCurdConfig.Player, "player", userCurdConfig.Player, "Player binary for playback (mpv-compatible; falls back to mpv if unavailable)")
+	flag.StringVar(&configFilePath, "config", configFilePath, "Path to the active config file")
 	flag.StringVar(&userCurdConfig.StoragePath, "storage-path", userCurdConfig.StoragePath, "Path to the storage directory")
 	flag.StringVar(&userCurdConfig.SubsLanguage, "subs-lang", userCurdConfig.SubsLanguage, "Subtitles language")
 	flag.IntVar(&userCurdConfig.PercentageToMarkComplete, "percentage-to-mark-complete", userCurdConfig.PercentageToMarkComplete, "Percentage to mark episode as complete")
+	if !userCurdConfig.IsAndroid() {
+		flag.StringVar(&userCurdConfig.Player, "player", userCurdConfig.Player, "Player binary for playback (mpv-compatible; falls back to mpv if unavailable)")
+	}
 
 	// Boolean flags that accept true/false
 	flag.BoolVar(&userCurdConfig.NextEpisodePrompt, "next-episode-prompt", userCurdConfig.NextEpisodePrompt, "Prompt for the next episode (true/false)")
@@ -56,14 +69,12 @@ func main() {
 	flag.BoolVar(&userCurdConfig.SkipRecap, "skip-recap", userCurdConfig.SkipRecap, "Skip recap (true/false)")
 	flag.BoolVar(&userCurdConfig.ScoreOnCompletion, "score-on-completion", userCurdConfig.ScoreOnCompletion, "Score on episode completion (true/false)")
 	flag.BoolVar(&userCurdConfig.SaveMpvSpeed, "save-mpv-speed", userCurdConfig.SaveMpvSpeed, "Save MPV speed setting (true/false)")
-	flag.BoolVar(&userCurdConfig.DiscordPresence, "discord-presence", userCurdConfig.DiscordPresence, "Enable Discord presence (true/false)")
-	flag.StringVar(&userCurdConfig.DiscordClientId, "discord-client-id", userCurdConfig.DiscordClientId, "Discord client ID for Rich Presence")
+	if !userCurdConfig.IsAndroid() {
+		flag.BoolVar(&userCurdConfig.DiscordPresence, "discord-presence", userCurdConfig.DiscordPresence, "Enable Discord presence (true/false)")
+		flag.StringVar(&userCurdConfig.DiscordClientId, "discord-client-id", userCurdConfig.DiscordClientId, "Discord client ID for Rich Presence")
+	}
 	continueLast := flag.Bool("c", false, "Continue last episode")
 	addNewAnime := flag.Bool("new", false, "Add new anime")
-	rofiSelection := flag.Bool("rofi", false, "Open selection in rofi")
-	noRofi := flag.Bool("no-rofi", false, "No rofi")
-	imagePreview := flag.Bool("image-preview", false, "Show image preview")
-	noImagePreview := flag.Bool("no-image-preview", false, "No image preview")
 	changeToken := flag.Bool("change-token", false, "Change token")
 	currentCategory := flag.Bool("current", false, "Current category")
 	updateScript := flag.Bool("u", false, "Update the script")
@@ -71,6 +82,17 @@ func main() {
 	subFlag := flag.Bool("sub", false, "Watch sub version")
 	dubFlag := flag.Bool("dub", false, "Watch dub version")
 	versionFlag := flag.Bool("v", false, "Print version information")
+	androidSetup := flag.Bool("android-setup", false, "Detect Termux API/player integration and write android.conf")
+	var rofiSelection *bool
+	var noRofi *bool
+	var imagePreview *bool
+	var noImagePreview *bool
+	if !userCurdConfig.IsAndroid() {
+		rofiSelection = flag.Bool("rofi", false, "Open selection in rofi")
+		noRofi = flag.Bool("no-rofi", false, "No rofi")
+		imagePreview = flag.Bool("image-preview", false, "Show image preview")
+		noImagePreview = flag.Bool("no-image-preview", false, "No image preview")
+	}
 
 	// Custom help/usage function
 	flag.Usage = func() {
@@ -112,6 +134,13 @@ func main() {
 		return
 	}
 
+	if *androidSetup {
+		if err := internal.RunAndroidSetup(configFilePath, &userCurdConfig); err != nil {
+			internal.ExitCurd(err)
+		}
+		return
+	}
+
 	// Setup screen for interactive mode (only if not changing token)
 	internal.ClearScreen()
 	defer internal.RestoreScreen()
@@ -120,20 +149,25 @@ func main() {
 		userCurdConfig.CurrentCategory = true
 	}
 
-	if *rofiSelection {
+	if rofiSelection != nil && *rofiSelection {
 		userCurdConfig.RofiSelection = true
 	}
 
-	if *noRofi || runtime.GOOS == "windows" {
+	if (noRofi != nil && *noRofi) || runtime.GOOS == "windows" || userCurdConfig.IsAndroid() {
 		userCurdConfig.RofiSelection = false
 	}
 
-	if *imagePreview {
+	if imagePreview != nil && *imagePreview {
 		userCurdConfig.ImagePreview = true
 	}
 
-	if *noImagePreview || runtime.GOOS == "windows" {
+	if (noImagePreview != nil && *noImagePreview) || runtime.GOOS == "windows" || userCurdConfig.IsAndroid() {
 		userCurdConfig.ImagePreview = false
+	}
+
+	if userCurdConfig.IsAndroid() {
+		userCurdConfig.DiscordPresence = false
+		userCurdConfig.AlternateScreen = false
 	}
 
 	if *editConfig {
@@ -291,6 +325,7 @@ func main() {
 		}
 
 		// Now start playback for the non-filler episode
+		internal.AcquireWakeLock(&userCurdConfig)
 		anime.Ep.Player.SocketPath = internal.StartCurd(&userCurdConfig, &anime)
 		internal.Log(fmt.Sprint("Playback starting time: ", anime.Ep.Player.PlaybackTime))
 		internal.Log(anime.Ep.Player.SocketPath)
@@ -298,6 +333,7 @@ func main() {
 		// Handle Android Intent external player
 		if anime.Ep.Player.SocketPath == "android-intent" {
 			internal.CurdOut(fmt.Sprintf("\nOpened external player for Episode %d.", anime.Ep.Number))
+			internal.CurdOut("Intent mode disables automatic progress detection, skip automation, and IPC control.")
 			internal.CurdOut("Press Enter when you have finished watching...")
 
 			// Wait for user input to confirm completion

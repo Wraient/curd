@@ -30,6 +30,11 @@ type Model struct {
 	isHomeMenu     bool // If true, ESC quits; if false, ESC goes back
 }
 
+func isAndroidTerminalMode() bool {
+	config := GetGlobalConfig()
+	return config != nil && config.IsAndroid()
+}
+
 var (
 	// Style definitions
 	titleStyle = lipgloss.NewStyle().
@@ -148,13 +153,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the UI and only shows as many options as fit in the terminal
 func (m Model) View() string {
 	var b strings.Builder
+	androidMode := isAndroidTerminalMode()
 
-	// Display the search prompt and filter with colors
-	b.WriteString(titleStyle.Render("Search") + " (Press " +
-		quitHintStyle.Render("Ctrl+C") + " to quit):\n")
+	title := "Search"
+	if androidMode {
+		title = "Search Anime"
+	}
+	b.WriteString(titleStyle.Render(title) + "\n")
 
-	b.WriteString(filterLabelStyle.Render("Filter: ") +
-		filterTextStyle.Render(m.filter) + "\n\n") // Added extra newline for spacing
+	if androidMode {
+		b.WriteString(filterLabelStyle.Render("Query: ") +
+			filterTextStyle.Render(m.filter) + "\n")
+	} else {
+		b.WriteString(filterLabelStyle.Render("Filter: ") +
+			filterTextStyle.Render(m.filter) + "\n")
+	}
+	b.WriteString("\n")
 
 	if len(m.filteredKeys) == 0 {
 		b.WriteString(noMatchesStyle.Render("No matches found.") + "\n")
@@ -168,12 +182,28 @@ func (m Model) View() string {
 
 		// Render the options within the visible range
 		for i := start; i < end; i++ {
+			label := m.filteredKeys[i].Label
+			if androidMode {
+				label = "  " + label
+			}
 			if i == m.selected {
-				b.WriteString(selectedItemStyle.Render(m.filteredKeys[i].Label) + "\n")
+				b.WriteString(selectedItemStyle.Render(label) + "\n")
 			} else {
-				b.WriteString(regularItemStyle.Render(m.filteredKeys[i].Label) + "\n")
+				b.WriteString(regularItemStyle.Render(label) + "\n")
+			}
+
+			if androidMode {
+				b.WriteString("\n")
 			}
 		}
+	}
+
+	if androidMode {
+		footer := "Enter select  Esc back  Ctrl+C quit  Type to search"
+		if m.isHomeMenu {
+			footer = "Enter select  Esc quit  Ctrl+C quit  Type to search"
+		}
+		b.WriteString("\n" + quitHintStyle.Render(footer))
 	}
 
 	return b.String()
@@ -182,7 +212,10 @@ func (m Model) View() string {
 // visibleItemsCount calculates how many options fit in the terminal
 func (m Model) visibleItemsCount() int {
 	// Leave space for the filter and other UI elements
-	return m.terminalHeight - 4 // Adjust this number based on your terminal layout
+	if isAndroidTerminalMode() {
+		return max(1, (m.terminalHeight-6)/2)
+	}
+	return max(1, m.terminalHeight-4)
 }
 
 // filterOptions filters and sorts options based on the search term
@@ -526,4 +559,3 @@ func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
 	}
 	return SelectionOption{}, nil
 }
-

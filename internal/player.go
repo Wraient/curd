@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -147,157 +146,7 @@ func translateMPVArgsForIINA(mpvArgs []string) []string {
 }
 
 func StartVideo(link string, args []string, title string, anime *Anime) (string, error) {
-	var command *exec.Cmd
-	var mpvSocketPath string
-	var err error
-
-	userConfig := GetGlobalConfig()
-
-	// Add custom MPV arguments from config if they exist
-	if userConfig.MpvArgs != nil {
-		args = append(args, userConfig.MpvArgs...)
-	}
-
-	// Check if we have an existing socket and if MPV is still running
-	if anime.Ep.Player.SocketPath != "" && IsMPVRunning(anime.Ep.Player.SocketPath) {
-		// Reuse existing socket
-		mpvSocketPath = anime.Ep.Player.SocketPath
-
-		// Load the new file in the existing MPV instance
-		command := []interface{}{"loadfile", link}
-		_, err = MPVSendCommand(mpvSocketPath, command)
-		if err != nil {
-			return "", fmt.Errorf("failed to load file in existing MPV instance: %w", err)
-		}
-
-		// Wait a brief moment for the file to load
-		time.Sleep(100 * time.Millisecond)
-
-		// Update the window title
-		titleCommand := []interface{}{"set_property", "force-media-title", title}
-		_, err = MPVSendCommand(mpvSocketPath, titleCommand)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to update title: %v", err))
-		}
-
-		// Also update the window title property
-		windowTitleCommand := []interface{}{"set_property", "title", title}
-		_, err = MPVSendCommand(mpvSocketPath, windowTitleCommand)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to update window title: %v", err))
-		}
-
-		return mpvSocketPath, nil
-	}
-
-	if anime.Ep.Player.SocketPath == "" {
-		// Generate a random number for the socket path
-		randomBytes := make([]byte, 4)
-		_, err = rand.Read(randomBytes)
-		if err != nil {
-			Log("Failed to generate random number")
-			return "", fmt.Errorf("failed to generate random number: %w", err)
-		}
-
-		randomNumber := fmt.Sprintf("%x", randomBytes)
-
-		// Create the mpv socket path with the random number
-		if runtime.GOOS == "windows" {
-			mpvSocketPath = fmt.Sprintf(`\\.\pipe\curd_mpvsocket_%s`, randomNumber)
-		} else {
-			mpvSocketPath = fmt.Sprintf("/tmp/curd_mpvsocket_%s", randomNumber)
-		}
-	} else {
-		mpvSocketPath = anime.Ep.Player.SocketPath
-	}
-
-	// Add the title to MPV arguments
-	titleArgs := []string{fmt.Sprintf("--title=%s", title), fmt.Sprintf("--force-media-title=%s", title)}
-
-	// Keep the window open after episode completes, new episode starts in the same mpv window
-	args = append(args, "--force-window=yes", "--idle=yes")
-	args = append(args, titleArgs...)
-
-	// Prepare arguments for mpv-compatible players.
-	var mpvArgs []string
-	mpvArgs = append(mpvArgs, "--no-terminal", "--really-quiet", fmt.Sprintf("--input-ipc-server=%s", mpvSocketPath))
-	// Add any additional arguments passed
-	if len(args) > 0 {
-		mpvArgs = append(mpvArgs, args...)
-	}
-	mpvArgs = append(mpvArgs, link)
-
-	// Check for Android environment
-	amPath, err := exec.LookPath("am")
-	isAndroid := runtime.GOOS == "android" || (err == nil && amPath != "")
-
-	if isAndroid {
-		// Only use MPV on Android via intent
-		cmdArgs := []string{
-			"start", "--user", "0",
-			"-a", "android.intent.action.VIEW",
-			"-d", link,
-			"-n", "is.xyz.mpv/.MPVActivity",
-		}
-
-		command = exec.Command("am", cmdArgs...)
-		err = command.Start()
-		if err != nil {
-			CurdOut("Error: Failed to start android intent")
-			return "", fmt.Errorf("failed to start android intent: %w", err)
-		}
-		return "android-intent", nil
-	}
-
-	resolvedPlayerBinary, effectivePlayerName, err := resolveConfiguredPlayerBinary(userConfig.Player)
-	if err != nil {
-		CurdOut("Error: Failed to resolve media player")
-		Log(fmt.Sprintf("Player resolution failed for '%s': %v", userConfig.Player, err))
-		return "", err
-	}
-
-	playerArgs := mpvArgs
-	if isIINAPlayer(effectivePlayerName, resolvedPlayerBinary) {
-		playerArgs = translateMPVArgsForIINA(mpvArgs)
-		playerArgs = append(playerArgs, "--no-stdin")
-	}
-
-	command = exec.Command(resolvedPlayerBinary, playerArgs...)
-
-	// Start the selected mpv-compatible player process
-	err = command.Start()
-	if err != nil {
-		CurdOut(fmt.Sprintf("Error: Failed to start %s process", effectivePlayerName))
-		return "", fmt.Errorf("failed to start %s: %w", effectivePlayerName, err)
-	}
-
-	// Wait for the socket to become available with retries
-	socketReady := false
-	maxRetries := 10
-	retryDelay := 300 * time.Millisecond
-
-	Log(fmt.Sprintf("Waiting for MPV socket to be ready at %s", mpvSocketPath))
-	for i := 0; i < maxRetries; i++ {
-		time.Sleep(retryDelay)
-
-		// Try to connect to the socket
-		conn, err := connectToPipe(mpvSocketPath)
-		if err == nil {
-			conn.Close()
-			socketReady = true
-			Log(fmt.Sprintf("MPV socket ready after %d attempts", i+1))
-			break
-		}
-
-		Log(fmt.Sprintf("Attempt %d/%d - Socket not ready yet: %v", i+1, maxRetries, err))
-	}
-
-	if !socketReady {
-		Log(fmt.Sprintf("Failed to connect to MPV socket after %d attempts", maxRetries))
-		// Don't fail here, just warn and continue - the next commands will handle any further issues
-	}
-
-	return mpvSocketPath, nil
+	return activePlayerBackend().Start(link, args, title, anime)
 }
 
 // Helper function to join args with a space
@@ -313,6 +162,10 @@ func joinArgs(args []string) string {
 }
 
 func MPVSendCommand(ipcSocketPath string, command []interface{}) (interface{}, error) {
+	return activePlayerBackend().SendCommand(ipcSocketPath, command)
+}
+
+func sendMPVCommandOverIPC(ipcSocketPath string, command []interface{}) (interface{}, error) {
 	// Use a retry mechanism for transient errors
 	var lastErr error
 	maxRetries := 3

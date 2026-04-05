@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/pkg/browser"
 )
 
 const (
@@ -38,33 +36,50 @@ type AnilistToken struct {
 
 // CurdConfig struct with field names that match the config keys
 type CurdConfig struct {
-	Player                   string   `config:"Player"`
-	MpvArgs                  []string `config:MpvArgs`
-	SubsLanguage             string   `config:"SubsLanguage"`
-	SubOrDub                 string   `config:"SubOrDub"`
-	StoragePath              string   `config:"StoragePath"`
-	AnimeNameLanguage        string   `config:"AnimeNameLanguage"`
-	MenuOrder                string   `config:"MenuOrder"`
-	PercentageToMarkComplete int      `config:"PercentageToMarkComplete"`
-	NextEpisodePrompt        bool     `config:"NextEpisodePrompt"`
-	SkipOp                   bool     `config:"SkipOp"`
-	SkipEd                   bool     `config:"SkipEd"`
-	SkipFiller               bool     `config:"SkipFiller"`
-	ImagePreview             bool     `config:"ImagePreview"`
-	SkipRecap                bool     `config:"SkipRecap"`
-	RofiSelection            bool     `config:"RofiSelection"`
-	CurrentCategory          bool     `config:"CurrentCategory"`
-	ScoreOnCompletion        bool     `config:"ScoreOnCompletion"`
-	SaveMpvSpeed             bool     `config:"SaveMpvSpeed"`
-	AddMissingOptions        bool     `config:"AddMissingOptions"`
-	AlternateScreen          bool     `config:"AlternateScreen"`
-	DiscordPresence          bool     `config:"DiscordPresence"`
-	DiscordClientId          string   `config:"DiscordClientId"`
+	Platform                  string   `config:"-"`
+	Player                    string   `config:"Player"`
+	MpvArgs                   []string `config:"MpvArgs"`
+	SubsLanguage              string   `config:"SubsLanguage"`
+	SubOrDub                  string   `config:"SubOrDub"`
+	StoragePath               string   `config:"StoragePath"`
+	AnimeNameLanguage         string   `config:"AnimeNameLanguage"`
+	MenuOrder                 string   `config:"MenuOrder"`
+	PercentageToMarkComplete  int      `config:"PercentageToMarkComplete"`
+	NextEpisodePrompt         bool     `config:"NextEpisodePrompt"`
+	SkipOp                    bool     `config:"SkipOp"`
+	SkipEd                    bool     `config:"SkipEd"`
+	SkipFiller                bool     `config:"SkipFiller"`
+	ImagePreview              bool     `config:"ImagePreview"`
+	SkipRecap                 bool     `config:"SkipRecap"`
+	RofiSelection             bool     `config:"RofiSelection"`
+	CurrentCategory           bool     `config:"CurrentCategory"`
+	ScoreOnCompletion         bool     `config:"ScoreOnCompletion"`
+	SaveMpvSpeed              bool     `config:"SaveMpvSpeed"`
+	AddMissingOptions         bool     `config:"AddMissingOptions"`
+	AlternateScreen           bool     `config:"AlternateScreen"`
+	DiscordPresence           bool     `config:"DiscordPresence"`
+	DiscordClientId           string   `config:"DiscordClientId"`
+	AndroidPlayerPackage      string   `config:"AndroidPlayerPackage"`
+	AndroidPlayerActivity     string   `config:"AndroidPlayerActivity"`
+	AndroidPlayerMode         string   `config:"AndroidPlayerMode"`
+	AndroidPlayerIntentAction string   `config:"AndroidPlayerIntentAction"`
+	AndroidUseTermuxAPI       bool     `config:"AndroidUseTermuxAPI"`
+	AndroidOpenLinksWith      string   `config:"AndroidOpenLinksWith"`
+	AndroidNotifications      bool     `config:"AndroidNotifications"`
+	AndroidWakeLock           bool     `config:"AndroidWakeLock"`
+	AndroidExtraIntentArgs    []string `config:"AndroidExtraIntentArgs"`
+	AndroidPlayerSocketPath   string   `config:"AndroidPlayerSocketPath"`
+	AndroidDetectedCapability string   `config:"AndroidDetectedCapability"`
 }
 
-// Default configuration values as a map
-func defaultConfigMap() map[string]string {
-	return map[string]string{
+type ConfigSchema struct {
+	platform Platform
+	keys     []string
+	defaults map[string]string
+}
+
+func desktopConfigSchema() ConfigSchema {
+	defaults := map[string]string{
 		"Player":                   "mpv",
 		"MpvArgs":                  "[]",
 		"StoragePath":              "$HOME/.local/share/curd",
@@ -80,6 +95,7 @@ func defaultConfigMap() map[string]string {
 		"SkipRecap":                "true",
 		"RofiSelection":            "false",
 		"ImagePreview":             "false",
+		"CurrentCategory":          "false",
 		"ScoreOnCompletion":        "true",
 		"SaveMpvSpeed":             "true",
 		"AddMissingOptions":        "true",
@@ -87,6 +103,115 @@ func defaultConfigMap() map[string]string {
 		"DiscordPresence":          "true",
 		"DiscordClientId":          "1287457464148820089",
 	}
+
+	return ConfigSchema{
+		platform: PlatformDesktop,
+		keys: []string{
+			"Player",
+			"MpvArgs",
+			"StoragePath",
+			"AnimeNameLanguage",
+			"SubsLanguage",
+			"MenuOrder",
+			"SubOrDub",
+			"PercentageToMarkComplete",
+			"NextEpisodePrompt",
+			"SkipOp",
+			"SkipEd",
+			"SkipFiller",
+			"SkipRecap",
+			"RofiSelection",
+			"ImagePreview",
+			"CurrentCategory",
+			"ScoreOnCompletion",
+			"SaveMpvSpeed",
+			"AddMissingOptions",
+			"AlternateScreen",
+			"DiscordPresence",
+			"DiscordClientId",
+		},
+		defaults: defaults,
+	}
+}
+
+func androidConfigSchema() ConfigSchema {
+	defaults := map[string]string{
+		"StoragePath":               "$HOME/.local/share/curd",
+		"AnimeNameLanguage":         "english",
+		"SubsLanguage":              "english",
+		"MenuOrder":                 "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST",
+		"SubOrDub":                  "sub",
+		"PercentageToMarkComplete":  "85",
+		"NextEpisodePrompt":         "false",
+		"SkipOp":                    "true",
+		"SkipEd":                    "true",
+		"SkipFiller":                "true",
+		"SkipRecap":                 "true",
+		"RofiSelection":             "false",
+		"ImagePreview":              "false",
+		"CurrentCategory":           "false",
+		"ScoreOnCompletion":         "true",
+		"SaveMpvSpeed":              "true",
+		"AddMissingOptions":         "true",
+		"AlternateScreen":           "false",
+		"DiscordPresence":           "false",
+		"AndroidPlayerPackage":      "is.xyz.mpv",
+		"AndroidPlayerActivity":     ".MPVActivity",
+		"AndroidPlayerMode":         "intent",
+		"AndroidPlayerIntentAction": "android.intent.action.VIEW",
+		"AndroidUseTermuxAPI":       "true",
+		"AndroidOpenLinksWith":      "termux-open-url",
+		"AndroidNotifications":      "false",
+		"AndroidWakeLock":           "false",
+		"AndroidExtraIntentArgs":    "[]",
+		"AndroidPlayerSocketPath":   "",
+		"AndroidDetectedCapability": "intent",
+	}
+
+	return ConfigSchema{
+		platform: PlatformAndroid,
+		keys: []string{
+			"StoragePath",
+			"AnimeNameLanguage",
+			"SubsLanguage",
+			"MenuOrder",
+			"SubOrDub",
+			"PercentageToMarkComplete",
+			"NextEpisodePrompt",
+			"SkipOp",
+			"SkipEd",
+			"SkipFiller",
+			"SkipRecap",
+			"RofiSelection",
+			"ImagePreview",
+			"CurrentCategory",
+			"ScoreOnCompletion",
+			"SaveMpvSpeed",
+			"AddMissingOptions",
+			"AlternateScreen",
+			"DiscordPresence",
+			"AndroidPlayerPackage",
+			"AndroidPlayerActivity",
+			"AndroidPlayerMode",
+			"AndroidPlayerIntentAction",
+			"AndroidUseTermuxAPI",
+			"AndroidOpenLinksWith",
+			"AndroidNotifications",
+			"AndroidWakeLock",
+			"AndroidExtraIntentArgs",
+			"AndroidPlayerSocketPath",
+			"AndroidDetectedCapability",
+		},
+		defaults: defaults,
+	}
+}
+
+func configSchemaForPlatform(platform Platform) ConfigSchema {
+	if platform == PlatformAndroid {
+		return androidConfigSchema()
+	}
+
+	return desktopConfigSchema()
 }
 
 var globalConfig *CurdConfig
@@ -97,6 +222,10 @@ func SetGlobalConfig(config *CurdConfig) {
 
 func GetGlobalConfig() *CurdConfig {
 	return globalConfig
+}
+
+func (c *CurdConfig) IsAndroid() bool {
+	return c != nil && c.Platform == string(PlatformAndroid)
 }
 
 // Helper function to parse string array from config
@@ -124,13 +253,24 @@ func parseStringArray(value string) []string {
 
 // LoadConfig reads or creates the config file, adds missing fields, and returns the populated CurdConfig struct
 func LoadConfig(configPath string) (CurdConfig, error) {
+	platform := DetectPlatform()
+	if strings.TrimSpace(configPath) == "" {
+		configPath = DefaultConfigPathForPlatform(platform)
+	}
+	platform = InferPlatformForConfigPath(configPath, platform)
+
+	return LoadConfigForPlatform(configPath, platform)
+}
+
+func LoadConfigForPlatform(configPath string, platform Platform) (CurdConfig, error) {
 	configPath = os.ExpandEnv(configPath) // Substitute environment variables like $HOME
+	schema := configSchemaForPlatform(platform)
 
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Create the config file with default values if it doesn't exist
 		CurdOut("Config file not found. Creating default config...")
-		if err := createDefaultConfig(configPath); err != nil {
+		if err := createDefaultConfig(configPath, schema); err != nil {
 			return CurdConfig{}, fmt.Errorf("error creating default config file: %v", err)
 		}
 	}
@@ -149,8 +289,7 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 
 	// Add missing fields to the config map
 	updated := false
-	defaultConfigMap := defaultConfigMap()
-	for key, defaultValue := range defaultConfigMap {
+	for key, defaultValue := range schema.defaults {
 		if _, exists := configMap[key]; !exists {
 			configMap[key] = defaultValue
 			updated = true
@@ -159,7 +298,7 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 
 	// Write updated config back to file only if AddMissingOptions is true
 	if addMissing && updated {
-		if err := SaveConfigToFile(configPath, configMap); err != nil {
+		if err := SaveConfigToFileWithSchema(configPath, configMap, schema); err != nil {
 			return CurdConfig{}, fmt.Errorf("error saving updated config file: %v", err)
 		}
 	}
@@ -171,15 +310,14 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 
 	// Populate the CurdConfig struct from the config map
 	config := PopulateConfig(configMap)
+	config.Platform = string(platform)
 
 	return config, nil
 }
 
 // Create a config file with default values in key=value format
 // Ensure the directory exists before creating the file
-func createDefaultConfig(path string) error {
-	defaultConfig := defaultConfigMap()
-
+func createDefaultConfig(path string, schema ConfigSchema) error {
 	// Ensure the directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -193,7 +331,8 @@ func createDefaultConfig(path string) error {
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
-	for key, value := range defaultConfig {
+	for _, key := range schema.keys {
+		value := schema.defaults[key]
 		line := fmt.Sprintf("%s=%s\n", key, value)
 		if _, err := writer.WriteString(line); err != nil {
 			return fmt.Errorf("error writing to file: %v", err)
@@ -206,13 +345,21 @@ func createDefaultConfig(path string) error {
 }
 
 // authenticateWithBrowser performs OAuth authentication using browser
-func authenticateWithBrowser(tokenPath string) (string, error) {
+func authenticateWithBrowser(tokenPath string, forceRefresh bool) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	// Try to load existing token first
-	if token, err := loadToken(tokenPath); err == nil && isTokenValid(token) {
-		return token.AccessToken, nil
+	if !forceRefresh {
+		if token, err := loadToken(tokenPath); err == nil && isTokenValid(token) {
+			return token.AccessToken, nil
+		}
+	}
+
+	if forceRefresh {
+		if err := os.Remove(tokenPath); err != nil && !os.IsNotExist(err) {
+			Log("Failed to remove existing token before refresh: " + err.Error())
+		}
 	}
 
 	// Start local server to handle OAuth callback
@@ -353,7 +500,7 @@ func authenticateWithBrowser(tokenPath string) (string, error) {
 	fmt.Println("Opening browser for AniList authentication...")
 	fmt.Printf("If the browser doesn't open automatically, visit: %s\n", authURL)
 
-	if err := browser.OpenURL(authURL); err != nil {
+	if err := OpenURL(authURL, GetGlobalConfig()); err != nil {
 		fmt.Printf("Failed to open browser automatically: %v\n", err)
 		fmt.Println("Please copy and paste the URL above into your browser")
 	}
@@ -452,7 +599,7 @@ func ChangeToken(config *CurdConfig, user *User) {
 
 	// Try browser-based OAuth first
 	fmt.Println("Starting browser-based authentication...")
-	user.Token, err = authenticateWithBrowser(tokenPath)
+	user.Token, err = authenticateWithBrowser(tokenPath, true)
 
 	if err != nil {
 		Log("Browser authentication failed: " + err.Error())
@@ -522,6 +669,11 @@ func LoadConfigFromFile(path string) (map[string]string, error) {
 
 // SaveConfigToFile saves updated config map to file in key=value format
 func SaveConfigToFile(path string, configMap map[string]string) error {
+	platform := InferPlatformForConfigPath(path, DetectPlatform())
+	return SaveConfigToFileWithSchema(path, configMap, configSchemaForPlatform(platform))
+}
+
+func SaveConfigToFileWithSchema(path string, configMap map[string]string, schema ConfigSchema) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -529,7 +681,24 @@ func SaveConfigToFile(path string, configMap map[string]string) error {
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
+	written := make(map[string]bool, len(configMap))
+	for _, key := range schema.keys {
+		value, exists := configMap[key]
+		if !exists {
+			continue
+		}
+
+		line := fmt.Sprintf("%s=%s\n", key, value)
+		if _, err := writer.WriteString(line); err != nil {
+			return err
+		}
+		written[key] = true
+	}
+
 	for key, value := range configMap {
+		if written[key] {
+			continue
+		}
 		line := fmt.Sprintf("%s=%s\n", key, value)
 		if _, err := writer.WriteString(line); err != nil {
 			return err
@@ -568,6 +737,9 @@ func PopulateConfig(configMap map[string]string) CurdConfig {
 	// Handle MpvArgs specially
 	if mpvArgs, exists := configMap["MpvArgs"]; exists {
 		config.MpvArgs = parseStringArray(mpvArgs)
+	}
+	if androidExtraArgs, exists := configMap["AndroidExtraIntentArgs"]; exists {
+		config.AndroidExtraIntentArgs = parseStringArray(androidExtraArgs)
 	}
 
 	return config

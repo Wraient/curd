@@ -1,7 +1,7 @@
 # Curd
 
 A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC written in golang.
-Works on Windows and Linux
+Works on Windows, Linux, macOS, and Android via Termux
 
 ## Join the discord server
 
@@ -34,6 +34,25 @@ https://github.com/user-attachments/assets/cbf799bc-9fdd-4402-ab61-b4e31f1e264d
 
 ## Installing and Setup
 > **Note**: `Curd` requires `mpv`, `rofi`, and `ueberzugpp` for Rofi support and image preview. These are included in the installation instructions below for each distribution.
+
+### Android / Termux
+
+```bash
+pkg install curl termux-api
+curl -fsSL https://raw.githubusercontent.com/Wraient/curd/main/Build/install-termux.sh | bash
+curd --android-setup
+```
+
+Android mode keeps the terminal UI inside Termux, writes config to `~/.config/curd/android.conf`, and supports two playback modes:
+- `ipc`: full automation when the configured Android player exposes MPV-compatible control
+- `intent`: basic fallback launch mode with no reliable progress/control channel
+
+`mpvEx` is built on libmpv and does load its own `mpv.conf`, but `curd` cannot rely on MPV socket IPC with `mpvEx` on stock Android:
+- `VIEW` intent extras do not appear to expose arbitrary MPV CLI options.
+- `mpvEx` copies `mpv.conf` into its own app sandbox, not Termux's `~/.config/mpv/mpv.conf`.
+- Unix socket paths inside Termux are not writable by another app, and shared storage is not a usable place for MPV Unix sockets.
+
+So `curd` currently uses `mpvEx` in `intent` mode unless `mpvEx` adds an exported control bridge that Termux can reach.
 
 ### Linux
 <details>

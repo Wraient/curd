@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/gen2brain/beeep"
-	"github.com/pkg/browser"
 )
 
 func EditConfig(configFilePath string) {
@@ -132,12 +131,14 @@ func ExitCurd(err error) {
 	RestoreScreen()
 
 	anime := GetGlobalAnime()
-	if (anime != nil) && (anime.Ep.Player.SocketPath != "") {
+	if (anime != nil) && (anime.Ep.Player.SocketPath != "") && (anime.Ep.Player.SocketPath != androidIntentSocketPath) {
 		_, err = MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
 		if err != nil {
 			Log("Error closing MPV: " + err.Error())
 		}
 	}
+
+	ReleaseWakeLock(GetGlobalConfig())
 
 	CurdOut("Have a great day!")
 	// If the error is not about the connection refused, print the error
@@ -162,6 +163,7 @@ func CurdOut(data interface{}) {
 	}
 	if !userCurdConfig.RofiSelection {
 		fmt.Println(fmt.Sprintf("%v", data))
+		Notify(fmt.Sprintf("%v", data))
 	} else {
 		switch runtime.GOOS {
 		case "windows":
@@ -517,14 +519,19 @@ func UpdateCurd(repo, fileName string) error {
 
 	// Determine the correct binary name based on OS and architecture
 	var binaryName string
-	switch runtime.GOOS {
-	case "windows":
+	switch {
+	case DetectPlatform() == PlatformAndroid:
+		if runtime.GOARCH != "arm64" {
+			return fmt.Errorf("unsupported Android architecture: %s", runtime.GOARCH)
+		}
+		binaryName = "curd-android-arm64"
+	case runtime.GOOS == "windows":
 		if runtime.GOARCH == "arm64" {
 			binaryName = "curd-windows-arm64.exe"
 		} else {
 			binaryName = "curd-windows-x86_64.exe"
 		}
-	case "darwin": // macOS
+	case runtime.GOOS == "darwin": // macOS
 		switch runtime.GOARCH {
 		case "amd64":
 			binaryName = "curd-macos-x86_64"
@@ -533,7 +540,7 @@ func UpdateCurd(repo, fileName string) error {
 		default:
 			binaryName = "curd-macos-universal"
 		}
-	case "linux":
+	case runtime.GOOS == "linux":
 		switch runtime.GOARCH {
 		case "amd64":
 			binaryName = "curd-linux-x86_64"
@@ -1836,7 +1843,7 @@ func handleSequelCheck(userCurdConfig *CurdConfig, anime *Anime, userToken strin
 		if selectedOption.Key == "yes" {
 			url := fmt.Sprintf("https://anilist.co/anime/%d", anime.AnilistId)
 			CurdOut(fmt.Sprintf("Opening %s", url))
-			if err := browser.OpenURL(url); err != nil {
+			if err := OpenURL(url, GetGlobalConfig()); err != nil {
 				Log(fmt.Sprintf("Error opening browser: %v", err))
 				CurdOut("Failed to open browser.")
 			}
