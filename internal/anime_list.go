@@ -1,11 +1,11 @@
 package internal
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,24 +137,26 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 		"countryOrigin":   "ALL",
 	}
 
-	// Marshal the variables to JSON
-	variablesJSON, err := json.Marshal(variables)
+	// Build POST request body
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"query":     searchGql,
+		"variables": variables,
+	})
 	if err != nil {
-		Log(fmt.Sprintf("Error encoding variables to JSON: %v", err))
+		Log(fmt.Sprintf("Error encoding request body to JSON: %v", err))
 		return animeList, err
 	}
 
-	// Build the request URL
-	url := fmt.Sprintf("%s?variables=%s&query=%s", allanimeAPI, url.QueryEscape(string(variablesJSON)), url.QueryEscape(searchGql))
-
-	// Make the HTTP request
-	req, err := http.NewRequest("GET", url, nil)
+	// Make the HTTP POST request
+	req, err := http.NewRequest("POST", allanimeAPI, bytes.NewBuffer(requestBody))
 	if err != nil {
 		Log(fmt.Sprintf("Error creating HTTP request: %v", err))
 		return animeList, err
 	}
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", agent)
 	req.Header.Set("Referer", allanimeRef)
+	req.Header.Set("Origin", allanimeRef)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
