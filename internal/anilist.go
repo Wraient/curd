@@ -435,9 +435,9 @@ func GetAnimeIDAndImage(anilistMediaID int) (int, string, error) {
 
 // Function to get user data from AniList
 func GetUserData(token string, userID int) (map[string]interface{}, error) {
-	query := fmt.Sprintf(`
-	{
-		MediaListCollection(userId: %d, type: ANIME) {
+	query := `
+	query ($userId: Int, $type: MediaType) {
+		MediaListCollection(userId: $userId, type: $type) {
 			lists {
 				entries {
 					media {
@@ -468,14 +468,19 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 				}
 			}
 		}
-	}`, userID)
+	}`
+
+	variables := map[string]interface{}{
+		"userId": userID,
+		"type":   "ANIME",
+	}
 
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
 		"Content-Type":  "application/json",
 	}
 
-	response, err := makePostRequest("https://graphql.anilist.co", query, nil, headers)
+	response, err := makePostRequest("https://graphql.anilist.co", query, variables, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -484,9 +489,9 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 }
 
 func GetUserDataPreview(token string, userID int) (map[string]interface{}, error) {
-	query := fmt.Sprintf(`
-	{
-		MediaListCollection(userId: %d, type: ANIME) {
+	query := `
+	query ($userId: Int, $type: MediaType) {
+		MediaListCollection(userId: $userId, type: $type) {
 			lists {
 				entries {
 					media {
@@ -520,14 +525,19 @@ func GetUserDataPreview(token string, userID int) (map[string]interface{}, error
 				}
 			}
 		}
-	}`, userID)
+	}`
+
+	variables := map[string]interface{}{
+		"userId": userID,
+		"type":   "ANIME",
+	}
 
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
 		"Content-Type":  "application/json",
 	}
 
-	response, err := makePostRequest("https://graphql.anilist.co", query, nil, headers)
+	response, err := makePostRequest("https://graphql.anilist.co", query, variables, headers)
 	if err != nil {
 		return nil, err
 	}
