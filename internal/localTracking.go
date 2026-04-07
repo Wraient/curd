@@ -283,7 +283,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 			for {
 				var manualQuery string
 				if userCurdConfig.RofiSelection {
-					userInput, err := GetUserInputFromRofi(fmt.Sprintf("No results found for '%s'.\nPress Enter to search with the original name, or enter a custom name to search on AllAnime.", query))
+					userInput, err := GetUserInputFromRofi(fmt.Sprintf("No results found for '%s'. Press Enter to search with the original name, or enter a custom name to search on AllAnime.", query))
 					if err != nil {
 						Log("Error getting user input: " + err.Error())
 						ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))

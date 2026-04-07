@@ -1,55 +1,60 @@
-configuration {
-    font: "Sans 12";
-}
-
 * {
-    background-color: rgba(0, 0, 0, 0.7);
-    text-color: #FFFFFF;
+    background:     #000000;
+    background-alt: #1a1a1a;
+    foreground:     #CCCCCC;
+    selected:       #3584E4;
 }
 
 window {
-    fullscreen: true;
-    transparency: "real";
+    fullscreen: false;
     background-color: transparent;
+    border-radius: 30px;
+    width: 800px;
+    height: 400px;
 }
 
 mainbox {
-    children: [ message, listview, inputbar ];
-    padding: 40% 30%;
-    background-color: transparent;
+    children: [ message, inputbar ];
+    padding: 40px;
+    spacing: 30px;
+    background-color: #000000;
 }
 
 message {
     border: 0;
-    padding: 10px;
-    border-radius:20px;
-    margin: 0 0 20px 0;
-    font: "Sans Bold 24"; /* Increased font size and made it bold */
+    padding: 0;
+    margin: 0;
+    font: "Sans Bold 22";
+    background-color: transparent;
+    text-color: #FFFFFF;
+}
+
+textbox {
+    background-color: #1a1a1a;
+    text-color: #FFFFFF;
+    padding: 25px;
+    border-radius: 15px;
+    font: "Sans Bold 22";
 }
 
 inputbar {
     children: [ prompt, entry ];
-    background-color: rgba(255, 255, 255, 0.1);
-    padding: 8px;
-    border-radius: 4px;
+    background-color: #333333;
+    padding: 12px 16px;
+    border-radius: 10px;
+    text-color: #FFFFFF;
 }
 
 prompt {
     padding: 8px;
+    background-color: @selected;
+    text-color: #000000;
+    border-radius: 6px;
+    margin: 0 8px 0 0;
 }
 
 entry {
     padding: 8px;
     background-color: transparent;
-}
-
-listview {
-    lines: 0;
-}
-
-/* Style for the message text specifically */
-textbox {
-    horizontal-align: 0.5;    /* Center the text */
-    font: "Sans Bold 24";     /* Match message font */
-    background-color: transparent;
+    text-color: #FFFFFF;
 }

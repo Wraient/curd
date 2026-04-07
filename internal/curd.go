@@ -464,7 +464,7 @@ updateOptionLoop:
 
 					var progress string
 					if userCurdConfig.RofiSelection {
-						progress, err = GetUserInputFromRofi(fmt.Sprintf("Current progress: %s\nEnter new progress (episode number)", currentProgress))
+						progress, err = GetUserInputFromRofi(fmt.Sprintf("Current progress: %s - Enter new progress (episode number)", currentProgress))
 						if err != nil {
 							Log(fmt.Sprintf("Failed to get progress input: %v", err))
 							ExitCurd(fmt.Errorf("Failed to get progress input"))
@@ -1025,7 +1025,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			for {
 				var manualQuery string
 				if userCurdConfig.RofiSelection {
-					userInput, err := GetUserInputFromRofi(fmt.Sprintf("No results found for '%s'.\nPress Enter to search with AniList name, or enter a custom name to search on AllAnime.", userQuery))
+					userInput, err := GetUserInputFromRofi(fmt.Sprintf("No results found for '%s'. Press Enter to search with AniList name, or enter a custom name to search on AllAnime.", userQuery))
 					if err != nil {
 						Log("Error getting user input: " + err.Error())
 						ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
