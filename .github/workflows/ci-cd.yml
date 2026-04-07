@@ -111,15 +111,29 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download and extract MPV binary
+      - name: Checkout MPV binaries
+        uses: actions/checkout@v4
+        with:
+          ref: mpv-binaries
+          path: mpv-temp
+          sparse-checkout: |
+            Build/mpv.exe.gz
+            Build/mpv.zip
+
+      - name: Setup MPV binary
         run: |
-          # Create directory if it doesn't exist
           New-Item -ItemType Directory -Force -Path "Build\mpv"
-          # Download the compressed MPV binary
-          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/${{ github.repository }}/main/Build/mpv.exe.gz" -OutFile "Build\mpv\mpv.exe.gz"
-          # Extract using 7-Zip (built into Windows runners)
-          7z x "Build\mpv\mpv.exe.gz" -o"Build\mpv"
-          Remove-Item "Build\mpv\mpv.exe.gz"
+          if (Test-Path "mpv-temp/Build/mpv.exe.gz") {
+            Copy-Item "mpv-temp/Build/mpv.exe.gz" "Build\mpv\mpv.exe.gz"
+            7z x "Build\mpv\mpv.exe.gz" -o"Build\mpv"
+            Remove-Item "Build\mpv\mpv.exe.gz"
+          } else {
+            Write-Host "Warning: MPV binary not found in mpv-binaries branch, downloading from URL..."
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/${{ github.repository }}/main/Build/mpv.exe.gz" -OutFile "Build\mpv\mpv.exe.gz"
+            7z x "Build\mpv\mpv.exe.gz" -o"Build\mpv"
+            Remove-Item "Build\mpv\mpv.exe.gz"
+          }
+          Remove-Item -Recurse -Force "mpv-temp" -ErrorAction SilentlyContinue
         shell: pwsh
 
       - name: Download Artifacts
