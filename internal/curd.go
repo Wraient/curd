@@ -1021,8 +1021,38 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				Log(fmt.Sprintf("Failed to select anime: %v", err))
 				ExitCurd(fmt.Errorf("Failed to select anime"))
 			}
-			if len(animeList) == 0 {
-				ExitCurd(fmt.Errorf("No results found."))
+			// Prompt user for manual query when no results found
+			for {
+				var manualQuery string
+				if userCurdConfig.RofiSelection {
+					userInput, err := GetUserInputFromRofi(fmt.Sprintf("No results found for '%s'.\nPress Enter to search with AniList name, or enter a custom name to search on AllAnime.", userQuery))
+					if err != nil {
+						Log("Error getting user input: " + err.Error())
+						ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
+					}
+					manualQuery = userInput
+				} else {
+					CurdOut(fmt.Sprintf("No results found for '%s'.", userQuery))
+					CurdOut("Press Enter to search with AniList name, or enter a custom name to search on AllAnime:")
+					reader := bufio.NewReader(os.Stdin)
+					input, _ := reader.ReadString('\n')
+					manualQuery = strings.TrimSpace(input)
+				}
+
+				// If empty, use original AniList name
+				if manualQuery == "" {
+					manualQuery = string(userQuery)
+				}
+
+				animeList, err = SearchAnime(manualQuery, userCurdConfig.SubOrDub)
+				if err != nil {
+					Log(fmt.Sprintf("Failed to search anime with query '%s': %v", manualQuery, err))
+					ExitCurd(fmt.Errorf("Failed to search anime"))
+				}
+
+				if len(animeList) > 0 {
+					break
+				}
 			}
 
 			// Automatic mapping using Thumbnail clues
