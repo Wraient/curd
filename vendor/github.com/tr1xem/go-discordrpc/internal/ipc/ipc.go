@@ -15,9 +15,11 @@ type SocketInterface interface {
 
 // GetIpcPath returns the best IPC socket path for the current environment.
 func GetIpcPath() string {
+	uid := fmt.Sprintf("%d", os.Getuid())
 	candidates := []string{
-		"/run/user/1000/snap.discord",
-		"/run/user/1000/.flatpak/com.discordapp.Discord/xdg-run",
+		"/run/user/" + uid + "/.flatpak/dev.vencord.Vesktop/xdg-run",
+		"/run/user/" + uid + "/snap.discord",
+		"/run/user/" + uid + "/.flatpak/com.discordapp.Discord/xdg-run",
 	}
 
 	for _, path := range candidates {
