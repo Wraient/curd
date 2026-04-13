@@ -7,6 +7,10 @@ Works on Windows and Linux
 
 https://discord.gg/rrpBfu2gHq
 
+## Join the Matrix server
+
+https://matrix.to/#/#curd:matrix.org
+
 ## Demo Video
 Normal mode:
 
