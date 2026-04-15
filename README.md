@@ -1,7 +1,7 @@
 # Curd
 
 A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC written in golang.
-Works on Windows and Linux
+Works on Linux, MacOS and Windows.
 
 ## Join the discord server
 
@@ -149,7 +149,40 @@ curd
 </details>
 
 <details>
-<summary>macOS Installation</summary>
+<summary>Generic Installation</summary>
+
+Choose the appropriate binary for your system:
+```bash
+# For Linux x86_64:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-x86_64
+
+# For Linux ARM64:
+curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-arm64
+
+chmod +x curd
+sudo mv curd /usr/bin/
+curd
+```
+</details>
+
+<details>
+<summary>Uninstallation</summary>
+
+```bash
+sudo rm /usr/bin/curd
+```
+
+For AUR-based distributions:
+
+```bash
+yay -R curd
+```
+</details>
+
+### MacOS
+
+<details>
+<summary>MacOS Installation</summary>
 
 Install required dependencies
 ```bash
@@ -184,6 +217,17 @@ curd
 </details>
 
 <details>
+<summary>Uninstallation</summary>
+
+```bash
+sudo rm /usr/local/bin/curd
+```
+
+</details>
+
+### Windows
+
+<details>
 <summary>Windows Installation</summary>
 
 Option 1: Using the installer
@@ -192,42 +236,6 @@ Option 1: Using the installer
 Option 2: Standalone executable
 - Download [curd-windows-x86_64.exe](https://github.com/Wraient/curd/releases/latest/download/curd-windows-x86_64.exe)
 </details>
-
-<details>
-<summary>Generic Installation</summary>
-
-Choose the appropriate binary for your system:
-```bash
-# For Linux x86_64:
-curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-x86_64
-
-# For Linux ARM64:
-curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-linux-arm64
-
-# For macOS Universal:
-curl -Lo curd https://github.com/Wraient/curd/releases/latest/download/curd-macos-universal
-
-chmod +x curd
-sudo mv curd /usr/bin/
-curd
-```
-</details>
-
-<details>
-<summary>Uninstallation</summary>
-
-```bash
-sudo rm /usr/bin/curd
-```
-
-For AUR-based distributions:
-
-```bash
-yay -R curd
-```
-</details>
-
-### [Windows Installer](https://github.com/Wraient/curd/releases/latest/download/curd-windows-installer.exe)
 
 ## Data Storage
 
