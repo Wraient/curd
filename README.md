@@ -1,7 +1,7 @@
 # Curd
 
 A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC written in golang.
-Works on Windows and Linux
+Works on Linux, MacOS and Windows.
 
 ## Join the discord server
 
