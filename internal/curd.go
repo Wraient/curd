@@ -1037,6 +1037,40 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			if anime.Ep.Number == animePointer.Ep.Number {
 				anime.Ep.Resume = true
 			}
+
+			// If local history episode is ahead of AniList upstream, prompt user
+			anilistEpisode := selectedAnilistAnime.Progress + 1
+			if animePointer.Ep.Number > anilistEpisode {
+				Log(fmt.Sprintf("Local history episode (%d) is ahead of AniList episode (%d), prompting user", animePointer.Ep.Number, anilistEpisode))
+				options := []SelectionOption{
+					{Key: "update_upstream", Label: fmt.Sprintf("Update AniList to episode %d (local history)", animePointer.Ep.Number-1)},
+					{Key: "use_anilist", Label: fmt.Sprintf("Use AniList episode %d", anilistEpisode)},
+				}
+				CurdOut(fmt.Sprintf("Local history (ep %d) is ahead of AniList (ep %d).", animePointer.Ep.Number, anilistEpisode))
+				selectedOption, err := DynamicSelect(options)
+				if err != nil {
+					Log("Error in episode conflict selection: " + err.Error())
+				} else if selectedOption.Key == "-1" {
+					ExitCurd(nil)
+				} else if selectedOption.Key == "update_upstream" {
+					// Update AniList progress to match local history (progress = local ep - 1, since local ep is "next to watch")
+					progressToUpdate := animePointer.Ep.Number - 1
+					if err := UpdateAnimeProgress(user.Token, anime.AnilistId, progressToUpdate); err != nil {
+						Log(fmt.Sprintf("Error updating AniList progress to %d: %v", progressToUpdate, err))
+					} else {
+						Log(fmt.Sprintf("Updated AniList progress to %d", progressToUpdate))
+					}
+					anime.Ep.Number = animePointer.Ep.Number
+					anime.Ep.Resume = true
+				} else if selectedOption.Key == "use_anilist" {
+					// Use AniList episode number (already set from selectedAnilistAnime.Progress + 1)
+					anime.Ep.Number = anilistEpisode
+					anime.Ep.Player.PlaybackTime = 0
+					anime.Ep.Resume = false
+				}
+			} else {
+				anime.Ep.Number = animePointer.Ep.Number
+			}
 		}
 
 		if startingRewatch {
