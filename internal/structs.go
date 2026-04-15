@@ -74,6 +74,7 @@ type User struct {
 	Username  string
 	Id        int
 	AnimeList AnimeList
+	ListSync  *AnimeListSync
 }
 
 // AniListAnime is the struct for the API response

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -28,6 +29,20 @@ type Model struct {
 	scrollOffset   int
 	addNewOption   bool
 	isHomeMenu     bool // If true, ESC quits; if false, ESC goes back
+}
+
+type optionsRefreshedMsg struct {
+	options []SelectionOption
+}
+
+type SelectionRefreshConfig struct {
+	Updates      <-chan AnimeList
+	BuildOptions func(AnimeList) []SelectionOption
+}
+
+type PreviewSelectionRefreshConfig struct {
+	Updates      <-chan AnimeList
+	BuildOptions func(AnimeList) map[string]RofiSelectPreview
 }
 
 var (
@@ -79,6 +94,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	updateFilter := false
 
 	switch msg := msg.(type) {
+	case optionsRefreshedMsg:
+		m.replaceOptions(msg.options)
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -145,6 +163,48 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) replaceOptions(options []SelectionOption) {
+	previousIndex := m.selected
+	previousKey := ""
+	previousLabel := ""
+
+	if m.selected >= 0 && m.selected < len(m.filteredKeys) {
+		previousKey = m.filteredKeys[m.selected].Key
+		previousLabel = m.filteredKeys[m.selected].Label
+	}
+
+	m.allOptions = options
+	m.filterOptions()
+
+	if len(m.filteredKeys) == 0 {
+		m.selected = 0
+		m.scrollOffset = 0
+		return
+	}
+
+	m.selected = findSelectionIndex(m.filteredKeys, previousKey, previousLabel, previousIndex)
+	if m.selected < 0 {
+		m.selected = 0
+	}
+
+	if m.selected < m.scrollOffset {
+		m.scrollOffset = m.selected
+	}
+
+	visibleCount := m.visibleItemsCount()
+	if visibleCount <= 0 {
+		m.scrollOffset = 0
+		return
+	}
+
+	if m.selected >= m.scrollOffset+visibleCount {
+		m.scrollOffset = m.selected - visibleCount + 1
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+}
+
 // View renders the UI and only shows as many options as fit in the terminal
 func (m Model) View() string {
 	var b strings.Builder
@@ -209,18 +269,116 @@ func (m *Model) filterOptions() {
 		})
 	}
 
-	// Add "Add new anime" option if enabled
+	// Determine whether the current filter is a substring of the pinned labels.
+	// When the filter matches "back" (e.g. "b", "ba", "bac", "back"), Back should
+	// appear BEFORE "Add new anime" so it is easy to reach. Otherwise keep the
+	// default order: Add new anime → Back → Quit.
+	// All three pinned items are always shown regardless of filter text.
+	filterLower := strings.ToLower(m.filter)
+	backMatchesFilter := filterLower != "" && strings.Contains("back", filterLower)
+
+	// If filter targets "back", pin it above Add new anime
+	if !m.isHomeMenu && backMatchesFilter {
+		m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Back", Key: "-2"})
+	}
+
+	// Add new anime is always shown (pinned)
 	if m.addNewOption {
 		m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Add new anime", Key: "add_new"})
 	}
-	// Add Back option before Quit (only for non-home menus)
-	if !m.isHomeMenu {
+
+	// Back in its default position (after Add new anime) when filter doesn't target it
+	if !m.isHomeMenu && !backMatchesFilter {
 		m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Back", Key: "-2"})
 	}
+
+	// Quit is always last
 	m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Quit", Key: "-1"})
 }
 
+func detectHomeMenu(options []SelectionOption) bool {
+	for _, opt := range options {
+		if opt.Key == "ALL" || opt.Key == "CURRENT" {
+			return true
+		}
+	}
+	return false
+}
+
+func findSelectionIndex(options []SelectionOption, previousKey string, previousLabel string, fallbackIndex int) int {
+	if previousKey != "" {
+		for idx, option := range options {
+			if option.Key == previousKey {
+				return idx
+			}
+		}
+	}
+
+	if previousLabel != "" {
+		for idx, option := range options {
+			if option.Label == previousLabel {
+				return idx
+			}
+		}
+	}
+
+	if fallbackIndex >= 0 && fallbackIndex < len(options) {
+		return fallbackIndex
+	}
+
+	if len(options) == 0 {
+		return -1
+	}
+
+	return min(fallbackIndex, len(options)-1)
+}
+
+func sortHomeMenuOptions(options []SelectionOption) []SelectionOption {
+	menuOrder := strings.Split(GetGlobalConfig().MenuOrder, ",")
+	optMap := make(map[string]SelectionOption)
+	for _, opt := range options {
+		optMap[opt.Key] = opt
+	}
+
+	sorted := make([]SelectionOption, 0, len(options))
+	for _, key := range menuOrder {
+		if opt, exists := optMap[key]; exists {
+			sorted = append(sorted, opt)
+			delete(optMap, key)
+		}
+	}
+
+	for _, opt := range options {
+		if _, exists := optMap[opt.Key]; exists {
+			sorted = append(sorted, opt)
+			delete(optMap, opt.Key)
+		}
+	}
+
+	return sorted
+}
+
+func previewOptionsToSortedSelection(options map[string]RofiSelectPreview) []SelectionOption {
+	selectionOptions := make([]SelectionOption, 0, len(options))
+	for id, opt := range options {
+		selectionOptions = append(selectionOptions, SelectionOption{
+			Label: opt.Title,
+			Key:   id,
+		})
+	}
+
+	sort.Slice(selectionOptions, func(i, j int) bool {
+		return selectionOptions[i].Label < selectionOptions[j].Label
+	})
+
+	return selectionOptions
+}
+
 func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption bool) (SelectionOption, error) {
+	return DynamicSelectPreviewWithRefresh(options, addnewoption, nil)
+}
+
+func DynamicSelectPreviewWithRefresh(options map[string]RofiSelectPreview, addnewoption bool, refreshConfig *PreviewSelectionRefreshConfig) (SelectionOption, error) {
 	go preDownloadImages(options, 14)
 
 	userCurdConfig := GetGlobalConfig()
@@ -228,68 +386,84 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
 	}
 
-	var rofiInput strings.Builder
-	selectionOptions := make([]SelectionOption, 0, len(options))
+	currentOptions := options
 
-	// Prepare options and rofi input
-	for id, opt := range options {
-		cachePath, err := downloadToCache(opt.CoverImage)
-		if err != nil {
-			Log(fmt.Sprintf("Error caching image: %v", err))
-			continue
+	for {
+		var rofiInput strings.Builder
+		selectionOptions := previewOptionsToSortedSelection(currentOptions)
+
+		for _, opt := range selectionOptions {
+			cachePath, err := downloadToCache(currentOptions[opt.Key].CoverImage)
+			if err != nil {
+				Log(fmt.Sprintf("Error caching image: %v", err))
+				continue
+			}
+			rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", opt.Label, cachePath))
 		}
-		rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", opt.Title, cachePath))
-		selectionOptions = append(selectionOptions, SelectionOption{
-			Label: opt.Title,
-			Key:   id,
-		})
-	}
 
-	if addnewoption {
-		rofiInput.WriteString("Add new anime\n")
-	}
-	// Add Back option before Quit (this is always a sub-menu when using preview)
-	rofiInput.WriteString("Back\n")
-	rofiInput.WriteString("Quit\n")
+		if addnewoption {
+			rofiInput.WriteString("Add new anime\n")
+		}
+		rofiInput.WriteString("Back\n")
+		rofiInput.WriteString("Quit\n")
 
-	// Run rofi
-	configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanimepreview.rasi")
-	cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-show-icons", "-p", "Select Anime", "-i", "-no-custom")
-	cmd.Stdin = strings.NewReader(rofiInput.String())
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+		configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanimepreview.rasi")
+		cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-show-icons", "-p", "Select Anime", "-i", "-no-custom")
+		cmd.Stdin = strings.NewReader(rofiInput.String())
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		Log(fmt.Sprintf("Rofi stderr: %s", stderr.String()))
-		Log(fmt.Sprintf("Rofi stdout: %s", stdout.String()))
-		// ESC pressed or rofi closed - return back
-		return SelectionOption{Key: "-2", Label: "Back"}, nil
-	}
+		if refreshConfig == nil || refreshConfig.Updates == nil {
+			if err := cmd.Run(); err != nil {
+				Log(fmt.Sprintf("Rofi stderr: %s", stderr.String()))
+				Log(fmt.Sprintf("Rofi stdout: %s", stdout.String()))
+				return SelectionOption{Key: "-2", Label: "Back"}, nil
+			}
+			return parsePreviewSelection(stdout.String(), selectionOptions)
+		}
 
-	selected := strings.TrimSpace(stdout.String())
+		if err := cmd.Start(); err != nil {
+			return SelectionOption{}, fmt.Errorf("failed to run Rofi preview menu: %w", err)
+		}
 
-	// Handle special cases
-	switch selected {
-	case "":
-		// Empty selection - go back
-		return SelectionOption{Key: "-2", Label: "Back"}, nil
-	case "Add new anime":
-		return SelectionOption{Label: "Add new anime", Key: "add_new"}, nil
-	case "Back":
-		return SelectionOption{Label: "Back", Key: "-2"}, nil
-	case "Quit":
-		return SelectionOption{Label: "Quit", Key: "-1"}, nil
-	}
+		waitCh := make(chan error, 1)
+		go func() {
+			waitCh <- cmd.Wait()
+		}()
 
-	// Find matching option
-	for _, opt := range selectionOptions {
-		if opt.Label == selected {
-			return opt, nil
+		restartMenu := false
+
+		for !restartMenu {
+			select {
+			case err := <-waitCh:
+				if err != nil {
+					Log(fmt.Sprintf("Rofi stderr: %s", stderr.String()))
+					Log(fmt.Sprintf("Rofi stdout: %s", stdout.String()))
+					return SelectionOption{Key: "-2", Label: "Back"}, nil
+				}
+				return parsePreviewSelection(stdout.String(), selectionOptions)
+			case updatedList, ok := <-refreshConfig.Updates:
+				if !ok {
+					refreshConfig = nil
+					continue
+				}
+
+				updatedOptions := refreshConfig.BuildOptions(updatedList)
+				if reflect.DeepEqual(currentOptions, updatedOptions) {
+					continue
+				}
+
+				currentOptions = updatedOptions
+				restartMenu = true
+
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+				<-waitCh
+			}
 		}
 	}
-
-	return SelectionOption{}, fmt.Errorf("selection not found in options")
 }
 
 func preDownloadImages(options map[string]RofiSelectPreview, count int) {
@@ -301,6 +475,29 @@ func preDownloadImages(options map[string]RofiSelectPreview, count int) {
 		downloadToCache(option.CoverImage)
 		i++
 	}
+}
+
+func parsePreviewSelection(rawSelection string, selectionOptions []SelectionOption) (SelectionOption, error) {
+	selected := strings.TrimSpace(rawSelection)
+
+	switch selected {
+	case "":
+		return SelectionOption{Key: "-2", Label: "Back"}, nil
+	case "Add new anime":
+		return SelectionOption{Label: "Add new anime", Key: "add_new"}, nil
+	case "Back":
+		return SelectionOption{Label: "Back", Key: "-2"}, nil
+	case "Quit":
+		return SelectionOption{Label: "Quit", Key: "-1"}, nil
+	}
+
+	for _, opt := range selectionOptions {
+		if opt.Label == selected {
+			return opt, nil
+		}
+	}
+
+	return SelectionOption{}, fmt.Errorf("selection not found in options")
 }
 
 func downloadToCache(imageURL string) (string, error) {
@@ -357,37 +554,179 @@ func showCachedImagePreview(imageURL string) error {
 }
 
 func RofiSelect(options []SelectionOption, isHomeMenu bool) (SelectionOption, error) {
+	return RofiSelectWithRefresh(options, isHomeMenu, nil)
+}
+
+func RofiSelectWithRefresh(options []SelectionOption, isHomeMenu bool, refreshConfig *SelectionRefreshConfig) (SelectionOption, error) {
 	userCurdConfig := GetGlobalConfig()
 	if userCurdConfig.StoragePath == "" {
 		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
 	}
 
-	// Create ordered list of options
-	var optionsList []string
+	currentOptions := options
+
+	for {
+		optionsString := buildRofiOptionsString(currentOptions, isHomeMenu)
+		configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanime.rasi")
+		cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-i", "-p", "Select")
+		cmd.Stdin = strings.NewReader(optionsString)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		if refreshConfig == nil || refreshConfig.Updates == nil {
+			err := cmd.Run()
+			return parseRofiSelection(err, stdout.String(), currentOptions, isHomeMenu)
+		}
+
+		if err := cmd.Start(); err != nil {
+			return SelectionOption{}, fmt.Errorf("failed to run Rofi: %w", err)
+		}
+
+		waitCh := make(chan error, 1)
+		go func() {
+			waitCh <- cmd.Wait()
+		}()
+
+		restartMenu := false
+
+		for !restartMenu {
+			select {
+			case err := <-waitCh:
+				if err != nil {
+					Log(fmt.Sprintf("Rofi stderr: %s", stderr.String()))
+				}
+				return parseRofiSelection(err, stdout.String(), currentOptions, isHomeMenu)
+			case updatedList, ok := <-refreshConfig.Updates:
+				if !ok {
+					refreshConfig = nil
+					continue
+				}
+
+				updatedOptions := refreshConfig.BuildOptions(updatedList)
+				if reflect.DeepEqual(currentOptions, updatedOptions) {
+					continue
+				}
+
+				currentOptions = updatedOptions
+				restartMenu = true
+
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+				<-waitCh
+			}
+		}
+	}
+}
+
+func DynamicSelectFromSlice(options []SelectionOption) (SelectionOption, error) {
+	return dynamicSelectInternal(options, nil)
+}
+
+// DynamicSelect displays a simple selection prompt without extra features
+func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
+	return dynamicSelectInternal(options, nil)
+}
+
+func DynamicSelectWithRefresh(options []SelectionOption, refreshConfig *SelectionRefreshConfig) (SelectionOption, error) {
+	return dynamicSelectInternal(options, refreshConfig)
+}
+
+func dynamicSelectInternal(options []SelectionOption, refreshConfig *SelectionRefreshConfig) (SelectionOption, error) {
+	isHomeMenu := detectHomeMenu(options)
+
+	if isHomeMenu {
+		options = sortHomeMenuOptions(options)
+	}
+
+	if GetGlobalConfig().RofiSelection {
+		return RofiSelectWithRefresh(options, isHomeMenu, refreshConfig)
+	}
+
+	// Separate out the "add_new" sentinel so it is never sorted alphabetically.
+	// The addNewOption flag causes filterOptions() to append it after the sort.
+	hasAddNew := false
+	cleanOptions := make([]SelectionOption, 0, len(options))
+	for _, opt := range options {
+		if opt.Key == "add_new" {
+			hasAddNew = true
+		} else {
+			cleanOptions = append(cleanOptions, opt)
+		}
+	}
+
+	model := &Model{
+		allOptions:   cleanOptions,
+		isHomeMenu:   isHomeMenu,
+		addNewOption: hasAddNew,
+	}
+	model.filterOptions()
+
+	p := tea.NewProgram(model)
+	stopRefresh := make(chan struct{})
+
+	if refreshConfig != nil && refreshConfig.Updates != nil {
+		go func(lastOptions []SelectionOption) {
+			currentOptions := lastOptions
+			for {
+				select {
+				case <-stopRefresh:
+					return
+				case updatedList, ok := <-refreshConfig.Updates:
+					if !ok {
+						return
+					}
+
+					updatedOptions := refreshConfig.BuildOptions(updatedList)
+					if reflect.DeepEqual(currentOptions, updatedOptions) {
+						continue
+					}
+
+					currentOptions = updatedOptions
+					p.Send(optionsRefreshedMsg{options: updatedOptions})
+				}
+			}
+		}(append([]SelectionOption(nil), options...))
+	}
+
+	finalModel, err := p.Run()
+	close(stopRefresh)
+	if err != nil {
+		return SelectionOption{}, err
+	}
+
+	fmt.Print("\033[?25h")
+	fmt.Print("\033[?7h")
+
+	finalSelectionModel, ok := finalModel.(*Model)
+	if !ok {
+		return SelectionOption{}, fmt.Errorf("unexpected model type")
+	}
+
+	if finalSelectionModel.selected < len(finalSelectionModel.filteredKeys) {
+		return finalSelectionModel.filteredKeys[finalSelectionModel.selected], nil
+	}
+	return SelectionOption{}, nil
+}
+
+func buildRofiOptionsString(options []SelectionOption, isHomeMenu bool) string {
+	optionsList := make([]string, 0, len(options)+2)
 	for _, opt := range options {
 		optionsList = append(optionsList, opt.Label)
 	}
 
-	// Add "Back" option before "Quit" (only for non-home menus)
 	if !isHomeMenu {
 		optionsList = append(optionsList, "Back")
 	}
-	// Add "Quit" option at the end
 	optionsList = append(optionsList, "Quit")
-	optionsString := strings.Join(optionsList, "\n")
 
-	// Prepare and run rofi
-	configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanime.rasi")
-	cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-i", "-p", "Select")
-	cmd.Stdin = strings.NewReader(optionsString)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	return strings.Join(optionsList, "\n")
+}
 
-	err := cmd.Run()
+func parseRofiSelection(err error, rawSelection string, options []SelectionOption, isHomeMenu bool) (SelectionOption, error) {
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
-			// ESC pressed or rofi closed: go back on sub-menus, quit on home menu
 			if isHomeMenu {
 				return SelectionOption{Key: "-1", Label: "Quit"}, nil
 			}
@@ -396,12 +735,9 @@ func RofiSelect(options []SelectionOption, isHomeMenu bool) (SelectionOption, er
 		return SelectionOption{}, fmt.Errorf("failed to run Rofi: %v", err)
 	}
 
-	selected := strings.TrimSpace(stdout.String())
-
-	// Handle special cases
+	selected := strings.TrimSpace(rawSelection)
 	switch selected {
 	case "":
-		// Empty selection: go back on sub-menus, quit on home menu
 		if isHomeMenu {
 			return SelectionOption{Key: "-1", Label: "Quit"}, nil
 		}
@@ -412,7 +748,6 @@ func RofiSelect(options []SelectionOption, isHomeMenu bool) (SelectionOption, er
 		return SelectionOption{Label: "Quit", Key: "-1"}, nil
 	}
 
-	// Find the matching SelectionOption
 	for _, opt := range options {
 		if opt.Label == selected {
 			return opt, nil
@@ -421,109 +756,3 @@ func RofiSelect(options []SelectionOption, isHomeMenu bool) (SelectionOption, er
 
 	return SelectionOption{}, fmt.Errorf("selected option not found in original list")
 }
-
-func DynamicSelectFromSlice(options []SelectionOption) (SelectionOption, error) {
-	// Detect if this is a home menu by checking for category keys
-	isHomeMenu := false
-	for _, opt := range options {
-		if opt.Key == "ALL" || opt.Key == "CURRENT" {
-			isHomeMenu = true
-			break
-		}
-	}
-
-	if GetGlobalConfig().RofiSelection {
-		return RofiSelect(options, isHomeMenu)
-	}
-
-	model := &Model{
-		allOptions: options,
-		isHomeMenu: isHomeMenu,
-	}
-	model.filterOptions() // Initialize filtered options
-
-	p := tea.NewProgram(model)
-
-	finalModel, err := p.Run()
-	if err != nil {
-		return SelectionOption{}, err
-	}
-
-	// resetting terminal state
-	fmt.Print("\033[?25h") // show cursor
-	fmt.Print("\033[?7h")  // line wrapping
-
-	finalSelectionModel, ok := finalModel.(*Model)
-	if !ok {
-		return SelectionOption{}, fmt.Errorf("unexpected model type")
-	}
-
-	if finalSelectionModel.selected < len(finalSelectionModel.filteredKeys) {
-		return finalSelectionModel.filteredKeys[finalSelectionModel.selected], nil
-	}
-	return SelectionOption{}, nil
-}
-
-// DynamicSelect displays a simple selection prompt without extra features
-func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
-	// Detect if this is a home menu by checking for category keys
-	isHomeMenu := false
-	for _, opt := range options {
-		if opt.Key == "ALL" || opt.Key == "CURRENT" {
-			isHomeMenu = true
-			break
-		}
-	}
-
-	if GetGlobalConfig().RofiSelection {
-		return RofiSelect(options, isHomeMenu)
-	}
-
-	// Sort options if this contains menu categories
-	if isHomeMenu {
-		menuOrder := strings.Split(GetGlobalConfig().MenuOrder, ",")
-		optMap := make(map[string]SelectionOption)
-		for _, opt := range options {
-			optMap[opt.Key] = opt
-		}
-
-		sorted := make([]SelectionOption, 0, len(options))
-		for _, key := range menuOrder {
-			if opt, exists := optMap[key]; exists {
-				sorted = append(sorted, opt)
-			}
-		}
-		options = sorted
-	}
-
-	model := &Model{
-		allOptions: options,
-		isHomeMenu: isHomeMenu,
-	}
-	model.filterOptions() // Initialize filtered options
-
-	p := tea.NewProgram(model)
-	finalModel, err := p.Run()
-	if err != nil {
-		return SelectionOption{}, err
-	}
-
-	fmt.Print("\033[?25h") // Show cursor
-	fmt.Print("\033[?7h")  // Enable line wrapping
-
-	finalSelectionModel, ok := finalModel.(*Model)
-	if !ok {
-		return SelectionOption{}, fmt.Errorf("unexpected model type")
-	}
-
-	// Check if the program was quit with Ctrl+C
-	if err != nil {
-		return SelectionOption{Key: "-1", Label: "Quit"}, nil
-	}
-
-	if finalSelectionModel.selected < len(finalSelectionModel.filteredKeys) {
-		return finalSelectionModel.filteredKeys[finalSelectionModel.selected], nil
-	}
-	return SelectionOption{}, nil
-}
-

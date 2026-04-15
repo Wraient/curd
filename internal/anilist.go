@@ -804,7 +804,6 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 
 func ParseAnimeList(input map[string]interface{}) AnimeList {
 	var animeList AnimeList
-	userCurdConfig := GetGlobalConfig()
 
 	toInt := func(value interface{}) int {
 		switch v := value.(type) {
@@ -880,8 +879,8 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 				CompletedAt: parseFuzzyDate(entryData["completedAt"]),
 			}
 
-			if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
-				animeEntry.CoverImage = safeString(media["coverImage"].(map[string]interface{})["large"])
+			if coverImage, ok := media["coverImage"].(map[string]interface{}); ok {
+				animeEntry.CoverImage = safeString(coverImage["large"])
 			}
 
 			// Append entries based on their status
