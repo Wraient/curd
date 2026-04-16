@@ -2,6 +2,11 @@ package internal
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,9 +19,12 @@ import (
 
 type allanimeResponse struct {
 	Data struct {
-		Episode struct {
+		M          string `json:"_m"`
+		Tobeparsed string `json:"tobeparsed"`
+		Episode    struct {
 			SourceUrls []struct {
-				SourceUrl string `json:"sourceUrl"`
+				SourceUrl  string `json:"sourceUrl"`
+				SourceName string `json:"sourceName"`
 			} `json:"sourceUrls"`
 		} `json:"episode"`
 	} `json:"data"`
@@ -26,6 +34,58 @@ type result struct {
 	index int
 	links []string
 	err   error
+}
+
+func decodeTobeparsed(blob string) string {
+	key := []byte("SimtVuagFbGR2K7P")
+	hash := sha256.Sum256(key)
+
+	data, err := base64.StdEncoding.DecodeString(blob)
+	if err != nil {
+		Log(fmt.Sprint("Error decoding base64:", err))
+		return ""
+	}
+
+	if len(data) < 28 {
+		Log(fmt.Sprint("Data too short to contain IV and ciphertext"))
+		return ""
+	}
+
+	iv := data[:12]
+	ct := data[12:]
+
+	ctrIV := make([]byte, 16)
+	copy(ctrIV, iv)
+	binary.BigEndian.PutUint32(ctrIV[12:], uint32(2))
+
+	block, err := aes.NewCipher(hash[:])
+	if err != nil {
+		Log(fmt.Sprint("Error creating cipher:", err))
+		return ""
+	}
+
+	stream := cipher.NewCTR(block, ctrIV)
+	plain := make([]byte, len(ct))
+	stream.XORKeyStream(plain, ct)
+
+	result := string(plain)
+	result = strings.ReplaceAll(result, "{", "\n")
+	result = strings.ReplaceAll(result, "}", "\n")
+
+	re := regexp.MustCompile(`"sourceUrl":"--([^"]+)".*"sourceName":"([^"]+)"`)
+	matches := re.FindAllStringSubmatch(result, -1)
+
+	var sb strings.Builder
+	for _, match := range matches {
+		if len(match) == 3 {
+			sb.WriteString(match[2])
+			sb.WriteString(" :")
+			sb.WriteString(match[1])
+			sb.WriteString("\n")
+		}
+	}
+
+	return sb.String()
 }
 
 func decodeProviderID(encoded string) string {
@@ -204,7 +264,7 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var response allanimeResponse
@@ -214,12 +274,47 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 		return nil, err
 	}
 
-	// Pre-count valid URLs and create slice to preserve order
+	if response.Data.Tobeparsed != "" {
+		Log("Found tobeparsed field, using decoded response")
+		decoded := decodeTobeparsed(response.Data.Tobeparsed)
+		lines := strings.Split(strings.TrimSpace(decoded), "\n")
+		var parsedURLs []struct {
+			SourceName string
+			SourceUrl  string
+		}
+		for _, line := range lines {
+			if parts := strings.Split(line, " :"); len(parts) == 2 {
+				parsedURLs = append(parsedURLs, struct {
+					SourceName string
+					SourceUrl  string
+				}{SourceName: parts[0], SourceUrl: "--" + parts[1]})
+			}
+		}
+
+		validURLs := make([]string, 0)
+		for _, url := range parsedURLs {
+			validURLs = append(validURLs, url.SourceUrl)
+		}
+
+		if len(validURLs) == 0 {
+			return nil, fmt.Errorf("no valid source URLs found in decoded tobeparsed")
+		}
+
+		return getLinksFromURLs(validURLs)
+	}
+
+	return getLinksFromSourceUrls(response.Data.Episode.SourceUrls)
+}
+
+func getLinksFromSourceUrls(sourceUrls []struct {
+	SourceUrl  string `json:"sourceUrl"`
+	SourceName string `json:"sourceName"`
+}) ([]string, error) {
 	validURLs := make([]string, 0)
 	highestPriority := -1
 	var highestPriorityURL string
 
-	for _, url := range response.Data.Episode.SourceUrls {
+	for _, url := range sourceUrls {
 		if len(url.SourceUrl) > 2 && unicode.IsDigit(rune(url.SourceUrl[2])) {
 			decodedURL := decodeProviderID(url.SourceUrl[2:])
 			if strings.Contains(decodedURL, LinkPriorities[0]) {
@@ -234,7 +329,6 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 		}
 	}
 
-	// If we found a highest priority URL, use only that
 	if highestPriorityURL != "" {
 		validURLs = []string{highestPriorityURL}
 	}
@@ -243,22 +337,22 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 		return nil, fmt.Errorf("no valid source URLs found in response")
 	}
 
-	// Create channels for results and a slice to store ordered results
+	return getLinksFromURLs(validURLs)
+}
+
+func getLinksFromURLs(validURLs []string) ([]string, error) {
 	results := make(chan result, len(validURLs))
 	orderedResults := make([][]string, len(validURLs))
 
-	// Add a channel for high priority links
 	highPriorityLink := make(chan []string, 1)
 
-	// Create rate limiter
 	rateLimiter := time.NewTicker(50 * time.Millisecond)
 	defer rateLimiter.Stop()
 
-	// Launch goroutines
 	remainingURLs := len(validURLs)
 	for i, sourceUrl := range validURLs {
 		go func(idx int, url string) {
-			<-rateLimiter.C // Rate limit the requests
+			<-rateLimiter.C
 
 			decodedProviderID := decodeProviderID(url[2:])
 			Log(fmt.Sprintf("Processing URL %d/%d with provider ID: %s", idx+1, len(validURLs), decodedProviderID))
