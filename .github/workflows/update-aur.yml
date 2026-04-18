@@ -137,10 +137,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          sed -i "s/^pkgver=.*/pkgver=${{ steps.release.outputs.version }}/" PKGBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
-          sed -i "s|^source=.*|source=(\"https://github.com/Wraient/curd/releases/download/v\${pkgver}/curd-linux-x86_64\")|" PKGBUILD
-          sed -i "s|^sha256sums=.*|sha256sums=('${{ steps.release.outputs.sha256 }}')|" PKGBUILD
+          cat > PKGBUILD <<EOF
+# Maintainer: Wraient <rushikeshwastaken@gmail.com>
+pkgname='curd'
+pkgver=${{ steps.release.outputs.version }}
+pkgrel=1
+pkgdesc="Watch anime in CLI with AniList Tracking, Discord RPC, Intro/Outro/Filler/Recap Skipping, etc."
+arch=('x86_64')
+url="https://github.com/Wraient/curd"
+license=('GPL')
+depends=('mpv' 'rofi' 'ueberzugpp')
+provides=('curd')
+conflicts=('curd')
+source=("https://github.com/Wraient/curd/releases/download/v\${pkgver}/curd-linux-x86_64")
+sha256sums=('${{ steps.release.outputs.sha256 }}')
+
+package() {
+  install -Dm755 "\$srcdir/curd-linux-x86_64" "\$pkgdir/usr/bin/curd"
+}
+EOF
+
+          # Fail fast if checksum/source/install-target drift.
+          grep -q '^source=(' PKGBUILD
+          grep -q '^sha256sums=(' PKGBUILD
+          grep -q 'curd-linux-x86_64' PKGBUILD
+          grep -q 'install -Dm755 "\$srcdir/curd-linux-x86_64" "\$pkgdir/usr/bin/curd"' PKGBUILD
+          bash -n PKGBUILD
 
           set +u
           # shellcheck disable=SC1091
@@ -179,6 +201,9 @@ jobs:
             printf '\n'
             for pkg in "${pkgname[@]-}"; do [ -n "$pkg" ] && printf 'pkgname = %s\n' "$pkg"; done
           } > .SRCINFO
+
+          grep -Fq "pkgver = ${{ steps.release.outputs.version }}" .SRCINFO
+          grep -Fq "sha256sums = ${{ steps.release.outputs.sha256 }}" .SRCINFO
 
       - name: Commit and push to AUR
         working-directory: aur-curd
