@@ -4,11 +4,6 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-    inputs:
-      tag_name:
-        description: 'Release tag name (e.g., v1.2.3)'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -22,30 +17,50 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl git openssh-client makepkg
+          sudo apt-get install -y curl git jq openssh-client makepkg
 
-      - name: Resolve release version and checksum
+      - name: Download release asset and compute SHA256
         id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG_NAME="${{ github.event.inputs.tag_name }}"
-          else
+          if [ "${{ github.event_name }}" = "release" ]; then
             TAG_NAME="${{ github.event.release.tag_name }}"
+            RELEASE_API_URL="https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG_NAME}"
+          else
+            RELEASE_API_URL="https://api.github.com/repos/${{ github.repository }}/releases/latest"
           fi
 
-          if [ -z "$TAG_NAME" ]; then
-            echo "Release tag is empty"
+          RELEASE_JSON="$(mktemp)"
+          curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "$RELEASE_API_URL" \
+            -o "$RELEASE_JSON"
+
+          TAG_NAME="$(jq -r '.tag_name // empty' "$RELEASE_JSON")"
+          ASSET_URL="$(jq -r '.assets[] | select(.name=="curd-linux-x86_64") | .browser_download_url' "$RELEASE_JSON" | head -n1)"
+
+          if [ -z "$TAG_NAME" ] || [ "$TAG_NAME" = "null" ]; then
+            echo "Could not resolve release tag from $RELEASE_API_URL"
+            rm -f "$RELEASE_JSON"
+            exit 1
+          fi
+
+          if [ -z "$ASSET_URL" ] || [ "$ASSET_URL" = "null" ]; then
+            echo "Release ${TAG_NAME} does not contain asset: curd-linux-x86_64"
+            rm -f "$RELEASE_JSON"
             exit 1
           fi
 
           VERSION="${TAG_NAME#v}"
-          ASSET_URL="https://github.com/Wraient/curd/releases/download/${TAG_NAME}/curd-linux-x86_64"
-
           TMP_ASSET="$(mktemp)"
           curl -fL --retry 3 --retry-all-errors --connect-timeout 20 "$ASSET_URL" -o "$TMP_ASSET"
           SHA256="$(sha256sum "$TMP_ASSET" | awk '{print $1}')"
+
+          rm -f "$RELEASE_JSON"
           rm -f "$TMP_ASSET"
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -54,35 +69,48 @@ jobs:
 
       - name: Configure SSH for AUR
         env:
-          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY || secrets.AUR_SSH_KEY }}
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
 
           if [ -z "${AUR_SSH_PRIVATE_KEY:-}" ]; then
-            echo "Missing secret: AUR_SSH_PRIVATE_KEY (or AUR_SSH_KEY)"
+            echo "Missing required secret: AUR_SSH_PRIVATE_KEY"
             exit 1
           fi
 
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/aur_deploy
+          umask 077
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/curd_aur_deploy
 
-          if [ ! -s ~/.ssh/aur_deploy ]; then
+          if [ ! -s ~/.ssh/curd_aur_deploy ]; then
             echo "SSH key file is empty after writing secret"
             exit 1
           fi
 
-          if ! ssh-keygen -y -f ~/.ssh/aur_deploy >/dev/null 2>&1; then
-            echo "Invalid SSH private key in secret (or key is passphrase-protected)"
+          KEY_HEADER="$(head -n1 ~/.ssh/curd_aur_deploy || true)"
+          case "$KEY_HEADER" in
+            "-----BEGIN OPENSSH PRIVATE KEY-----"|"-----BEGIN RSA PRIVATE KEY-----"|"-----BEGIN EC PRIVATE KEY-----"|"-----BEGIN DSA PRIVATE KEY-----"|"-----BEGIN PRIVATE KEY-----")
+              ;;
+            *)
+              echo "AUR_SSH_PRIVATE_KEY has an invalid private key header: $KEY_HEADER"
+              exit 1
+              ;;
+          esac
+
+          if ! ssh-keygen -y -f ~/.ssh/curd_aur_deploy > ~/.ssh/curd_aur_deploy.pub 2>/dev/null; then
+            echo "AUR_SSH_PRIVATE_KEY is not a valid, unencrypted SSH private key"
             exit 1
           fi
 
-          chmod 600 ~/.ssh/aur_deploy
+          chmod 600 ~/.ssh/curd_aur_deploy
+          chmod 644 ~/.ssh/curd_aur_deploy.pub
           ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
+          echo "Validated deploy key format. Add the matching public key to the AUR account SSH keys."
 
       - name: Clone AUR repository
         env:
-          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/curd_aur_deploy -o IdentitiesOnly=yes
         run: |
           set -euo pipefail
           git clone --depth 1 ssh://aur@aur.archlinux.org/curd.git aur-curd
@@ -102,7 +130,7 @@ jobs:
       - name: Commit and push to AUR
         working-directory: aur-curd
         env:
-          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/curd_aur_deploy -o IdentitiesOnly=yes
         run: |
           set -euo pipefail
 
@@ -121,4 +149,5 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          rm -f ~/.ssh/aur_deploy
+          rm -f ~/.ssh/curd_aur_deploy
+          rm -f ~/.ssh/curd_aur_deploy.pub
