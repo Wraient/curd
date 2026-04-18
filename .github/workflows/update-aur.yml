@@ -80,14 +80,31 @@ jobs:
 
           install -m 700 -d ~/.ssh
           umask 077
-          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/curd_aur_deploy
+          KEY_FILE=~/.ssh/curd_aur_deploy
+          RAW_KEY="$(printf '%s' "$AUR_SSH_PRIVATE_KEY" | tr -d '\r')"
 
-          if [ ! -s ~/.ssh/curd_aur_deploy ]; then
+          if printf '%s' "$RAW_KEY" | grep -q 'BEGIN [A-Z0-9 ]*PRIVATE KEY'; then
+            if printf '%s' "$RAW_KEY" | grep -q '\\n'; then
+              printf '%b' "$RAW_KEY" > "$KEY_FILE"
+            else
+              printf '%s\n' "$RAW_KEY" > "$KEY_FILE"
+            fi
+          else
+            if ! printf '%s' "$RAW_KEY" | base64 -d > "$KEY_FILE" 2>/dev/null; then
+              echo "AUR_SSH_PRIVATE_KEY must be a private key (raw, escaped with \\n, or base64-encoded)"
+              exit 1
+            fi
+          fi
+
+          tr -d '\r' < "$KEY_FILE" > "${KEY_FILE}.tmp"
+          mv "${KEY_FILE}.tmp" "$KEY_FILE"
+
+          if [ ! -s "$KEY_FILE" ]; then
             echo "SSH key file is empty after writing secret"
             exit 1
           fi
 
-          KEY_HEADER="$(head -n1 ~/.ssh/curd_aur_deploy || true)"
+          KEY_HEADER="$(head -n1 "$KEY_FILE" || true)"
           case "$KEY_HEADER" in
             "-----BEGIN OPENSSH PRIVATE KEY-----"|"-----BEGIN RSA PRIVATE KEY-----"|"-----BEGIN EC PRIVATE KEY-----"|"-----BEGIN DSA PRIVATE KEY-----"|"-----BEGIN PRIVATE KEY-----")
               ;;
@@ -97,12 +114,12 @@ jobs:
               ;;
           esac
 
-          if ! ssh-keygen -y -f ~/.ssh/curd_aur_deploy > ~/.ssh/curd_aur_deploy.pub 2>/dev/null; then
+          if ! ssh-keygen -y -f "$KEY_FILE" > ~/.ssh/curd_aur_deploy.pub 2>/dev/null; then
             echo "AUR_SSH_PRIVATE_KEY is not a valid, unencrypted SSH private key"
             exit 1
           fi
 
-          chmod 600 ~/.ssh/curd_aur_deploy
+          chmod 600 "$KEY_FILE"
           chmod 644 ~/.ssh/curd_aur_deploy.pub
           ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
