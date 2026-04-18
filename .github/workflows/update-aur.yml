@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl git jq openssh-client makepkg
+          sudo apt-get install -y curl git jq openssh-client
 
       - name: Download release asset and compute SHA256
         id: release
@@ -142,7 +142,43 @@ jobs:
           sed -i "s|^source=.*|source=(\"https://github.com/Wraient/curd/releases/download/v\${pkgver}/curd-linux-x86_64\")|" PKGBUILD
           sed -i "s|^sha256sums=.*|sha256sums=('${{ steps.release.outputs.sha256 }}')|" PKGBUILD
 
-          makepkg --printsrcinfo > .SRCINFO
+          set +u
+          # shellcheck disable=SC1091
+          source PKGBUILD
+          set -u
+
+          pkgbase_value="${pkgbase:-}"
+          if [ -z "${pkgbase_value}" ]; then
+            pkgbase_value="${pkgname[0]:-${pkgname:-}}"
+          fi
+
+          {
+            printf 'pkgbase = %s\n' "$pkgbase_value"
+            [ -n "${pkgdesc:-}" ] && printf '\tpkgdesc = %s\n' "$pkgdesc"
+            [ -n "${pkgver:-}" ] && printf '\tpkgver = %s\n' "$pkgver"
+            [ -n "${pkgrel:-}" ] && printf '\tpkgrel = %s\n' "$pkgrel"
+            [ -n "${epoch:-}" ] && printf '\tepoch = %s\n' "$epoch"
+            [ -n "${url:-}" ] && printf '\turl = %s\n' "$url"
+            for item in "${arch[@]-}"; do [ -n "$item" ] && printf '\tarch = %s\n' "$item"; done
+            for item in "${license[@]-}"; do [ -n "$item" ] && printf '\tlicense = %s\n' "$item"; done
+            for item in "${makedepends[@]-}"; do [ -n "$item" ] && printf '\tmakedepends = %s\n' "$item"; done
+            for item in "${depends[@]-}"; do [ -n "$item" ] && printf '\tdepends = %s\n' "$item"; done
+            for item in "${checkdepends[@]-}"; do [ -n "$item" ] && printf '\tcheckdepends = %s\n' "$item"; done
+            for item in "${optdepends[@]-}"; do [ -n "$item" ] && printf '\toptdepends = %s\n' "$item"; done
+            for item in "${provides[@]-}"; do [ -n "$item" ] && printf '\tprovides = %s\n' "$item"; done
+            for item in "${conflicts[@]-}"; do [ -n "$item" ] && printf '\tconflicts = %s\n' "$item"; done
+            for item in "${replaces[@]-}"; do [ -n "$item" ] && printf '\treplaces = %s\n' "$item"; done
+            for item in "${source[@]-}"; do [ -n "$item" ] && printf '\tsource = %s\n' "$item"; done
+            for item in "${md5sums[@]-}"; do [ -n "$item" ] && printf '\tmd5sums = %s\n' "$item"; done
+            for item in "${sha1sums[@]-}"; do [ -n "$item" ] && printf '\tsha1sums = %s\n' "$item"; done
+            for item in "${sha224sums[@]-}"; do [ -n "$item" ] && printf '\tsha224sums = %s\n' "$item"; done
+            for item in "${sha256sums[@]-}"; do [ -n "$item" ] && printf '\tsha256sums = %s\n' "$item"; done
+            for item in "${sha384sums[@]-}"; do [ -n "$item" ] && printf '\tsha384sums = %s\n' "$item"; done
+            for item in "${sha512sums[@]-}"; do [ -n "$item" ] && printf '\tsha512sums = %s\n' "$item"; done
+            for item in "${b2sums[@]-}"; do [ -n "$item" ] && printf '\tb2sums = %s\n' "$item"; done
+            printf '\n'
+            for pkg in "${pkgname[@]-}"; do [ -n "$pkg" ] && printf 'pkgname = %s\n' "$pkg"; done
+          } > .SRCINFO
 
       - name: Commit and push to AUR
         working-directory: aur-curd
