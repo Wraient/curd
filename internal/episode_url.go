@@ -161,7 +161,6 @@ func extractLinks(provider_id string) map[string]interface{} {
 	// It's a relative path for allanime API
 	allanime_base := "https://allanime.day"
 	url := allanime_base + provider_id
-	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	var videoData map[string]interface{}
 	if err != nil {
@@ -174,7 +173,7 @@ func extractLinks(provider_id string) map[string]interface{} {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0")
 
 	// Send the request
-	resp, err := client.Do(req)
+	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		Log(fmt.Sprint("Error sending request:", err))
 		return videoData
@@ -212,19 +211,49 @@ func extractLinks(provider_id string) map[string]interface{} {
 // - error: an error if the episode is not found or if there is an issue during the search.
 func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	preferredMode := normalizeTranslationType(config.SubOrDub)
-	links, err := getEpisodeURLForMode(id, preferredMode, epNo)
-	if err == nil {
-		return links, nil
-	}
-
 	fallbackMode := alternateTranslationType(preferredMode)
-	fallbackLinks, fallbackErr := getEpisodeURLForMode(id, fallbackMode, epNo)
-	if fallbackErr == nil {
-		Log(fmt.Sprintf("Falling back to %s for anime %s episode %d", fallbackMode, id, epNo))
-		return fallbackLinks, nil
+
+	type modeResult struct {
+		links []string
+		err   error
 	}
 
-	return nil, err
+	ch := make(chan modeResult, 2)
+
+	go func() {
+		links, err := getEpisodeURLForMode(id, preferredMode, epNo)
+		ch <- modeResult{links: links, err: err}
+	}()
+
+	go func() {
+		links, err := getEpisodeURLForMode(id, fallbackMode, epNo)
+		ch <- modeResult{links: links, err: err}
+	}()
+
+	var preferredRes, fallbackRes modeResult
+	for i := 0; i < 2; i++ {
+		res := <-ch
+		if res.err == nil {
+			if res.links != nil {
+				return res.links, nil
+			}
+		}
+		if res.err == nil || res.links != nil {
+			preferredRes = res
+		} else {
+			fallbackRes = res
+		}
+	}
+
+	if preferredRes.links != nil {
+		return preferredRes.links, nil
+	}
+	if fallbackRes.links != nil {
+		Log(fmt.Sprintf("Falling back to %s for anime %s episode %d", fallbackMode, id, epNo))
+		return fallbackRes.links, nil
+	}
+
+	return nil, preferredRes.err
 }
 
 func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
@@ -245,7 +274,6 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	client := &http.Client{}
 	req, err := http.NewRequest("POST", "https://api.allanime.day/api", bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -256,7 +284,7 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 	req.Header.Set("Referer", "https://allanime.to")
 	req.Header.Set("Origin", "https://allanime.to")
 
-	resp, err := client.Do(req)
+	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -346,14 +374,9 @@ func getLinksFromURLs(validURLs []string) ([]string, error) {
 
 	highPriorityLink := make(chan []string, 1)
 
-	rateLimiter := time.NewTicker(50 * time.Millisecond)
-	defer rateLimiter.Stop()
-
 	remainingURLs := len(validURLs)
 	for i, sourceUrl := range validURLs {
 		go func(idx int, url string) {
-			<-rateLimiter.C
-
 			decodedProviderID := decodeProviderID(url[2:])
 			Log(fmt.Sprintf("Processing URL %d/%d with provider ID: %s", idx+1, len(validURLs), decodedProviderID))
 
@@ -395,7 +418,7 @@ func getLinksFromURLs(validURLs []string) ([]string, error) {
 
 			// Check if any of the extracted links are high priority
 			for _, link := range links {
-				for _, domain := range LinkPriorities[:3] { // Check only top 3 priority domains
+				for _, domain := range LinkPriorities[:3] {
 					if strings.Contains(link, domain) {
 						// Found high priority link, send it immediately
 						select {

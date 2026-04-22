@@ -158,8 +158,7 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 	req.Header.Set("Referer", allanimeRef)
 	req.Header.Set("Origin", allanimeRef)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		Log(fmt.Sprintf("Error making HTTP request: %v", err))
 		return animeList, err

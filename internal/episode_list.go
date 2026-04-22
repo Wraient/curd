@@ -35,7 +35,7 @@ type episodesResponse struct {
 func EpisodesList(showID, mode string) ([]string, error) {
 	preferredMode := normalizeTranslationType(mode)
 
-	episodesListGql := `query ($showId: String!) { show( _id: $showId ) { _id availableEpisodesDetail }}`
+	episodesListGql := `query ($showId String!) { show( _id: $showId ) { _id availableEpisodesDetail }}`
 
 	// Build POST request body
 	requestBody, err := json.Marshal(map[string]interface{}{
@@ -56,8 +56,7 @@ func EpisodesList(showID, mode string) ([]string, error) {
 	req.Header.Set("Referer", "https://allanime.to")
 	req.Header.Set("Origin", "https://allanime.to")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		Log(fmt.Sprint("Error making HTTP request:", err))
 		return nil, err
