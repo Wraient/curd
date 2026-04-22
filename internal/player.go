@@ -154,8 +154,16 @@ func isHTTPStreamLink(link string) bool {
 }
 
 func hasMPVReferrerArg(args []string) bool {
+	normalizeReferrerFlag := func(arg string) string {
+		normalized := strings.ToLower(strings.TrimSpace(arg))
+		if strings.HasPrefix(normalized, "--mpv-") {
+			return "--" + strings.TrimPrefix(normalized, "--mpv-")
+		}
+		return normalized
+	}
+
 	for i, arg := range args {
-		normalizedArg := strings.ToLower(strings.TrimSpace(arg))
+		normalizedArg := normalizeReferrerFlag(arg)
 
 		if strings.HasPrefix(normalizedArg, "--referrer=") || normalizedArg == "--referrer" {
 			return true
