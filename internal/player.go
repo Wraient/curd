@@ -269,11 +269,19 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	}
 	mpvArgs = append(mpvArgs, link)
 
-	// Check for Android environment
-	amPath, err := exec.LookPath("am")
-	isAndroid := runtime.GOOS == "android" || (err == nil && amPath != "")
+	// Detect Android strictly from GOOS to avoid false positives from PATH binaries.
+	isAndroid := runtime.GOOS == "android"
 
 	if isAndroid {
+		amBinary, resolveErr := resolveExecutable("/system/bin/am")
+		if resolveErr != nil {
+			amBinary, resolveErr = resolveExecutable("am")
+			if resolveErr != nil {
+				CurdOut("Error: Android activity manager binary not found")
+				return "", fmt.Errorf("failed to locate android activity manager binary: %w", resolveErr)
+			}
+		}
+
 		// Only use MPV on Android via intent
 		cmdArgs := []string{
 			"start", "--user", "0",
@@ -282,7 +290,7 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 			"-n", "is.xyz.mpv/.MPVActivity",
 		}
 
-		command = exec.Command("am", cmdArgs...)
+		command = exec.Command(amBinary, cmdArgs...)
 		err = command.Start()
 		if err != nil {
 			CurdOut("Error: Failed to start android intent")
