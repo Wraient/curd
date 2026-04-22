@@ -207,6 +207,7 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	fallbackMode := alternateTranslationType(preferredMode)
 
 	type modeResult struct {
+		mode  string
 		links []string
 		err   error
 	}
@@ -215,38 +216,51 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 
 	go func() {
 		links, err := getEpisodeURLForMode(id, preferredMode, epNo)
-		ch <- modeResult{links: links, err: err}
+		ch <- modeResult{mode: preferredMode, links: links, err: err}
 	}()
 
 	go func() {
 		links, err := getEpisodeURLForMode(id, fallbackMode, epNo)
-		ch <- modeResult{links: links, err: err}
+		ch <- modeResult{mode: fallbackMode, links: links, err: err}
 	}()
 
 	var preferredRes, fallbackRes modeResult
+	hasPreferredRes := false
+	hasFallbackRes := false
 	for i := 0; i < 2; i++ {
 		res := <-ch
-		if res.err == nil {
-			if res.links != nil {
+
+		if res.mode == preferredMode {
+			preferredRes = res
+			hasPreferredRes = true
+			if res.err == nil && len(res.links) > 0 {
 				return res.links, nil
 			}
+			continue
 		}
-		if res.err == nil || res.links != nil {
-			preferredRes = res
-		} else {
+
+		if res.mode == fallbackMode {
 			fallbackRes = res
+			hasFallbackRes = true
 		}
 	}
 
-	if preferredRes.links != nil {
+	if hasPreferredRes && preferredRes.err == nil && len(preferredRes.links) > 0 {
 		return preferredRes.links, nil
 	}
-	if fallbackRes.links != nil {
+	if hasFallbackRes && fallbackRes.err == nil && len(fallbackRes.links) > 0 {
 		Log(fmt.Sprintf("Falling back to %s for anime %s episode %d", fallbackMode, id, epNo))
 		return fallbackRes.links, nil
 	}
 
-	return nil, preferredRes.err
+	if hasPreferredRes && preferredRes.err != nil {
+		return nil, preferredRes.err
+	}
+	if hasFallbackRes && fallbackRes.err != nil {
+		return nil, fallbackRes.err
+	}
+
+	return nil, fmt.Errorf("no valid links found for anime %s episode %d", id, epNo)
 }
 
 func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
