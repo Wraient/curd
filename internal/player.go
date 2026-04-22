@@ -15,6 +15,8 @@ import (
 
 var logFile = "debug.log"
 
+const defaultStreamReferrer = "allanime.day"
+
 func getBundledMPVPath() (string, error) {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -146,6 +148,34 @@ func translateMPVArgsForIINA(mpvArgs []string) []string {
 	return translated
 }
 
+func isHTTPStreamLink(link string) bool {
+	trimmedLink := strings.ToLower(strings.TrimSpace(link))
+	return strings.HasPrefix(trimmedLink, "http://") || strings.HasPrefix(trimmedLink, "https://")
+}
+
+func hasMPVReferrerArg(args []string) bool {
+	for i, arg := range args {
+		normalizedArg := strings.ToLower(strings.TrimSpace(arg))
+
+		if strings.HasPrefix(normalizedArg, "--referrer=") || normalizedArg == "--referrer" {
+			return true
+		}
+
+		if strings.HasPrefix(normalizedArg, "--http-header-fields=") && strings.Contains(normalizedArg, "referer:") {
+			return true
+		}
+
+		if normalizedArg == "--http-header-fields" && i+1 < len(args) {
+			nextArg := strings.ToLower(strings.TrimSpace(args[i+1]))
+			if strings.Contains(nextArg, "referer:") {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 func StartVideo(link string, args []string, title string, anime *Anime) (string, error) {
 	var command *exec.Cmd
 	var mpvSocketPath string
@@ -158,10 +188,22 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 		args = append(args, userConfig.MpvArgs...)
 	}
 
+	shouldSetDefaultReferrer := isHTTPStreamLink(link) && !hasMPVReferrerArg(args)
+	if shouldSetDefaultReferrer {
+		args = append(args, fmt.Sprintf("--referrer=%s", defaultStreamReferrer))
+	}
+
 	// Check if we have an existing socket and if MPV is still running
 	if anime.Ep.Player.SocketPath != "" && IsMPVRunning(anime.Ep.Player.SocketPath) {
 		// Reuse existing socket
 		mpvSocketPath = anime.Ep.Player.SocketPath
+
+		if shouldSetDefaultReferrer {
+			_, referrerErr := MPVSendCommand(mpvSocketPath, []interface{}{"set_property", "referrer", defaultStreamReferrer})
+			if referrerErr != nil {
+				Log(fmt.Sprintf("Failed to set referrer property: %v", referrerErr))
+			}
+		}
 
 		// Load the new file in the existing MPV instance
 		command := []interface{}{"loadfile", link}
