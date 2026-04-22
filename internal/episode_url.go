@@ -37,7 +37,7 @@ type result struct {
 }
 
 func decodeTobeparsed(blob string) string {
-	key := []byte("SimtVuagFbGR2K7P")
+	key := []byte("Xot36i3lK3:v1")
 	hash := sha256.Sum256(key)
 
 	data, err := base64.StdEncoding.DecodeString(blob)
@@ -46,13 +46,19 @@ func decodeTobeparsed(blob string) string {
 		return ""
 	}
 
-	if len(data) < 28 {
-		Log(fmt.Sprint("Data too short to contain IV and ciphertext"))
+	if len(data) < 29 {
+		Log("Data too short to contain tobeparsed payload")
 		return ""
 	}
 
-	iv := data[:12]
-	ct := data[12:]
+	// The payload format is: 1-byte header, 12-byte IV, ciphertext, 16-byte trailer.
+	iv := data[1:13]
+	ctLen := len(data) - 13 - 16
+	if ctLen <= 0 {
+		Log("Ciphertext length is invalid in tobeparsed payload")
+		return ""
+	}
+	ct := data[13 : 13+ctLen]
 
 	ctrIV := make([]byte, 16)
 	copy(ctrIV, iv)
