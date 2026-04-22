@@ -140,25 +140,12 @@ func decodeProviderID(encoded string) string {
 func extractLinks(provider_id string) map[string]interface{} {
 	// Check if provider_id is already a full URL (external link)
 	if strings.HasPrefix(provider_id, "http://") || strings.HasPrefix(provider_id, "https://") {
-		// It's an external direct video link, return it as-is
-		cleanedURL := provider_id
-		// Clean up any double slashes in the URL (except after protocol)
-		if strings.Contains(cleanedURL, "://") {
-			parts := strings.SplitN(cleanedURL, "://", 2)
-			if len(parts) == 2 {
-				protocol := parts[0]
-				rest := parts[1]
-				// Replace any double slashes in the rest of the URL
-				rest = strings.ReplaceAll(rest, "//", "/")
-				cleanedURL = protocol + "://" + rest
-			}
-		}
-
-		Log(fmt.Sprintf("Direct external link detected: %s -> %s", provider_id, cleanedURL))
+		// It's an external direct video link, preserve it exactly as provided.
+		Log(fmt.Sprintf("Direct external link detected: %s", provider_id))
 		return map[string]interface{}{
 			"links": []interface{}{
 				map[string]interface{}{
-					"link": cleanedURL,
+					"link": provider_id,
 				},
 			},
 		}
