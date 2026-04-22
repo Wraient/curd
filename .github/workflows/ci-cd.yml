@@ -180,6 +180,129 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "Build\curd-windows-build.iss"  
         shell: pwsh
 
+      - name: Build direct commit release notes
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $repo = "${{ github.repository }}"
+          $token = "${{ secrets.ACTIONS_PAT }}"
+          $headers = @{
+            Authorization = "Bearer $token"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+
+          $currentTag = "v$env:CURD_VERSION"
+          $tags = @(git tag --sort=-version:refname "v*")
+          $previousTag = $null
+          foreach ($tag in $tags) {
+            if ($tag -ne $currentTag) {
+              $previousTag = $tag
+              break
+            }
+          }
+
+          if ($previousTag) {
+            $range = "$previousTag..HEAD"
+          } else {
+            $rootCommit = (git rev-list --max-parents=0 HEAD | Select-Object -First 1)
+            if ([string]::IsNullOrWhiteSpace($rootCommit)) {
+              $range = "HEAD"
+            } else {
+              $range = "$rootCommit..HEAD"
+            }
+          }
+
+          $rawCommits = @(git log --no-merges --pretty=format:'%H%x09%s%x09%an' $range)
+          if ($rawCommits.Count -eq 1 -and [string]::IsNullOrWhiteSpace($rawCommits[0])) {
+            $rawCommits = @()
+          }
+
+          $directCommitLines = @()
+          $contributorSet = @{}
+
+          foreach ($entry in $rawCommits) {
+            $parts = $entry -split "`t", 3
+            if ($parts.Count -lt 3) {
+              continue
+            }
+
+            $sha = $parts[0].Trim()
+            $subject = $parts[1].Trim()
+            $authorName = $parts[2].Trim()
+
+            if ([string]::IsNullOrWhiteSpace($sha) -or [string]::IsNullOrWhiteSpace($subject)) {
+              continue
+            }
+
+            if ($subject -match '^\s*release:') {
+              continue
+            }
+
+            $pullsUri = "https://api.github.com/repos/$repo/commits/$sha/pulls"
+            $pulls = @()
+            try {
+              $pulls = @(Invoke-RestMethod -Uri $pullsUri -Headers $headers -Method Get)
+            } catch {
+              $pulls = @()
+            }
+
+            # Skip commits that are already represented by pull requests in generated notes.
+            if ($pulls.Count -gt 0) {
+              continue
+            }
+
+            $commitUri = "https://api.github.com/repos/$repo/commits/$sha"
+            $login = $null
+            try {
+              $commitData = Invoke-RestMethod -Uri $commitUri -Headers $headers -Method Get
+              if ($null -ne $commitData.author -and $null -ne $commitData.author.login) {
+                $login = $commitData.author.login
+              }
+            } catch {
+              $login = $null
+            }
+
+            $shortSha = $sha.Substring(0, 7)
+            if (-not [string]::IsNullOrWhiteSpace($login)) {
+              $authorDisplay = "[@$login](https://github.com/$login)"
+            } else {
+              $authorDisplay = $authorName
+            }
+
+            $contributorSet[$authorDisplay] = $true
+            $directCommitLines += "- $subject ([$shortSha](https://github.com/$repo/commit/$sha)) by $authorDisplay"
+          }
+
+          $notesPath = "Build/release-notes-extra.md"
+
+          $body = @()
+          $body += "## Direct Commits"
+          if ($directCommitLines.Count -eq 0) {
+            $body += "- No direct commits in this release range."
+          } else {
+            $body += $directCommitLines
+          }
+
+          $body += ""
+          $body += "## Direct Commit Contributors"
+          $contributors = @($contributorSet.Keys | Sort-Object)
+          if ($contributors.Count -eq 0) {
+            $body += "- None"
+          } else {
+            foreach ($contributor in $contributors) {
+              $body += "- $contributor"
+            }
+          }
+
+          if ($previousTag) {
+            $body += ""
+            $body += "_Range: $previousTag..HEAD_"
+          }
+
+          $body | Set-Content -Path $notesPath -Encoding utf8
+        shell: pwsh
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
@@ -188,7 +311,8 @@ jobs:
           name: "Curd v${{ env.CURD_VERSION }}"
           draft: false
           prerelease: false
-          generate_release_notes: true 
+          generate_release_notes: true
+          body_path: Build/release-notes-extra.md
           files: |
             releases/curd-${{ env.CURD_VERSION }}/linux/curd-linux-x86_64
             releases/curd-${{ env.CURD_VERSION }}/linux/curd-linux-arm64
