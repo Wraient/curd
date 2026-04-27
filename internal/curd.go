@@ -20,6 +20,8 @@ import (
 	"github.com/pkg/browser"
 )
 
+var alternateScreenActive bool
+
 func EditConfig(configFilePath string) {
 	// Get the user's preferred editor from the EDITOR environment variable
 	editor := os.Getenv("EDITOR")
@@ -107,6 +109,9 @@ func Log(data interface{}) error {
 // ClearScreen clears the terminal screen and saves the state
 func ClearScreen() {
 	userCurdConfig := GetGlobalConfig()
+	if userCurdConfig == nil {
+		return
+	}
 
 	if userCurdConfig.AlternateScreen == false {
 		return
@@ -115,17 +120,17 @@ func ClearScreen() {
 	fmt.Print("\033[?1049h") // Switch to alternate screen buffer
 	fmt.Print("\033[2J")     // Clear the entire screen
 	fmt.Print("\033[H")      // Move cursor to the top left
+	alternateScreenActive = true
 }
 
 // RestoreScreen restores the original terminal state
 func RestoreScreen() {
-	userCurdConfig := GetGlobalConfig()
-
-	if userCurdConfig.AlternateScreen == false {
+	if !alternateScreenActive {
 		return
 	}
 
 	fmt.Print("\033[?1049l") // Switch back to the main screen buffer
+	alternateScreenActive = false
 }
 
 func ExitCurd(err error) {

@@ -15,6 +15,14 @@ import (
 
 var version string // Will be set by ldflags during build
 
+func resolvedVersion() string {
+	if version == "" {
+		return "1.3.7"
+	}
+
+	return version
+}
+
 func main() {
 	var anime internal.Anime
 	var user internal.User
@@ -84,11 +92,7 @@ func main() {
 
 	// Check version before screen clearing
 	if *versionFlag {
-		internal.RestoreScreen()
-		if version == "" {
-			version = "1.3.7"
-		}
-		fmt.Printf("Curd version: %s\n", version)
+		fmt.Printf("Curd version: %s\n", resolvedVersion())
 		os.Exit(0)
 	}
 
