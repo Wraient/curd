@@ -7,11 +7,15 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -34,6 +38,12 @@ type result struct {
 	index int
 	links []string
 	err   error
+}
+
+type filemoonResponse struct {
+	IV       string   `json:"iv"`
+	Payload  string   `json:"payload"`
+	KeyParts []string `json:"key_parts"`
 }
 
 func decodeTobeparsed(blob string) string {
@@ -138,6 +148,8 @@ func decodeProviderID(encoded string) string {
 }
 
 func extractLinks(provider_id string) map[string]interface{} {
+	provider_id = normalizeAllanimeProviderPath(provider_id)
+
 	// Check if provider_id is already a full URL (external link)
 	if strings.HasPrefix(provider_id, "http://") || strings.HasPrefix(provider_id, "https://") {
 		// It's an external direct video link, preserve it exactly as provided.
@@ -187,8 +199,180 @@ func extractLinks(provider_id string) map[string]interface{} {
 		return videoData
 	}
 
+	// Filemoon extractor payload does not return a top-level "links" field.
+	if _, hasLinks := videoData["links"]; !hasLinks {
+		if filemoonLinks := extractFilemoonLinks(videoData); len(filemoonLinks) > 0 {
+			links := make([]interface{}, 0, len(filemoonLinks))
+			for _, link := range filemoonLinks {
+				links = append(links, map[string]interface{}{"link": link})
+			}
+			videoData["links"] = links
+		}
+	}
+
 	// Process the data as needed
 	return videoData
+}
+
+func normalizeAllanimeProviderPath(providerID string) string {
+	const allanimePrefix = "/https://allanime.day"
+
+	if strings.HasPrefix(providerID, allanimePrefix) {
+		trimmed := strings.TrimPrefix(providerID, allanimePrefix)
+		if trimmed == "" {
+			return "/"
+		}
+		if !strings.HasPrefix(trimmed, "/") {
+			return "/" + trimmed
+		}
+		return trimmed
+	}
+
+	return providerID
+}
+
+func decodeBase64URLRaw(input string) ([]byte, error) {
+	if decoded, err := base64.RawURLEncoding.DecodeString(input); err == nil {
+		return decoded, nil
+	}
+	return base64.URLEncoding.DecodeString(input)
+}
+
+func extractFilemoonLinks(videoData map[string]interface{}) []string {
+	raw, err := json.Marshal(videoData)
+	if err != nil {
+		Log(fmt.Sprintf("Error marshaling filemoon payload: %v", err))
+		return nil
+	}
+
+	var payload filemoonResponse
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		Log(fmt.Sprintf("Error parsing filemoon payload: %v", err))
+		return nil
+	}
+
+	if payload.IV == "" || payload.Payload == "" || len(payload.KeyParts) < 2 {
+		return nil
+	}
+
+	keyPart1, err := decodeBase64URLRaw(payload.KeyParts[0])
+	if err != nil {
+		Log(fmt.Sprintf("Error decoding filemoon key part 1: %v", err))
+		return nil
+	}
+
+	keyPart2, err := decodeBase64URLRaw(payload.KeyParts[1])
+	if err != nil {
+		Log(fmt.Sprintf("Error decoding filemoon key part 2: %v", err))
+		return nil
+	}
+
+	iv, err := decodeBase64URLRaw(payload.IV)
+	if err != nil {
+		Log(fmt.Sprintf("Error decoding filemoon IV: %v", err))
+		return nil
+	}
+
+	ciphertext, err := decodeBase64URLRaw(payload.Payload)
+	if err != nil {
+		Log(fmt.Sprintf("Error decoding filemoon ciphertext: %v", err))
+		return nil
+	}
+
+	if len(ciphertext) <= 16 {
+		Log("Filemoon ciphertext is too short")
+		return nil
+	}
+
+	// Match jerry.sh behavior: decrypt all bytes except the final 16-byte trailer.
+	ciphertext = ciphertext[:len(ciphertext)-16]
+
+	keyHex := hex.EncodeToString(append(keyPart1, keyPart2...))
+	key, err := hex.DecodeString(keyHex)
+	if err != nil {
+		Log(fmt.Sprintf("Error decoding filemoon key hex: %v", err))
+		return nil
+	}
+
+	ctrIVHex := hex.EncodeToString(iv) + "00000002"
+	ctrIV, err := hex.DecodeString(ctrIVHex)
+	if err != nil {
+		Log(fmt.Sprintf("Error decoding filemoon CTR IV: %v", err))
+		return nil
+	}
+
+	if len(ctrIV) != aes.BlockSize {
+		Log(fmt.Sprintf("Invalid filemoon CTR IV size: %d", len(ctrIV)))
+		return nil
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		Log(fmt.Sprintf("Error creating filemoon cipher: %v", err))
+		return nil
+	}
+
+	plain := make([]byte, len(ciphertext))
+	cipher.NewCTR(block, ctrIV).XORKeyStream(plain, ciphertext)
+
+	decoded := strings.ReplaceAll(string(plain), `\u0026`, "&")
+	decoded = strings.ReplaceAll(decoded, `\u003D`, "=")
+
+	type qualityLink struct {
+		height int
+		link   string
+	}
+
+	collected := make([]qualityLink, 0)
+	seen := make(map[string]struct{})
+
+	reURLFirst := regexp.MustCompile(`"url":"([^"]+)".*?"height":([0-9]+)`)
+	reHeightFirst := regexp.MustCompile(`"height":([0-9]+).*?"url":"([^"]+)"`)
+
+	for _, match := range reURLFirst.FindAllStringSubmatch(decoded, -1) {
+		if len(match) != 3 {
+			continue
+		}
+		height, err := strconv.Atoi(match[2])
+		if err != nil {
+			continue
+		}
+		if _, exists := seen[match[1]]; exists {
+			continue
+		}
+		seen[match[1]] = struct{}{}
+		collected = append(collected, qualityLink{height: height, link: match[1]})
+	}
+
+	for _, match := range reHeightFirst.FindAllStringSubmatch(decoded, -1) {
+		if len(match) != 3 {
+			continue
+		}
+		height, err := strconv.Atoi(match[1])
+		if err != nil {
+			continue
+		}
+		if _, exists := seen[match[2]]; exists {
+			continue
+		}
+		seen[match[2]] = struct{}{}
+		collected = append(collected, qualityLink{height: height, link: match[2]})
+	}
+
+	sort.Slice(collected, func(i, j int) bool {
+		return collected[i].height > collected[j].height
+	})
+
+	links := make([]string, 0, len(collected))
+	for _, entry := range collected {
+		links = append(links, entry.link)
+	}
+
+	if len(links) > 0 {
+		Log("Filemoon links fetched")
+	}
+
+	return links
 }
 
 // Get anime episode url respective to given config
@@ -264,7 +448,11 @@ func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 }
 
 func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
-	query := `query($showId:String!,$translationType:VaildTranslationTypeEnumType!,$episodeString:String!){episode(showId:$showId,translationType:$translationType,episodeString:$episodeString){episodeString sourceUrls}}`
+	const (
+		episodeQueryHash = "d405d0edd690624b66baba3068e0edc3ac90f1597d898a1ec8db4e5c43c00fec"
+	)
+
+	episodeEmbedGQL := `query ($showId: String!, $translationType: VaildTranslationTypeEnumType!, $episodeString: String!) { episode( showId: $showId translationType: $translationType episodeString: $episodeString ) { episodeString sourceUrls }}`
 
 	variables := map[string]interface{}{
 		"showId":          id,
@@ -272,41 +460,86 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 		"episodeString":   fmt.Sprintf("%d", epNo),
 	}
 
-	// Build POST request body
-	requestBody, err := json.Marshal(map[string]interface{}{
-		"query":     query,
-		"variables": variables,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	extensions := map[string]interface{}{
+		"persistedQuery": map[string]interface{}{
+			"version":    1,
+			"sha256Hash": episodeQueryHash,
+		},
 	}
 
-	req, err := http.NewRequest("POST", "https://api.allanime.day/api", bytes.NewBuffer(requestBody))
+	variablesJSON, err := json.Marshal(variables)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to marshal persisted query variables: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", "https://allanime.to")
-	req.Header.Set("Origin", "https://allanime.to")
+	extensionsJSON, err := json.Marshal(extensions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal persisted query extensions: %w", err)
+	}
+
+	persistedURL := "https://api.allanime.day/api?variables=" + url.QueryEscape(string(variablesJSON)) + "&extensions=" + url.QueryEscape(string(extensionsJSON))
+
+	req, err := http.NewRequest("GET", persistedURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create persisted query request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0")
+	req.Header.Set("Referer", "https://allmanga.to")
+	req.Header.Set("Origin", "https://youtu-chan.com")
 
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send persisted query request: %w", err)
 	}
-	defer resp.Body.Close()
-
 	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read persisted query response: %w", err)
 	}
 
 	var response allanimeResponse
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		Log(fmt.Sprint("Error parsing JSON: ", err))
-		return nil, err
+	if err := json.Unmarshal(body, &response); err != nil {
+		Log(fmt.Sprint("Error parsing persisted query JSON: ", err))
+	}
+
+	useFallback := response.Data.Tobeparsed == "" && len(response.Data.Episode.SourceUrls) == 0
+	if useFallback {
+		query := episodeEmbedGQL
+
+		// Build POST request body
+		requestBody, err := json.Marshal(map[string]interface{}{
+			"query":     query,
+			"variables": variables,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+
+		req, err := http.NewRequest("POST", "https://api.allanime.day/api", bytes.NewBuffer(requestBody))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+		req.Header.Set("Referer", "https://allmanga.to")
+		req.Header.Set("Origin", "https://allanime.to")
+
+		resp, err := sharedHTTPClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		if err := json.Unmarshal(body, &response); err != nil {
+			Log(fmt.Sprint("Error parsing fallback JSON: ", err))
+			return nil, err
+		}
 	}
 
 	if response.Data.Tobeparsed != "" {
