@@ -63,6 +63,13 @@ type CurdConfig struct {
 	Provider                 string   `config:"Provider"`
 }
 
+func GetStoragePath() string {
+	if globalConfig != nil && globalConfig.StoragePath != "" {
+		return os.ExpandEnv(globalConfig.StoragePath)
+	}
+	return filepath.Join(os.ExpandEnv("$HOME"), ".local", "share", "curd")
+}
+
 // Default configuration values as a map
 func defaultConfigMap() map[string]string {
 	return map[string]string{
@@ -124,9 +131,12 @@ func parseStringArray(value string) []string {
 	return result
 }
 
+var GlobalConfigPath string
+
 // LoadConfig reads or creates the config file, adds missing fields, and returns the populated CurdConfig struct
 func LoadConfig(configPath string) (CurdConfig, error) {
 	configPath = os.ExpandEnv(configPath) // Substitute environment variables like $HOME
+	GlobalConfigPath = configPath
 
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {

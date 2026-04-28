@@ -19,15 +19,19 @@ import (
 )
 
 var animepaheCookiesBypassed bool
-var cookieFilePath = filepath.Join(os.ExpandEnv("$HOME"), ".local", "share", "curd", "animepahe_cookies.json")
+func getCookieFilePath() string {
+	return filepath.Join(GetStoragePath(), "animepahe_cookies.json")
+}
 
 func saveCookies(cookies []*http.Cookie) {
+	cookieFilePath := getCookieFilePath()
 	os.MkdirAll(filepath.Dir(cookieFilePath), 0755)
 	b, _ := json.Marshal(cookies)
 	os.WriteFile(cookieFilePath, b, 0644)
 }
 
 func loadCookies() []*http.Cookie {
+	cookieFilePath := getCookieFilePath()
 	b, err := os.ReadFile(cookieFilePath)
 	if err != nil {
 		return nil

@@ -29,14 +29,17 @@ func main() {
 
 	internal.SetGlobalAnime(&anime)
 
-	var homeDir string
-	if runtime.GOOS == "windows" {
-		homeDir = os.Getenv("USERPROFILE")
-	} else {
-		homeDir = os.Getenv("HOME")
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		// Fallback if UserConfigDir fails
+		if runtime.GOOS == "windows" {
+			configDir = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Roaming")
+		} else {
+			configDir = filepath.Join(os.Getenv("HOME"), ".config")
+		}
 	}
 
-	configFilePath := filepath.Join(homeDir, ".config", "curd", "curd.conf")
+	configFilePath := filepath.Join(configDir, "curd", "curd.conf")
 
 	// load curd userCurdConfig
 	userCurdConfig, err := internal.LoadConfig(configFilePath)

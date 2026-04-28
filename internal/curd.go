@@ -2109,7 +2109,7 @@ func ChangeProvider(userCurdConfig *CurdConfig) {
 	CurrentProvider = nil // reset the provider instance
 
 	// Save to config file
-	configPath := filepath.Join(os.ExpandEnv("$HOME"), ".config", "curd", "curd.conf")
+	configPath := GlobalConfigPath
 	configMap, err := LoadConfigFromFile(configPath)
 	if err == nil {
 		configMap["Provider"] = selected.Key

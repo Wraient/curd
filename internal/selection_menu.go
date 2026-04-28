@@ -382,10 +382,7 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 func DynamicSelectPreviewWithRefresh(options map[string]RofiSelectPreview, addnewoption bool, refreshConfig *PreviewSelectionRefreshConfig) (SelectionOption, error) {
 	go preDownloadImages(options, 14)
 
-	userCurdConfig := GetGlobalConfig()
-	if userCurdConfig.StoragePath == "" {
-		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
-	}
+	// Removed boilerplate check
 
 	currentOptions := options
 
@@ -409,7 +406,7 @@ func DynamicSelectPreviewWithRefresh(options map[string]RofiSelectPreview, addne
 		rofiInput.WriteString("Back\n")
 		rofiInput.WriteString("Quit\n")
 
-		configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanimepreview.rasi")
+		configPath := filepath.Join(GetStoragePath(), "selectanimepreview.rasi")
 		cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-show-icons", "-p", "Select Anime", "-i", "-no-custom")
 		cmd.Stdin = strings.NewReader(rofiInput.String())
 		var stdout, stderr bytes.Buffer
@@ -561,16 +558,11 @@ func RofiSelect(options []SelectionOption, isHomeMenu bool) (SelectionOption, er
 }
 
 func RofiSelectWithRefresh(options []SelectionOption, isHomeMenu bool, refreshConfig *SelectionRefreshConfig) (SelectionOption, error) {
-	userCurdConfig := GetGlobalConfig()
-	if userCurdConfig.StoragePath == "" {
-		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
-	}
-
 	currentOptions := options
 
 	for {
 		optionsString := buildRofiOptionsString(currentOptions, isHomeMenu)
-		configPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "selectanime.rasi")
+		configPath := filepath.Join(GetStoragePath(), "selectanime.rasi")
 		cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-i", "-p", "Select")
 		cmd.Stdin = strings.NewReader(optionsString)
 		var stdout, stderr bytes.Buffer

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -94,11 +93,7 @@ func searchAllAnime(query, mode string) ([]SelectionOption, error) {
 
 func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, error) {
 	userCurdConfig := GetGlobalConfig()
-	if userCurdConfig == nil {
-		logFile = os.ExpandEnv("$HOME/.local/share/curd/debug.log")
-	} else {
-		logFile = filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "debug.log")
-	}
+	logFile = filepath.Join(GetStoragePath(), "debug.log")
 	const (
 		agent        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
 		allanimeRef  = "https://allanime.to"

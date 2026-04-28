@@ -3,7 +3,6 @@ package internal
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -37,12 +36,8 @@ func GetTokenFromRofi() (string, error) {
 
 // GetUserInputFromRofi prompts the user for input using Rofi with a custom message
 func GetUserInputFromRofi(message string) (string, error) {
-	userCurdConfig := GetGlobalConfig()
-	if userCurdConfig.StoragePath == "" {
-		userCurdConfig.StoragePath = os.ExpandEnv("${HOME}/.local/share/curd")
-	}
 	// Create the Rofi command
-	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "userinput.rasi"), "-p", "Input", "-mesg", message)
+	cmd := exec.Command("rofi", "-dmenu", "-theme", filepath.Join(GetStoragePath(), "userinput.rasi"), "-p", "Input", "-mesg", message)
 
 	// Set up pipes for output
 	var out bytes.Buffer
