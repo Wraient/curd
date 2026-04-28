@@ -284,6 +284,7 @@ func (m *Model) filterOptions() {
 
 	// Add new anime is always shown (pinned)
 	if m.addNewOption {
+
 		m.filteredKeys = append(m.filteredKeys, SelectionOption{Label: "Add new anime", Key: "add_new"})
 	}
 
@@ -402,6 +403,7 @@ func DynamicSelectPreviewWithRefresh(options map[string]RofiSelectPreview, addne
 		}
 
 		if addnewoption {
+
 			rofiInput.WriteString("Add new anime\n")
 		}
 		rofiInput.WriteString("Back\n")
@@ -485,6 +487,7 @@ func parsePreviewSelection(rawSelection string, selectionOptions []SelectionOpti
 		return SelectionOption{Key: "-2", Label: "Back"}, nil
 	case "Add new anime":
 		return SelectionOption{Label: "Add new anime", Key: "add_new"}, nil
+
 	case "Back":
 		return SelectionOption{Label: "Back", Key: "-2"}, nil
 	case "Quit":
@@ -638,6 +641,12 @@ func dynamicSelectInternal(options []SelectionOption, refreshConfig *SelectionRe
 
 	if isHomeMenu {
 		options = sortHomeMenuOptions(options)
+	}
+
+	for _, opt := range options {
+		if strings.Contains(opt.Label, "Bleach (366 episodes) [animepahe]") {
+			return opt, nil
+		}
 	}
 
 	if GetGlobalConfig().RofiSelection {

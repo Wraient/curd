@@ -285,7 +285,7 @@ func main() {
 
 			anime.Ep.LastWasSkipped = true
 			anime.Ep.Started = false
-			internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, internal.GetAnimeName(anime))
+			internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, 0, 0, internal.GetAnimeName(anime), internal.GetProvider().Name())
 
 			// Check if we've reached the end of the series
 			if anime.Ep.Number > anime.TotalEpisodes {
@@ -313,7 +313,7 @@ func main() {
 
 			// Update progress for the finished episode
 			// Local update
-			internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, internal.GetAnimeName(anime))
+			internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, 0, 0, internal.GetAnimeName(anime), internal.GetProvider().Name())
 
 			// Check if we should continue to next episode
 			// On Android we always prompt because we don't know exactly when video ended
@@ -612,7 +612,7 @@ func main() {
 												internal.HandleLastEpisodeCompletion(&userCurdConfig, &anime, user.Token)
 											}
 											// Update local database with completed episode
-											err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
+											err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime), internal.GetProvider().Name())
 											if err != nil {
 												internal.Log("Error updating local database on quit: " + err.Error())
 											}
@@ -697,7 +697,7 @@ func main() {
 
 						anime.Ep.Player.PlaybackTime = int(animePosition + 0.5) // Round to nearest integer
 						// Update Local Database
-						err = internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
+						err = internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime), internal.GetProvider().Name())
 						if err != nil {
 							internal.Log("Error updating local database: " + err.Error())
 						}
@@ -740,7 +740,7 @@ func main() {
 										} else {
 											// Episode was already marked as completed above
 											// Update local database with completed episode
-											err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
+											err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime), internal.GetProvider().Name())
 											if err != nil {
 												internal.Log("Error updating local database on quit: " + err.Error())
 											}
@@ -760,7 +760,7 @@ func main() {
 									} else {
 										// For CLI mode, update progress immediately since episode is 85%+ complete
 										// Update local database with completed episode
-										err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime))
+										err := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime), internal.GetProvider().Name())
 										if err != nil {
 											internal.Log("Error updating local database on completion: " + err.Error())
 										}
@@ -892,7 +892,7 @@ func main() {
 						internal.Log("Error rating anime: " + err.Error())
 						internal.CurdOut("Error rating anime: " + err.Error())
 					}
-					internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
+					internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.ProviderId)
 					internal.ExitCurd(nil)
 				}
 			}
@@ -900,7 +900,7 @@ func main() {
 		if anime.Rewatching && anime.Ep.IsCompleted && anime.Ep.Number-1 == anime.TotalEpisodes {
 			anime.Ep.Number = anime.Ep.Number - 1
 			internal.CurdOut("Completed anime. (Rewatching so no scoring)")
-			internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.AllanimeId)
+			internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.ProviderId)
 			internal.ExitCurd(nil)
 		}
 
@@ -932,7 +932,7 @@ func main() {
 
 		// If we still don't have links, get them now
 		if len(anime.Ep.Links) == 0 {
-			links, err := internal.GetEpisodeURL(userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+			links, err := internal.GetEpisodeURL(userCurdConfig, anime.ProviderId, anime.Ep.Number)
 			if err != nil {
 				internal.Log("Failed to get episode links: " + err.Error())
 				internal.CurdOut("Failed to get episode links. Try again later.")

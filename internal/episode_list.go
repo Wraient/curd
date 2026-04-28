@@ -32,7 +32,7 @@ type episodesResponse struct {
 // }
 
 // episodesList performs the API call and fetches the episodes list
-func EpisodesList(showID, mode string) ([]string, error) {
+func getAllAnimeEpisodesList(showID, mode string) ([]string, error) {
 	preferredMode := normalizeTranslationType(mode)
 
 	episodesListGql := `query ($showId String!) { show( _id: $showId ) { _id availableEpisodesDetail }}`

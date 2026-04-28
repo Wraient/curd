@@ -95,11 +95,16 @@ func DiscordPresenceWithForce(anime Anime, IsPaused bool, currentPosition int, t
 		SmallText = ""
 	}
 
+	largeImage := anime.CoverImage
+	if largeImage == "" {
+		largeImage = "https://anilist.co/img/icons/icon.svg" // fallback image
+	}
+
 	err := discordClient.SetActivity(client.Activity{
 		Type:       3, // Watching
 		Name:       currentAnimeTitle,
 		Details:    currentAnimeTitle, // Large text
-		LargeImage: anime.CoverImage,
+		LargeImage: largeImage,
 		LargeText:  currentAnimeTitle, // Would display while hovering over the large image
 		State:      fmt.Sprintf("Episode %d", anime.Ep.Number),
 		SmallImage: SmallImage,

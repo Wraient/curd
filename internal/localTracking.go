@@ -140,7 +140,7 @@ func parseAnimeRow(row []string) *Anime {
 
 	anime := &Anime{
 		AnilistId:  anilistID,
-		AllanimeId: row[1],
+		ProviderId: row[1],
 		Ep: Episode{
 			Number: watchingEpisode,
 			Player: playingVideo{
@@ -150,12 +150,20 @@ func parseAnimeRow(row []string) *Anime {
 		},
 	}
 
-	if len(row) == 6 {
+	if len(row) >= 7 {
+		anime.ProviderName = row[5]
+		anime.Title = AnimeTitle{
+			English: row[6],
+			Romaji:  row[6],
+		}
+	} else if len(row) >= 6 {
+		anime.ProviderName = "allanime"
 		anime.Title = AnimeTitle{
 			English: row[5],
 			Romaji:  row[5],
 		}
 	} else if len(row) == 5 {
+		anime.ProviderName = "allanime"
 		anime.Title = AnimeTitle{
 			English: row[4],
 			Romaji:  row[4],
@@ -175,19 +183,20 @@ func GetAnimeName(anime Anime) string {
 }
 
 // Function to update or add a new anime entry
-func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, playbackTime int, animeDuration int, animeName string) error {
+func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, playbackTime int, animeDuration int, animeName string, providerName string) error {
 	// Read existing entries
 	animeList := LocalGetAllAnime(databaseFile)
 
 	// Find and update existing entry or add new one
 	updated := false
 	for i, anime := range animeList {
-		if anime.AnilistId == anilistID && anime.AllanimeId == allanimeID {
+		if anime.AnilistId == anilistID && anime.ProviderId == allanimeID {
 			animeList[i].Ep.Number = watchingEpisode
 			animeList[i].Ep.Player.PlaybackTime = playbackTime
 			animeList[i].Ep.Duration = animeDuration
 			animeList[i].Title.English = animeName
 			animeList[i].Title.Romaji = animeName
+			animeList[i].ProviderName = providerName
 			updated = true
 			break
 		}
@@ -196,7 +205,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 	if !updated {
 		newAnime := Anime{
 			AnilistId:  anilistID,
-			AllanimeId: allanimeID,
+			ProviderId: allanimeID,
 			Ep: Episode{
 				Number: watchingEpisode,
 				Player: playingVideo{
@@ -208,6 +217,7 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 				English: animeName,
 				Romaji:  animeName,
 			},
+			ProviderName: providerName,
 		}
 		animeList = append(animeList, newAnime)
 	}
@@ -226,10 +236,11 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 	for _, anime := range animeList {
 		record := []string{
 			strconv.Itoa(anime.AnilistId),
-			anime.AllanimeId,
+			anime.ProviderId,
 			strconv.Itoa(anime.Ep.Number),
 			strconv.Itoa(anime.Ep.Player.PlaybackTime),
 			strconv.Itoa(anime.Ep.Duration),
+			anime.ProviderName,
 			GetAnimeName(anime),
 		}
 		if err := writer.Write(record); err != nil {
@@ -242,12 +253,18 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 
 // Function to find an anime by either Anilist ID or Allanime ID
 func LocalFindAnime(animeList []Anime, anilistID int, allanimeID string) *Anime {
-	for _, anime := range animeList {
-		if anime.AnilistId == anilistID || anime.AllanimeId == allanimeID {
-			return &anime
+	var bestMatch *Anime
+	for i := range animeList {
+		anime := &animeList[i]
+		if anime.AnilistId == anilistID || (allanimeID != "" && anime.ProviderId == allanimeID) {
+			if bestMatch == nil || 
+			   anime.Ep.Number > bestMatch.Ep.Number || 
+			   (anime.Ep.Number == bestMatch.Ep.Number && anime.Ep.Player.PlaybackTime > bestMatch.Ep.Player.PlaybackTime) {
+				bestMatch = anime
+			}
 		}
 	}
-	return nil
+	return bestMatch
 }
 
 func WatchUntracked(userCurdConfig *CurdConfig) {
@@ -330,7 +347,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 			return // Return to caller (home menu)
 		}
 
-		anime.AllanimeId = selectedAnime.Key
+		anime.ProviderId = selectedAnime.Key
 		if selectedAnime.Title != "" {
 			anime.Title.English = selectedAnime.Title
 			anime.Title.Romaji = selectedAnime.Title
@@ -363,7 +380,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 
 	for {
 		// Get episode link
-		link, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+		link, err := GetEpisodeURL(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to get episode link: %v", err))
 			ExitCurd(fmt.Errorf("Failed to get episode link"))

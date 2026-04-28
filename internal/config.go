@@ -39,7 +39,7 @@ type AnilistToken struct {
 // CurdConfig struct with field names that match the config keys
 type CurdConfig struct {
 	Player                   string   `config:"Player"`
-	MpvArgs                  []string `config:MpvArgs`
+	MpvArgs                  []string `config:"MpvArgs"`
 	SubsLanguage             string   `config:"SubsLanguage"`
 	SubOrDub                 string   `config:"SubOrDub"`
 	StoragePath              string   `config:"StoragePath"`
@@ -60,6 +60,7 @@ type CurdConfig struct {
 	AlternateScreen          bool     `config:"AlternateScreen"`
 	DiscordPresence          bool     `config:"DiscordPresence"`
 	DiscordClientId          string   `config:"DiscordClientId"`
+	Provider                 string   `config:"Provider"`
 }
 
 // Default configuration values as a map
@@ -70,7 +71,7 @@ func defaultConfigMap() map[string]string {
 		"StoragePath":              "$HOME/.local/share/curd",
 		"AnimeNameLanguage":        "english",
 		"SubsLanguage":             "english",
-		"MenuOrder":                "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST",
+		"MenuOrder":                "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,PROVIDER",
 		"SubOrDub":                 "sub",
 		"PercentageToMarkComplete": "85",
 		"NextEpisodePrompt":        "false",
@@ -86,6 +87,7 @@ func defaultConfigMap() map[string]string {
 		"AlternateScreen":          "true",
 		"DiscordPresence":          "true",
 		"DiscordClientId":          "1287457464148820089",
+		"Provider":                 "allanime",
 	}
 }
 
@@ -575,7 +577,7 @@ func PopulateConfig(configMap map[string]string) CurdConfig {
 
 func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
 	// Define the default categories and all available labels
-	defaultOrder := []string{"CURRENT", "ALL", "UNTRACKED", "UPDATE", "CONTINUE_LAST"}
+	defaultOrder := []string{"CURRENT", "ALL", "UNTRACKED", "UPDATE", "CONTINUE_LAST", "PROVIDER"}
 	availableLabels := map[string]string{
 		"CURRENT":       "Currently Watching",
 		"ALL":           "Show All",
@@ -587,6 +589,7 @@ func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
 		"PAUSED":        "Paused",
 		"DROPPED":       "Dropped",
 		"REWATCHING":    "Rewatching",
+		"PROVIDER":      "Change Provider",
 	}
 
 	// Create ordered list to store final result

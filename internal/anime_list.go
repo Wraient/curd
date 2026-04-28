@@ -56,7 +56,7 @@ func alternateTranslationType(mode string) string {
 // 	fmt.Println(animeList)
 // }
 
-func SearchAnime(query, mode string) ([]SelectionOption, error) {
+func searchAllAnime(query, mode string) ([]SelectionOption, error) {
 	preferredMode := normalizeTranslationType(mode)
 	alternateMode := alternateTranslationType(preferredMode)
 

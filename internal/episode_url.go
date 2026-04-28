@@ -386,7 +386,7 @@ func extractFilemoonLinks(videoData map[string]interface{}) []string {
 // Returns:
 // - []string: a list of links for specified episode.
 // - error: an error if the episode is not found or if there is an issue during the search.
-func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
+func getAllanimeEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	preferredMode := normalizeTranslationType(config.SubOrDub)
 	fallbackMode := alternateTranslationType(preferredMode)
 

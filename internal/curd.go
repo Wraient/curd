@@ -668,7 +668,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			// Set the anime details
 			anime.AnilistId = animePointer.AnilistId
 			anilistSelectedOption.Key = strconv.Itoa(animePointer.AnilistId)
-			// anime.AllanimeId = animePointer.AllanimeId
+			// anime.ProviderId = animePointer.ProviderId
 			// anime.Title = animePointer.Title
 			// anime.Ep.Number = animePointer.Ep.Number
 			// anime.Ep.Player.PlaybackTime = animePointer.Ep.Player.PlaybackTime
@@ -707,7 +707,12 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 					}
 
 					// Handle options
-					if categorySelection.Key == "UPDATE" {
+					if categorySelection.Key == "PROVIDER" {
+						ClearScreen()
+						ChangeProvider(userCurdConfig)
+						ClearScreen()
+						continue categorySelectionLoop
+					} else if categorySelection.Key == "UPDATE" {
 						ClearScreen()
 						UpdateAnimeEntry(userCurdConfig, user)
 						// If UpdateAnimeEntry returns, user pressed back - continue to category selection
@@ -772,6 +777,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 						// Add "Add new anime" option to the slice
 						tempOptions := make([]SelectionOption, len(animeListOptions))
 						copy(tempOptions, animeListOptions)
+
 						tempOptions = append(tempOptions, SelectionOption{
 							Key:   "add_new",
 							Label: "Add new anime",
@@ -781,6 +787,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 							Updates: user.ListSync.Updates(),
 							BuildOptions: func(list AnimeList) []SelectionOption {
 								updatedOptions := buildCategorySelectionOptions(list, categorySelection.Key)
+
 								updatedOptions = append(updatedOptions, SelectionOption{
 									Key:   "add_new",
 									Label: "Add new anime",
@@ -854,9 +861,21 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			ExitCurd(fmt.Errorf("Can not find the anime in anilist animelist"))
 		}
 
+		if selectedAnilistAnime.Media.Status == "NOT_YET_RELEASED" {
+			CurdOut("This anime is not yet released. Cannot play.")
+			time.Sleep(2 * time.Second)
+			anime.Ep.ContinueLast = false
+			ClearScreen()
+			continue
+		}
+
 		// Set anime entry
 		anime.Title = selectedAnilistAnime.Media.Title
 		anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
+		anime.CoverImage = selectedAnilistAnime.CoverImage
+		if anime.MalId == 0 {
+			anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
+		}
 		anime.IsAiring = selectedAnilistAnime.Media.Status == "RELEASING" || selectedAnilistAnime.Media.Status == "NOT_YET_RELEASED"
 		anime.Rewatching = selectedAnilistAnime.Status == "REPEATING"
 		anime.Repeat = selectedAnilistAnime.Repeat
@@ -888,9 +907,19 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 		}
 
-		// if anime not found in database, find it in animeList
+		// Check if we need to research provider ID
+		needsProviderSearch := false
 		if animePointer == nil {
-			Log("Anime not found in database, searching in animeList...")
+			needsProviderSearch = true
+		} else if animePointer.ProviderName != "" && animePointer.ProviderName != GetProvider().Name() {
+			needsProviderSearch = true
+		} else if animePointer.ProviderName == "" && GetProvider().Name() != "allanime" {
+			needsProviderSearch = true
+		}
+
+		// if anime not found in database or provider changed, find it in animeList
+		if needsProviderSearch {
+			Log("Anime not found in database for current provider, searching in animeList...")
 			// Get Anime list (All anime)
 			Log(fmt.Sprintf("Searching for anime with query: %s, SubOrDub: %s", userQuery, userCurdConfig.SubOrDub))
 
@@ -954,8 +983,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				if strings.Contains(option.Thumbnail, "anilist.co") {
 					matches := anilistRegex.FindStringSubmatch(option.Thumbnail)
 					if len(matches) > 1 && matches[1] == anilistIDStr {
-						anime.AllanimeId = option.Key
-						Log(fmt.Sprintf("Found Anilist Thumbnail match! Setting AllanimeId to: %s", anime.AllanimeId))
+						anime.ProviderId = option.Key
+						Log(fmt.Sprintf("Found Anilist Thumbnail match! Setting ProviderId to: %s", anime.ProviderId))
 						found = true
 						break
 					}
@@ -982,8 +1011,8 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 						for _, url := range jikanUrls {
 							if strings.HasSuffix(url, "/"+fileName) || strings.Contains(url, fileName) {
-								anime.AllanimeId = option.Key
-								Log(fmt.Sprintf("Found MyAnimeList Thumbnail match (%s)! Setting AllanimeId to: %s", fileName, anime.AllanimeId))
+								anime.ProviderId = option.Key
+								Log(fmt.Sprintf("Found MyAnimeList Thumbnail match (%s)! Setting ProviderId to: %s", fileName, anime.ProviderId))
 								found = true
 								break
 							}
@@ -995,13 +1024,118 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				}
 			}
 
-			// 2. Fallback to naive title/episode match
+			// 2. Jikan Metadata & Exact Anilist Meta Tag Matching (for animepahe)
+			if !found && GetProvider().Name() == "animepahe" {
+				Log("Attempting deep metadata matching and exact AniList meta tag check for Animepahe...")
+				
+				targetAnilistID := strconv.Itoa(anime.AnilistId)
+				var bestMatch *SelectionOption
+				var highestScore int
+
+				if anime.MalId == 0 {
+					anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
+				}
+				
+				var malData *JikanAnimeData
+				if anime.MalId != 0 {
+					malData, _ = FetchJikanAnimeData(anime.MalId)
+				}
+
+				for i := range animeList {
+					opt := &animeList[i]
+					score := 0
+
+					if malData != nil && opt.ExtraData != nil {
+						if paheData, ok := opt.ExtraData.(AnimepaheSearchItem); ok {
+							paheTitleLower := strings.ToLower(paheData.Title)
+							malTitleLower := strings.ToLower(malData.Title)
+							malTitleEngLower := strings.ToLower(malData.TitleEnglish)
+							malTitleJapLower := strings.ToLower(malData.TitleJapanese)
+
+							if paheTitleLower == malTitleLower || (malTitleEngLower != "" && paheTitleLower == malTitleEngLower) || (malTitleJapLower != "" && paheTitleLower == malTitleJapLower) {
+								score += 5
+							} else if strings.Contains(paheTitleLower, malTitleLower) || strings.Contains(malTitleLower, paheTitleLower) ||
+								(malTitleEngLower != "" && (strings.Contains(paheTitleLower, malTitleEngLower) || strings.Contains(malTitleEngLower, paheTitleLower))) {
+								score += 2
+							}
+
+							if paheData.Year > 0 && malData.Year > 0 && paheData.Year == malData.Year {
+								score += 3
+							}
+							if paheData.Season != "" && malData.Season != "" && strings.EqualFold(paheData.Season, malData.Season) {
+								score += 2
+							}
+							if paheData.Type != "" && malData.Type != "" && strings.EqualFold(paheData.Type, malData.Type) {
+								score += 2
+							}
+							if paheData.Episodes > 0 && malData.Episodes > 0 && paheData.Episodes == malData.Episodes {
+								score += 2
+							} else if (paheData.Episodes == 0 && malData.Status == "Currently Airing") || (malData.Episodes == 0 && paheData.Status == "Currently Airing") {
+								score += 2
+							}
+							if strings.EqualFold(paheData.Status, malData.Status) {
+								score += 1
+							}
+						}
+					} else {
+						if strings.Contains(strings.ToLower(opt.Title), strings.ToLower(string(userQuery))) {
+							score += 2
+						}
+					}
+
+					// If it has a decent score (or there are very few options), let's verify with the exact AniList meta tag
+					if score >= 2 || len(animeList) <= 3 {
+						animeUrl := fmt.Sprintf("https://animepahe.pw/anime/%s", opt.Key)
+						Log(fmt.Sprintf("Fetching %s to check exact AniList meta tag...", animeUrl))
+						req, _ := http.NewRequest("GET", animeUrl, nil)
+						req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+						
+						resp, err := sharedHTTPClient.Do(req)
+						if err == nil && resp.StatusCode == 200 {
+							body, _ := io.ReadAll(resp.Body)
+							resp.Body.Close()
+							bodyStr := string(body)
+							
+							metaTag := fmt.Sprintf(`<meta name="anilist" content="%s">`, targetAnilistID)
+							if strings.Contains(bodyStr, metaTag) {
+								Log(fmt.Sprintf("FOUND EXACT ANILIST META TAG MATCH in %s!", opt.Title))
+								bestMatch = opt
+								highestScore = 100 // Guarantee selection
+								break
+							} else {
+								malMetaTag := fmt.Sprintf(`<meta name="mal" content="%d">`, anime.MalId)
+								if anime.MalId != 0 && strings.Contains(bodyStr, malMetaTag) {
+									Log(fmt.Sprintf("FOUND EXACT MAL META TAG MATCH in %s!", opt.Title))
+									bestMatch = opt
+									highestScore = 100
+									break
+								}
+							}
+						}
+					}
+
+					if score > highestScore {
+						highestScore = score
+						bestMatch = opt
+					}
+				}
+
+				if bestMatch != nil && highestScore == 100 {
+					anime.ProviderId = bestMatch.Key
+					Log(fmt.Sprintf("Found EXACT meta tag match! Score: %d. Setting ProviderId to: %s", highestScore, anime.ProviderId))
+					found = true
+				} else if bestMatch != nil {
+					Log(fmt.Sprintf("Highest match score was %d (needed 100 for Animepahe exact meta tag match). Not selecting automatically to prevent false positives.", highestScore))
+				}
+			}
+
+			// 3. Fallback to naive title/episode match
 			if !found {
 				targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
 				for _, option := range animeList {
 					if fmt.Sprintf("%s (%d episodes)", option.Title, selectedAnilistAnime.Media.Episodes) == targetLabel {
-						anime.AllanimeId = option.Key
-						Log(fmt.Sprintf("Found exact text match! Setting AllanimeId to: %s", anime.AllanimeId))
+						anime.ProviderId = option.Key
+						Log(fmt.Sprintf("Found exact text match! Setting ProviderId to: %s", anime.ProviderId))
 						found = true
 						break
 					}
@@ -1012,7 +1146,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 
 			// If unable to get Allanime id automatically get manually
-			if anime.AllanimeId == "" {
+			if anime.ProviderId == "" {
 				CurdOut("We didn't find any matches. Please select manually.")
 				selectedAllanimeAnime, err := DynamicSelect(animeList)
 
@@ -1033,11 +1167,15 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				if err != nil {
 					ExitCurd(fmt.Errorf("No anime available"))
 				}
-				anime.AllanimeId = selectedAllanimeAnime.Key
+				anime.ProviderId = selectedAllanimeAnime.Key
 			}
-		} else {
-			// if anime found in database, use it
-			anime.AllanimeId = animePointer.AllanimeId
+		}
+
+		// if anime found in database, use its playback state
+		if animePointer != nil {
+			if !needsProviderSearch {
+				anime.ProviderId = animePointer.ProviderId
+			}
 			anime.Ep.Player.PlaybackTime = animePointer.Ep.Player.PlaybackTime
 			if anime.Ep.Number == animePointer.Ep.Number {
 				anime.Ep.Resume = true
@@ -1177,7 +1315,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				CurdOut(fmt.Sprintf("Failed to retrieve anime list: %v", err))
 			} else {
 				for _, option := range animeList {
-					if option.Key == anime.AllanimeId {
+					if option.Key == anime.ProviderId {
 						// Extract total episodes from the label
 						if matches := regexp.MustCompile(`\((\d+) episodes\)`).FindStringSubmatch(option.Label); len(matches) > 1 {
 							anime.TotalEpisodes, _ = strconv.Atoi(matches[1])
@@ -1255,7 +1393,7 @@ func WriteTokenToFile(token string, filePath string) error {
 func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 
 	// Validate inputs
-	if anime.AllanimeId == "" {
+	if anime.ProviderId == "" {
 		CurdOut("Error: No anime ID found")
 		os.Exit(1)
 	}
@@ -1268,15 +1406,17 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 		anime.Ep.Links = anime.Ep.NextEpisode.Links
 	} else {
 		// Get episode link
-		link, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+		link, err := GetEpisodeURL(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
 		if len(link) > 0 {
 			Log(fmt.Sprintf("Links details: %+v", link))
 		}
 		if err != nil {
+			Log(fmt.Sprintf("GetEpisodeURL failed: %v", err))
 			// If unable to get episode link automatically get manually
-			episodeList, err := EpisodesList(anime.AllanimeId, userCurdConfig.SubOrDub)
+			episodeList, err := EpisodesList(anime.ProviderId, userCurdConfig.SubOrDub)
 			if err != nil {
-				CurdOut("No episode list found")
+				CurdOut("No episode list found: " + err.Error())
+				Log(fmt.Sprintf("EpisodesList failed: %v", err))
 				RestoreScreen()
 				os.Exit(1)
 			}
@@ -1291,7 +1431,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 				CurdOut(fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
 				fmt.Scanln(&anime.Ep.Number)
 			}
-			link, err = GetEpisodeURL(*userCurdConfig, anime.AllanimeId, anime.Ep.Number)
+			link, err = GetEpisodeURL(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
 			if err != nil {
 				CurdOut("Failed to get episode link")
 				os.Exit(1)
@@ -1318,7 +1458,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 			if userCurdConfig.SkipFiller && IsEpisodeFiller(anime.FillerEpisodes, anime.Ep.Number) {
 				nextEpNum = GetNextCanonEpisode(anime.FillerEpisodes, nextEpNum)
 			}
-			nextLinks, err := GetEpisodeURL(*userCurdConfig, anime.AllanimeId, nextEpNum)
+			nextLinks, err := GetEpisodeURL(*userCurdConfig, anime.ProviderId, nextEpNum)
 			if err != nil {
 				Log(fmt.Sprintf("Error getting next episode link for ep %d: %v", nextEpNum, err))
 			} else {
@@ -1527,7 +1667,7 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 				}
 
 				// Update local database
-				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime))
+				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime), GetProvider().Name())
 				if err != nil {
 					Log("Error updating local database on quit: " + err.Error())
 				}
@@ -1554,7 +1694,7 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 			anime.Ep.IsCompleted = true
 
 			// Update database with completed episode first
-			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime))
+			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime), GetProvider().Name())
 			if err != nil {
 				Log("Error updating local database with completed episode: " + err.Error())
 			}
@@ -1579,7 +1719,7 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 				Log(fmt.Sprintf("No prefetched links available for episode %d, will fetch new ones", anime.Ep.Number))
 			}
 
-			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
+			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, 0, 0, GetAnimeName(*anime), GetProvider().Name())
 			if err != nil {
 				Log("Error updating local database with next episode: " + err.Error())
 			}
@@ -1665,7 +1805,7 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 	Log("Completed episode, starting next.")
 
 	// Update local database
-	err := LocalUpdateAnime(databaseFile, anime.AnilistId, anime.AllanimeId, anime.Ep.Number, 0, 0, GetAnimeName(*anime))
+	err := LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, 0, 0, GetAnimeName(*anime), GetProvider().Name())
 	if err != nil {
 		Log("Error updating local database: " + err.Error())
 	}
@@ -1950,4 +2090,32 @@ func promptSequelNotInList(sequel *SequelInfo, sequelTitle string, userToken str
 	case "skip", "-1":
 		Log("User declined to add sequel")
 	}
+}
+
+// ChangeProvider allows the user to switch the anime provider
+func ChangeProvider(userCurdConfig *CurdConfig) {
+	options := []SelectionOption{
+		{Key: "allanime", Label: "allanime"},
+		{Key: "animepahe", Label: "animepahe"},
+	}
+
+	selected, err := DynamicSelect(options)
+	if err != nil || selected.Key == "-1" || selected.Key == "-2" {
+		return
+	}
+
+	// Update the config
+	userCurdConfig.Provider = selected.Key
+	CurrentProvider = nil // reset the provider instance
+
+	// Save to config file
+	configPath := filepath.Join(os.ExpandEnv("$HOME"), ".config", "curd", "curd.conf")
+	configMap, err := LoadConfigFromFile(configPath)
+	if err == nil {
+		configMap["Provider"] = selected.Key
+		SaveConfigToFile(configPath, configMap)
+	}
+
+	CurdOut(fmt.Sprintf("\nProvider successfully changed to %s.\n", selected.Label))
+	time.Sleep(1 * time.Second)
 }

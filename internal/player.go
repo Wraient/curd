@@ -15,7 +15,11 @@ import (
 
 var logFile = "debug.log"
 
+// This is not generic but we have MpvArgs in CurdConfig to add custom ones
 const defaultStreamReferrer = "allanime.day"
+
+// We should really handle this by Provider but keeping simple string here for now
+
 
 func getBundledMPVPath() (string, error) {
 	exePath, err := os.Executable()
@@ -198,7 +202,11 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 
 	shouldSetDefaultReferrer := isHTTPStreamLink(link) && !hasMPVReferrerArg(args)
 	if shouldSetDefaultReferrer {
-		args = append(args, fmt.Sprintf("--referrer=%s", defaultStreamReferrer))
+		referrer := defaultStreamReferrer
+		if GetProvider().Name() == "animepahe" {
+			referrer = "https://kwik.cx/"
+		}
+		args = append(args, fmt.Sprintf("--referrer=%s", referrer))
 	}
 
 	// Check if we have an existing socket and if MPV is still running
@@ -207,7 +215,11 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 		mpvSocketPath = anime.Ep.Player.SocketPath
 
 		if shouldSetDefaultReferrer {
-			_, referrerErr := MPVSendCommand(mpvSocketPath, []interface{}{"set_property", "referrer", defaultStreamReferrer})
+			referrer := defaultStreamReferrer
+			if GetProvider().Name() == "animepahe" {
+				referrer = "https://kwik.cx/"
+			}
+			_, referrerErr := MPVSendCommand(mpvSocketPath, []interface{}{"set_property", "referrer", referrer})
 			if referrerErr != nil {
 				Log(fmt.Sprintf("Failed to set referrer property: %v", referrerErr))
 			}

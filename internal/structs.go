@@ -17,7 +17,8 @@ type Anime struct {
 	Repeat         int
 	StartedAt      FuzzyDate
 	CompletedAt    FuzzyDate
-	AllanimeId     string // Can be populated as necessary
+	ProviderId     string // Can be populated as necessary
+	ProviderName   string // newly added for history migration
 	FillerEpisodes []int
 	IsAiring       bool
 }
@@ -145,4 +146,5 @@ type SelectionOption struct {
 	Label     string
 	Key       string
 	Thumbnail string
+	ExtraData interface{}
 }
