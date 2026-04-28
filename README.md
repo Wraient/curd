@@ -24,6 +24,8 @@ https://github.com/user-attachments/assets/cbf799bc-9fdd-4402-ab61-b4e31f1e264d
 
 
 ## Features
+- Multiple Content Providers (AllAnime and Animepahe) with up to 1080p support
+- Built-in headless browser to bypass Cloudflare/DDoS-Guard protections
 - Stream anime online
 - Update anime in Anilist after completion
 - Skip anime Intro and Outro
@@ -370,7 +372,8 @@ config file is located at ```~/.config/curd/curd.conf```
 | `Player`                  | String     | any mpv-compatible binary (e.g. `mpv`, `iina`) | Player binary used for playback. If not found, Curd falls back to `mpv`.                          |
 | `SaveMpvSpeed`            | Boolean    | `true`, `false`                           | Retains the playback speed set in MPV for next episode.                                           |
 | `SkipFiller`              | Boolean    | `true`, `false`                           | Skips filler episodes when supported.                                                             |
-| `MenuOrder`               | String     | Comma-separated list                      | Controls which menu items appear and their order. Available options: `CURRENT`, `ALL`, `UNTRACKED`, `UPDATE`, `CONTINUE_LAST`, `PLANNING`, `COMPLETED`, `PAUSED`, `DROPPED`, `REWATCHING`. Only listed items will be shown. Default: `CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST` |
+| `MenuOrder`               | String     | Comma-separated list                      | Controls which menu items appear and their order. Available options: `CURRENT`, `ALL`, `UNTRACKED`, `UPDATE`, `CONTINUE_LAST`, `PLANNING`, `COMPLETED`, `PAUSED`, `DROPPED`, `REWATCHING`, `PROVIDER`. Only listed items will be shown. Default: `CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,PROVIDER` |
+| `Provider`                | Enum       | `allanime`, `animepahe`                   | Sets the content provider for anime streams. `animepahe` requires chromium to bypass DDoS-Guard. Default: `allanime` |
 
 ## Todo (fix)
 - Use Powershell for windows token input instead of notepad or cmd
@@ -381,11 +384,13 @@ config file is located at ```~/.config/curd/curd.conf```
 - iina - Optional mpv-based player on macOS
 - rofi - Selection menu
 - ueberzug - Display images in rofi
-    
+- chromium - Required for Animepahe (auto-downloaded by default, but Termux users must install manually via `pkg install chromium`)
+
 ## API Used
 - [Anilist API](https://anilist.gitbook.io/anilist-apiv2-docs) - Update user data and download user data
 - [AniSkip API](https://api.aniskip.com/api-docs) - Get anime intro and outro timings
 - [AllAnime Content](https://allanime.to/) - Fetch anime url
+- [Animepahe Content](https://animepahe.pw/) - Alternative provider for 1080p streams
 - [Jikan](https://jikan.moe/) - Get filler episode number
 
 ## Credits
