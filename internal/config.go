@@ -582,6 +582,13 @@ func PopulateConfig(configMap map[string]string) CurdConfig {
 		config.MpvArgs = parseStringArray(mpvArgs)
 	}
 
+	// Validate PercentageToMarkComplete range (0-100)
+	if config.PercentageToMarkComplete < 0 {
+		config.PercentageToMarkComplete = 0
+	} else if config.PercentageToMarkComplete > 100 {
+		config.PercentageToMarkComplete = 100
+	}
+
 	return config
 }
 
