@@ -93,6 +93,13 @@ func main() {
 
 	flag.Parse()
 
+	// Validate PercentageToMarkComplete range (0-100) from CLI flag
+	if userCurdConfig.PercentageToMarkComplete < 0 {
+		userCurdConfig.PercentageToMarkComplete = 0
+	} else if userCurdConfig.PercentageToMarkComplete > 100 {
+		userCurdConfig.PercentageToMarkComplete = 100
+	}
+
 	// Check version before screen clearing
 	if *versionFlag {
 		fmt.Printf("Curd version: %s\n", resolvedVersion())
