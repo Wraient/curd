@@ -28,6 +28,7 @@ func main() {
 	var user internal.User
 
 	internal.SetGlobalAnime(&anime)
+	internal.SetGlobalUser(&user)
 
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -121,15 +122,6 @@ func main() {
 		}
 	}
 
-	if *changeToken {
-		internal.ChangeToken(&userCurdConfig, &user)
-		return
-	}
-
-	// Setup screen for interactive mode (only if not changing token)
-	internal.ClearScreen()
-	defer internal.RestoreScreen()
-
 	if *currentCategory {
 		userCurdConfig.CurrentCategory = true
 	}
@@ -155,6 +147,36 @@ func main() {
 		return
 	}
 
+	if userCurdConfig.RofiSelection {
+		filesToCheck := []string{
+			"selectanimepreview.rasi",
+			"selectanime.rasi",
+			"userinput.rasi",
+		}
+
+		err := internal.CheckAndDownloadFiles(os.ExpandEnv(userCurdConfig.StoragePath), filesToCheck)
+		if err != nil {
+			internal.Log(fmt.Sprintf("Error checking and downloading files: %v\n", err))
+			internal.CurdOut(fmt.Sprintf("Error checking and downloading files: %v\n", err))
+			internal.ExitCurd(err)
+		}
+	}
+
+	if err := internal.EnsureTrackingConfigured(&userCurdConfig); err != nil {
+		fmt.Println("Error configuring tracking:", err)
+		return
+	}
+	internal.SetGlobalConfig(&userCurdConfig)
+
+	if *changeToken {
+		internal.ChangeTrackingToken(&userCurdConfig, &user)
+		return
+	}
+
+	// Setup screen for interactive mode (only if not changing token)
+	internal.ClearScreen()
+	defer internal.RestoreScreen()
+
 	// Set SubOrDub based on the flags
 	if *subFlag {
 		userCurdConfig.SubOrDub = "sub"
@@ -162,28 +184,10 @@ func main() {
 		userCurdConfig.SubOrDub = "dub"
 	}
 
-	// Get the token from the token file
-	user.Token, err = internal.GetTokenFromFile(filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "anilist_token.json"))
-	if err != nil {
-		internal.Log("Error reading token")
-	}
-	if user.Token == "" {
-		internal.ChangeToken(&userCurdConfig, &user)
-	}
-
-	if userCurdConfig.RofiSelection {
-		// Define a slice of file names to check and download
-		filesToCheck := []string{
-			"selectanimepreview.rasi",
-			"selectanime.rasi",
-			"userinput.rasi",
-		}
-
-		// Call the function to check and download files
-		err := internal.CheckAndDownloadFiles(os.ExpandEnv(userCurdConfig.StoragePath), filesToCheck)
-		if err != nil {
-			internal.Log(fmt.Sprintf("Error checking and downloading files: %v\n", err))
-			internal.CurdOut(fmt.Sprintf("Error checking and downloading files: %v\n", err))
+	// Get the token from the token file for the configured remote tracker.
+	if internal.UsesRemoteTracking(&userCurdConfig) {
+		if err := internal.EnsureConfiguredTrackersReady(&userCurdConfig, &user); err != nil {
+			internal.Log("Error preparing trackers: " + err.Error())
 			internal.ExitCurd(err)
 		}
 	}
@@ -204,7 +208,7 @@ func main() {
 		internal.Log("Error finding anime by Anilist ID: " + err.Error())
 	}
 
-	if anime.TotalEpisodes == temp_anime.Progress && temp_anime.Status != "CURRENT" {
+	if err == nil && temp_anime != nil && anime.TotalEpisodes == temp_anime.Progress && temp_anime.Status != "CURRENT" {
 		internal.Log(temp_anime.Progress)
 		internal.Log(anime.TotalEpisodes)
 		internal.Log(user.AnimeList)

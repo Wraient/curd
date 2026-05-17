@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // FindKeyByValue searches for a key associated with a given value in a map[string]string
@@ -136,6 +137,44 @@ func min3(a, b, c int) int {
 	return c
 }
 
+func doAniListSearchRequest(url string, requestBody []byte, token string) ([]byte, error) {
+	client := &http.Client{}
+	for attempt := 0; attempt < 5; attempt++ {
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create new request: %w", err)
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to make request: %w", err)
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", readErr)
+		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if attempt == 4 {
+				return nil, fmt.Errorf("failed to search for anime. Status Code: %d, Response: %s", resp.StatusCode, string(body))
+			}
+			time.Sleep(aniListRetryDelay(resp, attempt))
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("failed to search for anime. Status Code: %d, Response: %s", resp.StatusCode, string(body))
+		}
+		return body, nil
+	}
+
+	return nil, fmt.Errorf("AniList search failed after retries")
+}
+
 // SearchAnimeAnilist sends the query to AniList and returns a map of title to ID
 func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPreview, error) {
 	url := "https://graphql.anilist.co"
@@ -166,29 +205,9 @@ func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPrevie
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	body, err := doAniListSearchRequest(url, requestBody, token)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to search for anime. Status Code: %d, Response: %s", resp.StatusCode, string(body))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, err
 	}
 
 	var responseData map[string]ResponseData
@@ -259,29 +278,9 @@ func SearchAnimeAnilist(query, token string) ([]SelectionOption, error) {
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	body, err := doAniListSearchRequest(url, requestBody, token)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to search for anime. Status Code: %d, Response: %s", resp.StatusCode, string(body))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, err
 	}
 
 	var responseData map[string]ResponseData
@@ -335,9 +334,11 @@ func GetAnilistUserID(token string) (int, string, error) {
 	}`
 
 	headers := map[string]string{
-		"Authorization": "Bearer " + token,
-		"Content-Type":  "application/json",
-		"Accept":        "application/json",
+		"Content-Type": "application/json",
+		"Accept":       "application/json",
+	}
+	if token != "" {
+		headers["Authorization"] = "Bearer " + token
 	}
 
 	response, err := makePostRequest(url, query, nil, headers)
@@ -353,7 +354,7 @@ func GetAnilistUserID(token string) (int, string, error) {
 }
 
 // Function to add an anime to the watching list
-func AddAnimeToWatchingList(animeID int, token string) error {
+func AddAniListAnimeToWatchingList(animeID int, token string) error {
 	url := "https://graphql.anilist.co"
 	mutation := `
 	mutation ($mediaId: Int) {
@@ -367,9 +368,9 @@ func AddAnimeToWatchingList(animeID int, token string) error {
 		"mediaId": animeID,
 	}
 
-	headers := map[string]string{
-		"Authorization": "Bearer " + token,
-		"Content-Type":  "application/json",
+	headers := map[string]string{"Content-Type": "application/json"}
+	if token != "" {
+		headers["Authorization"] = "Bearer " + token
 	}
 
 	_, err := makePostRequest(url, mutation, variables, headers)
@@ -440,8 +441,10 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 		MediaListCollection(userId: $userId, type: $type) {
 			lists {
 				entries {
+					id
 					media {
 						id
+						idMal
 						episodes
 						duration
 						title {
@@ -455,6 +458,7 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 					score
 					progress
 					repeat
+					updatedAt
 					startedAt {
 						year
 						month
@@ -475,9 +479,9 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 		"type":   "ANIME",
 	}
 
-	headers := map[string]string{
-		"Authorization": "Bearer " + token,
-		"Content-Type":  "application/json",
+	headers := map[string]string{"Content-Type": "application/json"}
+	if token != "" {
+		headers["Authorization"] = "Bearer " + token
 	}
 
 	response, err := makePostRequest("https://graphql.anilist.co", query, variables, headers)
@@ -494,8 +498,10 @@ func GetUserDataPreview(token string, userID int) (map[string]interface{}, error
 		MediaListCollection(userId: $userId, type: $type) {
 			lists {
 				entries {
+					id
 					media {
 						id
+						idMal
 						episodes
 						duration
 						coverImage {
@@ -512,6 +518,7 @@ func GetUserDataPreview(token string, userID int) (map[string]interface{}, error
 					score
 					progress
 					repeat
+					updatedAt
 					startedAt {
 						year
 						month
@@ -532,9 +539,9 @@ func GetUserDataPreview(token string, userID int) (map[string]interface{}, error
 		"type":   "ANIME",
 	}
 
-	headers := map[string]string{
-		"Authorization": "Bearer " + token,
-		"Content-Type":  "application/json",
+	headers := map[string]string{"Content-Type": "application/json"}
+	if token != "" {
+		headers["Authorization"] = "Bearer " + token
 	}
 
 	response, err := makePostRequest("https://graphql.anilist.co", query, variables, headers)
@@ -593,8 +600,8 @@ func SearchAnimeByTitle(jsonData map[string]interface{}, searchTitle string) []m
 }
 
 // Function to update anime progress
-func UpdateAnimeProgress(token string, mediaID, progress int) error {
-	err := SaveAnimeListEntry(token, mediaID, nil, &progress, nil, nil, nil)
+func UpdateAniListAnimeProgress(token string, mediaID, progress int) error {
+	err := SaveAniListAnimeListEntry(token, mediaID, nil, &progress, nil, nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -603,8 +610,8 @@ func UpdateAnimeProgress(token string, mediaID, progress int) error {
 	return nil
 }
 
-func UpdateAnimeStatus(token string, mediaID int, status string) error {
-	err := SaveAnimeListEntry(token, mediaID, &status, nil, nil, nil, nil)
+func UpdateAniListAnimeStatus(token string, mediaID int, status string) error {
+	err := SaveAniListAnimeListEntry(token, mediaID, &status, nil, nil, nil, nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to update anime status: %w", err)
 	}
@@ -622,7 +629,7 @@ func UpdateAnimeStatus(token string, mediaID int, status string) error {
 	return nil
 }
 
-func SaveAnimeListEntry(token string, mediaID int, status *string, progress *int, repeat *int, startedAt *FuzzyDate, completedAt *FuzzyDate) error {
+func SaveAniListAnimeListEntry(token string, mediaID int, status *string, progress *int, repeat *int, score *float64, startedAt *FuzzyDate, completedAt *FuzzyDate) error {
 	url := "https://graphql.anilist.co"
 	query := `
 	mutation(
@@ -630,6 +637,7 @@ func SaveAnimeListEntry(token string, mediaID int, status *string, progress *int
 		$status: MediaListStatus
 		$progress: Int
 		$repeat: Int
+		$score: Float
 		$startedAt: FuzzyDateInput
 		$completedAt: FuzzyDateInput
 	) {
@@ -638,6 +646,7 @@ func SaveAnimeListEntry(token string, mediaID int, status *string, progress *int
 			status: $status
 			progress: $progress
 			repeat: $repeat
+			score: $score
 			startedAt: $startedAt
 			completedAt: $completedAt
 		) {
@@ -670,18 +679,29 @@ func SaveAnimeListEntry(token string, mediaID int, status *string, progress *int
 	if repeat != nil {
 		variables["repeat"] = *repeat
 	}
-	if startedAt != nil && (startedAt.Year != 0 || startedAt.Month != 0 || startedAt.Day != 0) {
-		variables["startedAt"] = map[string]int{
-			"year":  startedAt.Year,
-			"month": startedAt.Month,
-			"day":   startedAt.Day,
+	if score != nil {
+		variables["score"] = *score
+	}
+	if startedAt != nil {
+		if startedAt.Year == 0 && startedAt.Month == 0 && startedAt.Day == 0 {
+			variables["startedAt"] = nil
+		} else {
+			variables["startedAt"] = map[string]int{
+				"year":  startedAt.Year,
+				"month": startedAt.Month,
+				"day":   startedAt.Day,
+			}
 		}
 	}
-	if completedAt != nil && (completedAt.Year != 0 || completedAt.Month != 0 || completedAt.Day != 0) {
-		variables["completedAt"] = map[string]int{
-			"year":  completedAt.Year,
-			"month": completedAt.Month,
-			"day":   completedAt.Day,
+	if completedAt != nil {
+		if completedAt.Year == 0 && completedAt.Month == 0 && completedAt.Day == 0 {
+			variables["completedAt"] = nil
+		} else {
+			variables["completedAt"] = map[string]int{
+				"year":  completedAt.Year,
+				"month": completedAt.Month,
+				"day":   completedAt.Day,
+			}
 		}
 	}
 
@@ -697,36 +717,28 @@ func SaveAnimeListEntry(token string, mediaID int, status *string, progress *int
 	return nil
 }
 
-func CompleteAnimeRewatch(token string, anime Anime) error {
+func CompleteAniListAnimeRewatch(token string, anime Anime) error {
 	status := "COMPLETED"
+	progress := anime.Ep.Number
 	repeat := anime.Repeat + 1
-	return SaveAnimeListEntry(token, anime.AnilistId, &status, nil, &repeat, &anime.StartedAt, &anime.CompletedAt)
+	completedAt := currentFuzzyDate()
+	startedAt := anime.StartedAt
+	if startedAt == (FuzzyDate{}) {
+		startedAt = completedAt
+	}
+	return SaveAniListAnimeListEntry(token, anime.AnilistId, &status, &progress, &repeat, nil, &startedAt, &completedAt)
 }
 
 // Function to rate an anime on AniList
-func RateAnime(token string, mediaID int) error {
-	var score float64
-	var err error
-
-	userCurdConfig := GetGlobalConfig()
-	if userCurdConfig == nil {
-		return fmt.Errorf("failed to get curd config")
+func RateAniListAnime(token string, mediaID int) error {
+	score, err := promptAnimeScoreValue()
+	if err != nil {
+		return err
 	}
+	return saveAniListAnimeScore(token, mediaID, score)
+}
 
-	if userCurdConfig.RofiSelection {
-		userInput, err := GetUserInputFromRofi("Enter a score for the anime (0-10)")
-		if err != nil {
-			return err
-		}
-		score, err = strconv.ParseFloat(userInput, 64)
-		if err != nil {
-			return err
-		}
-	} else {
-		fmt.Println("Rate this anime: ")
-		fmt.Scanln(&score)
-	}
-
+func saveAniListAnimeScore(token string, mediaID int, score float64) error {
 	url := "https://graphql.anilist.co"
 	query := `
 	mutation($mediaId: Int, $score: Float) {
@@ -747,13 +759,25 @@ func RateAnime(token string, mediaID int) error {
 		"Content-Type":  "application/json",
 	}
 
-	_, err = makePostRequest(url, query, variables, headers)
+	_, err := makePostRequest(url, query, variables, headers)
 	if err != nil {
 		return err
 	}
 
 	CurdOut(fmt.Sprintf("Successfully rated anime (mediaId: %d) with score: %.2f", mediaID, score))
 	return nil
+}
+
+func aniListRetryDelay(resp *http.Response, attempt int) time.Duration {
+	if resp != nil {
+		if retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After")); retryAfter != "" {
+			if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds > 0 {
+				return time.Duration(seconds) * time.Second
+			}
+		}
+	}
+
+	return time.Duration(attempt+1) * 2 * time.Second
 }
 
 // Helper function to make POST requests
@@ -766,40 +790,49 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json") // <-- Important!
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-
 	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
+	for attempt := 0; attempt < 5; attempt++ {
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		req.Header.Set("Content-Type", "application/json")
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", readErr)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if attempt == 4 {
+				return nil, fmt.Errorf("failed with status %d: %s", resp.StatusCode, body)
+			}
+			time.Sleep(aniListRetryDelay(resp, attempt))
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("failed with status %d: %s", resp.StatusCode, body)
+		}
+
+		var responseData map[string]interface{}
+		if err := json.Unmarshal(body, &responseData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+
+		return responseData, nil
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed with status %d: %s", resp.StatusCode, body)
-	}
-
-	var responseData map[string]interface{}
-	// Unmarshal the response into a map
-	err = json.Unmarshal(body, &responseData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	return responseData, nil
+	return nil, fmt.Errorf("AniList request failed after retries")
 }
 
 func ParseAnimeList(input map[string]interface{}) AnimeList {
@@ -860,10 +893,12 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 			entryData := entry.(map[string]interface{})
 			media := entryData["media"].(map[string]interface{})
 			animeEntry := Entry{
+				ListID: toInt(entryData["id"]),
 				Media: Media{
 					Duration: toInt(media["duration"]),
 					Episodes: toInt(media["episodes"]),
 					ID:       toInt(media["id"]),
+					MalID:    toInt(media["idMal"]),
 					Title: AnimeTitle{
 						English:  safeString(media["title"].(map[string]interface{})["english"]),
 						Romaji:   safeString(media["title"].(map[string]interface{})["romaji"]),
@@ -877,6 +912,7 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 				Status:      safeString(entryData["status"]), // Ensure status is fetched safely
 				StartedAt:   parseFuzzyDate(entryData["startedAt"]),
 				CompletedAt: parseFuzzyDate(entryData["completedAt"]),
+				UpdatedAt:   time.Unix(int64(toInt(entryData["updatedAt"])), 0).UTC(),
 			}
 
 			if coverImage, ok := media["coverImage"].(map[string]interface{}); ok {
@@ -950,8 +986,18 @@ func GetAnimeDataByID(id int, token string) (Anime, error) {
 	query ($id: Int) {
 		Media(id: $id, type: ANIME) {
 			id
+			idMal
 			episodes
+			duration
 			status
+			title {
+				romaji
+				english
+				native
+			}
+			coverImage {
+				large
+			}
 			nextAiringEpisode {
 				episode
 			}
@@ -962,9 +1008,9 @@ func GetAnimeDataByID(id int, token string) (Anime, error) {
 		"id": id,
 	}
 
-	headers := map[string]string{
-		"Authorization": "Bearer " + token,
-		"Content-Type":  "application/json",
+	headers := map[string]string{"Content-Type": "application/json"}
+	if token != "" {
+		headers["Authorization"] = "Bearer " + token
 	}
 
 	response, err := makePostRequest(url, query, variables, headers)
@@ -987,9 +1033,26 @@ func GetAnimeDataByID(id int, token string) (Anime, error) {
 		IsAiring:  false,
 	}
 
+	if malID, ok := media["idMal"].(float64); ok {
+		anime.MalId = int(malID)
+	}
+
 	// Safely handle episodes field which might be nil for currently airing shows
 	if episodes, ok := media["episodes"].(float64); ok {
 		anime.TotalEpisodes = int(episodes)
+	}
+	if duration, ok := media["duration"].(float64); ok {
+		anime.Ep.Duration = int(duration) * 60
+	}
+	if title, ok := media["title"].(map[string]interface{}); ok {
+		anime.Title = AnimeTitle{
+			Romaji:   safeAniListString(title["romaji"]),
+			English:  safeAniListString(title["english"]),
+			Japanese: safeAniListString(title["native"]),
+		}
+	}
+	if coverImage, ok := media["coverImage"].(map[string]interface{}); ok {
+		anime.CoverImage = safeAniListString(coverImage["large"])
 	}
 
 	// Check status
@@ -1047,9 +1110,9 @@ func GetAnimeSequel(animeID int, token string) ([]SequelInfo, error) {
 		"id": animeID,
 	}
 
-	headers := map[string]string{
-		"Authorization": "Bearer " + token,
-		"Content-Type":  "application/json",
+	headers := map[string]string{"Content-Type": "application/json"}
+	if token != "" {
+		headers["Authorization"] = "Bearer " + token
 	}
 
 	response, err := makePostRequest(url, query, variables, headers)
@@ -1146,7 +1209,7 @@ func GetAnimeSequel(animeID int, token string) ([]SequelInfo, error) {
 }
 
 // AddAnimeToList adds an anime to a specified list (CURRENT, PLANNING, PAUSED, DROPPED)
-func AddAnimeToList(animeID int, status string, token string) error {
+func AddAniListAnimeToList(animeID int, status string, token string) error {
 	url := "https://graphql.anilist.co"
 	mutation := `
 	mutation ($mediaId: Int, $status: MediaListStatus) {
@@ -1182,6 +1245,24 @@ func AddAnimeToList(animeID int, status string, token string) error {
 
 	CurdOut(fmt.Sprintf("Anime added to: %s", statusMap[status]))
 	return nil
+}
+
+func DeleteAniListListEntry(token string, listID int) error {
+	url := "https://graphql.anilist.co"
+	query := `
+	mutation ($id: Int) {
+		DeleteMediaListEntry(id: $id) {
+			deleted
+		}
+	}`
+
+	headers := map[string]string{"Content-Type": "application/json"}
+	if token != "" {
+		headers["Authorization"] = "Bearer " + token
+	}
+
+	_, err := makePostRequest(url, query, map[string]interface{}{"id": listID}, headers)
+	return err
 }
 
 // FindSequelInAnimeList searches for a sequel in the user's anime list and returns its status

@@ -19,6 +19,7 @@ import (
 )
 
 var animepaheCookiesBypassed bool
+
 func getCookieFilePath() string {
 	return filepath.Join(GetStoragePath(), "animepahe_cookies.json")
 }
@@ -57,7 +58,7 @@ func checkCookiesValid() bool {
 	if resp.StatusCode != 200 {
 		return false
 	}
-	
+
 	contentType := resp.Header.Get("Content-Type")
 	return strings.Contains(contentType, "application/json")
 }
@@ -71,7 +72,7 @@ func (p *AnimepaheProvider) ensureBypass() error {
 	if len(cookies) > 0 {
 		u, _ := url.Parse("https://animepahe.pw")
 		SetCookiesForAnimepahe(u, cookies)
-		
+
 		if checkCookiesValid() {
 			animepaheCookiesBypassed = true
 			Log("Successfully restored Animepahe session from cache.")
@@ -81,7 +82,7 @@ func (p *AnimepaheProvider) ensureBypass() error {
 	}
 
 	CurdOut("Solving Animepahe DDoS-Guard challenge via headless browser...")
-	
+
 	l := launcher.New().Headless(true)
 	defer l.Cleanup()
 	browser := rod.New().ControlURL(l.MustLaunch()).MustConnect()
@@ -89,7 +90,7 @@ func (p *AnimepaheProvider) ensureBypass() error {
 
 	page := browser.MustPage("https://animepahe.pw/")
 	page.MustWaitLoad()
-	
+
 	for i := 0; i < 30; i++ {
 		info, err := page.Info()
 		if err == nil && info.Title != "DDoS-Guard" && info.Title != "Just a moment..." && info.Title != "" {
@@ -112,7 +113,7 @@ func (p *AnimepaheProvider) ensureBypass() error {
 		})
 	}
 	SetCookiesForAnimepahe(u, httpCookies)
-	
+
 	if !checkCookiesValid() {
 		return fmt.Errorf("bypassed cookies are still invalid")
 	}
@@ -130,23 +131,23 @@ func (p *AnimepaheProvider) Name() string {
 }
 
 type AnimepaheSearchItem struct {
-	ID      int     `json:"id"`
-	Title   string  `json:"title"`
-	Type    string  `json:"type"`
-	Episodes int    `json:"episodes"`
-	Status  string  `json:"status"`
-	Season  string  `json:"season"`
-	Year    int     `json:"year"`
-	Score   float64 `json:"score"`
-	Poster  string  `json:"poster"`
-	Session string  `json:"session"`
+	ID       int     `json:"id"`
+	Title    string  `json:"title"`
+	Type     string  `json:"type"`
+	Episodes int     `json:"episodes"`
+	Status   string  `json:"status"`
+	Season   string  `json:"season"`
+	Year     int     `json:"year"`
+	Score    float64 `json:"score"`
+	Poster   string  `json:"poster"`
+	Session  string  `json:"session"`
 }
 
 type animepaheSearchResponse struct {
-	Total       int `json:"total"`
-	PerPage     int `json:"per_page"`
-	CurrentPage int `json:"current_page"`
-	LastPage    int `json:"last_page"`
+	Total       int                   `json:"total"`
+	PerPage     int                   `json:"per_page"`
+	CurrentPage int                   `json:"current_page"`
+	LastPage    int                   `json:"last_page"`
 	Data        []AnimepaheSearchItem `json:"data"`
 }
 
@@ -156,13 +157,13 @@ func (p *AnimepaheProvider) SearchAnime(query, mode string) ([]SelectionOption, 
 	}
 	// animepahe doesn't distinguish sub/dub at the search level
 	searchUrl := fmt.Sprintf("https://animepahe.pw/api?m=search&q=%s", url.QueryEscape(query))
-	
+
 	req, _ := http.NewRequest("GET", searchUrl, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", "https://animepahe.pw/")
 	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	
+
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -223,7 +224,7 @@ func (p *AnimepaheProvider) EpisodesList(showID, mode string) ([]string, error) 
 		req.Header.Set("Referer", "https://animepahe.pw/")
 		req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
 		req.Header.Set("X-Requested-With", "XMLHttpRequest")
-		
+
 		resp, err := sharedHTTPClient.Do(req)
 		if err != nil {
 			return nil, err
@@ -273,7 +274,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	if epNo < 1 || epNo > len(eps) {
 		return nil, fmt.Errorf("episode %d out of bounds (found %d episodes)", epNo, len(eps))
 	}
-	
+
 	mappedEpNo, err := strconv.Atoi(eps[epNo-1])
 	if err != nil {
 		return nil, fmt.Errorf("invalid episode number format in provider: %v", err)
@@ -289,7 +290,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 		req.Header.Set("Referer", "https://animepahe.pw/")
 		req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
 		req.Header.Set("X-Requested-With", "XMLHttpRequest")
-		
+
 		resp, err := sharedHTTPClient.Do(req)
 		if err != nil {
 			return nil, err
@@ -323,7 +324,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	if episodeSession == "" {
 		return nil, fmt.Errorf("episode %d (mapped to %d) not found", epNo, mappedEpNo)
 	}
-	
+
 	// player page: https://animepahe.pw/play/<anime_session>/<episode_session>
 	// stream links in player page: <button type=\"button\" data-src=\"https://kwik.cx/e/Jwd0hMNswksj\"
 	playerUrl := fmt.Sprintf("https://animepahe.pw/play/%s/%s", id, episodeSession)
@@ -331,18 +332,18 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", "https://animepahe.pw/")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-	
+
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	bodyStr := string(body)
 	type streamLink struct {
 		url string
@@ -350,7 +351,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	}
 	var subLinks []streamLink
 	var dubLinks []streamLink
-	
+
 	parts := strings.Split(bodyStr, "<button")
 	for i := 1; i < len(parts); i++ {
 		part := parts[i]
@@ -358,18 +359,18 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 		if srcIdx == -1 {
 			continue
 		}
-		
+
 		startIdx := srcIdx + 10
 		endIdx := strings.Index(part[startIdx:], "\"")
 		if endIdx == -1 {
 			continue
 		}
-		
+
 		link := part[startIdx : startIdx+endIdx]
 		if !strings.Contains(link, "kwik.cx") {
 			continue
 		}
-		
+
 		resIdx := strings.Index(part, "data-resolution=\"")
 		res := 0
 		if resIdx != -1 {
@@ -387,7 +388,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 			subLinks = append(subLinks, sLink)
 		}
 	}
-	
+
 	// Sort by resolution descending
 	sortFunc := func(links []streamLink) {
 		sort.Slice(links, func(i, j int) bool {
@@ -411,7 +412,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 			links = append(links, l.url)
 		}
 	}
-	
+
 	var finalLinks []string
 	for _, kwikLink := range links {
 		m3u8, err := p.extractKwikM3u8(kwikLink)
@@ -419,7 +420,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 			finalLinks = append(finalLinks, m3u8)
 		}
 	}
-	
+
 	if len(finalLinks) == 0 {
 		return nil, fmt.Errorf("failed to extract any stream links from kwik")
 	}
@@ -432,31 +433,31 @@ func (p *AnimepaheProvider) extractKwikM3u8(kwikUrl string) (string, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", "https://animepahe.pw/")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-	
+
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
 	bodyStr := string(body)
-	
+
 	re := regexp.MustCompile(`eval\(function\(p,a,c,k,e,d\).*?\}\('(.*?)',(\d+),(\d+),'([^']+)'\.split\('\|'\).*?\)\)`)
 	matches := re.FindAllStringSubmatch(bodyStr, -1)
-	
+
 	for _, match := range matches {
 		pStr := match[1]
 		a, _ := strconv.Atoi(match[2])
 		c, _ := strconv.Atoi(match[3])
 		k := strings.Split(match[4], "|")
-		
+
 		pStr = strings.ReplaceAll(pStr, "\\'", "'")
 		unpacked := unpackKwik(pStr, a, c, k)
-		
+
 		if strings.Contains(unpacked, "m3u8") {
 			urlRe := regexp.MustCompile(`(https://[a-zA-Z0-9\-\.\/]+m3u8)`)
 			urlMatch := urlRe.FindStringSubmatch(unpacked)

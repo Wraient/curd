@@ -217,6 +217,11 @@ func CurdOut(data interface{}) {
 }
 
 func UpdateAnimeEntry(userCurdConfig *CurdConfig, user *User) {
+	if !UsesRemoteTracking(userCurdConfig) {
+		CurdOut("Remote tracking is disabled in your config.")
+		return
+	}
+
 	// Create update options
 	updateOptions := []SelectionOption{
 		{Key: "CATEGORY", Label: "Change Anime Category"},
@@ -305,8 +310,8 @@ updateOptionLoop:
 			// After getting animeID, get the current anime entry
 			selectedAnilistAnime, err := FindAnimeByAnilistID(user.AnimeList, selectedAnime.Key)
 			if err != nil {
-				Log(fmt.Sprintf("Can not find the anime in anilist animelist: %v", err))
-				ExitCurd(fmt.Errorf("Can not find the anime in anilist animelist"))
+				Log(fmt.Sprintf("Can not find the anime in tracked anime list: %v", err))
+				ExitCurd(fmt.Errorf("Can not find the anime in tracked anime list"))
 			}
 			ClearScreen()
 
@@ -574,6 +579,10 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 		ExitCurd(fmt.Errorf("Failed to convert anime ID to integer"))
 	}
 
+	if !UsesRemoteTracking(userCurdConfig) {
+		return anilistSelectedOption
+	}
+
 	// Add category selection before adding to list
 	categories := []SelectionOption{
 		{Key: "CURRENT", Label: "Currently Watching"},
@@ -710,6 +719,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 					if categorySelection.Key == "PROVIDER" {
 						ClearScreen()
 						ChangeProvider(userCurdConfig)
+						ClearScreen()
+						continue categorySelectionLoop
+					} else if categorySelection.Key == "TRACKER" {
+						ClearScreen()
+						ChangeTracker(userCurdConfig, user)
 						ClearScreen()
 						continue categorySelectionLoop
 					} else if categorySelection.Key == "UPDATE" {
@@ -857,8 +871,29 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		// Get anime entry
 		selectedAnilistAnime, err := FindAnimeByAnilistID(user.AnimeList, anilistSelectedOption.Key)
 		if err != nil {
-			Log(fmt.Sprintf("Can not find the anime in anilist animelist: %v", err))
-			ExitCurd(fmt.Errorf("Can not find the anime in anilist animelist"))
+			if UsesRemoteTracking(userCurdConfig) {
+				Log(fmt.Sprintf("Can not find the anime in tracked anime list: %v", err))
+				ExitCurd(fmt.Errorf("Can not find the anime in tracked anime list"))
+			}
+
+			fallbackAnime, fallbackErr := GetAnimeDataByID(anime.AnilistId, "")
+			if fallbackErr != nil {
+				Log(fmt.Sprintf("Failed to fetch fallback anime data: %v", fallbackErr))
+				ExitCurd(fmt.Errorf("Failed to get anime data"))
+			}
+
+			selectedAnilistAnime = &Entry{
+				Media: Media{
+					ID:       fallbackAnime.AnilistId,
+					MalID:    fallbackAnime.MalId,
+					Episodes: fallbackAnime.TotalEpisodes,
+					Title:    fallbackAnime.Title,
+					Status:   "FINISHED",
+				},
+				Progress:   0,
+				Status:     "CURRENT",
+				CoverImage: fallbackAnime.CoverImage,
+			}
 		}
 
 		if selectedAnilistAnime.Media.Status == "NOT_YET_RELEASED" {
@@ -873,6 +908,9 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.Title = selectedAnilistAnime.Media.Title
 		anime.TotalEpisodes = selectedAnilistAnime.Media.Episodes
 		anime.CoverImage = selectedAnilistAnime.CoverImage
+		if selectedAnilistAnime.Media.MalID != 0 {
+			anime.MalId = selectedAnilistAnime.Media.MalID
+		}
 		if anime.MalId == 0 {
 			anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
 		}
@@ -886,9 +924,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		userQuery = anime.Title.Romaji
 
 		if selectedAnilistAnime.Status == "COMPLETED" {
-			status := "REPEATING"
-			progress := 0
-			err = SaveAnimeListEntry(user.Token, anime.AnilistId, &status, &progress, nil, &anime.StartedAt, &anime.CompletedAt)
+			err = StartAnimeRewatch(user.Token, *anime)
 			if err != nil {
 				Log(fmt.Sprintf("Error starting anime rewatch: %v", err))
 				ExitCurd(fmt.Errorf("Failed to move anime to rewatching"))
@@ -1184,29 +1220,30 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			// If local history episode is ahead of AniList upstream, prompt user
 			anilistEpisode := selectedAnilistAnime.Progress + 1
 			if animePointer.Ep.Number > anilistEpisode {
-				Log(fmt.Sprintf("Local history episode (%d) is ahead of AniList episode (%d), prompting user", animePointer.Ep.Number, anilistEpisode))
+				trackerLabel := RemoteTrackingDisplayName(userCurdConfig)
+				Log(fmt.Sprintf("Local history episode (%d) is ahead of %s episode (%d), prompting user", animePointer.Ep.Number, trackerLabel, anilistEpisode))
 				options := []SelectionOption{
-					{Key: "update_upstream", Label: fmt.Sprintf("Update AniList to episode %d (local history)", animePointer.Ep.Number-1)},
-					{Key: "use_anilist", Label: fmt.Sprintf("Use AniList episode %d", anilistEpisode)},
+					{Key: "update_upstream", Label: fmt.Sprintf("Update %s to episode %d (local history)", trackerLabel, animePointer.Ep.Number-1)},
+					{Key: "use_anilist", Label: fmt.Sprintf("Use %s episode %d", trackerLabel, anilistEpisode)},
 				}
-				CurdOut(fmt.Sprintf("Local history (ep %d) is ahead of AniList (ep %d).", animePointer.Ep.Number, anilistEpisode))
+				CurdOut(fmt.Sprintf("Local history (ep %d) is ahead of %s (ep %d).", animePointer.Ep.Number, trackerLabel, anilistEpisode))
 				selectedOption, err := DynamicSelect(options)
 				if err != nil {
 					Log("Error in episode conflict selection: " + err.Error())
 				} else if selectedOption.Key == "-1" {
 					ExitCurd(nil)
 				} else if selectedOption.Key == "update_upstream" {
-					// Update AniList progress to match local history (progress = local ep - 1, since local ep is "next to watch")
+					// Update remote progress to match local history (progress = local ep - 1, since local ep is "next to watch")
 					progressToUpdate := animePointer.Ep.Number - 1
 					if err := UpdateAnimeProgress(user.Token, anime.AnilistId, progressToUpdate); err != nil {
-						Log(fmt.Sprintf("Error updating AniList progress to %d: %v", progressToUpdate, err))
+						Log(fmt.Sprintf("Error updating %s progress to %d: %v", trackerLabel, progressToUpdate, err))
 					} else {
-						Log(fmt.Sprintf("Updated AniList progress to %d", progressToUpdate))
+						Log(fmt.Sprintf("Updated %s progress to %d", trackerLabel, progressToUpdate))
 					}
 					anime.Ep.Number = animePointer.Ep.Number
 					anime.Ep.Resume = true
 				} else if selectedOption.Key == "use_anilist" {
-					// Use AniList episode number (already set from selectedAnilistAnime.Progress + 1)
+					// Use remote episode number (already set from selectedAnilistAnime.Progress + 1)
 					anime.Ep.Number = anilistEpisode
 					anime.Ep.Player.PlaybackTime = 0
 					anime.Ep.Resume = false
@@ -1245,7 +1282,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			isInWatchingList = true
 		}
 
-		if !isInWatchingList {
+		if UsesRemoteTracking(userCurdConfig) && !isInWatchingList {
 			// Create options for the prompt
 			options := []SelectionOption{
 				{Key: "yes", Label: "Add to watching list"},
@@ -1328,7 +1365,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 			if anime.TotalEpisodes == 0 {
 				CurdOut("Still unable to determine total episodes.")
-				CurdOut(fmt.Sprintf("Your AniList progress: %d", selectedAnilistAnime.Progress))
+				CurdOut(fmt.Sprintf("Your %s progress: %d", RemoteTrackingDisplayName(userCurdConfig), selectedAnilistAnime.Progress))
 				var episodeNumber int
 				if userCurdConfig.RofiSelection {
 					userInput, err := GetUserInputFromRofi("Enter the episode you want to start from")
@@ -1679,12 +1716,14 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 					Log("Error updating local database on quit: " + err.Error())
 				}
 
-				go func() {
-					err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
-					if err != nil {
-						Log("Error updating Anilist progress on quit: " + err.Error())
-					}
-				}()
+				if !(anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && anime.Rewatching) {
+					go func() {
+						err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
+						if err != nil {
+							Log("Error updating Anilist progress on quit: " + err.Error())
+						}
+					}()
+				}
 
 				CurdOut(fmt.Sprintf("Episode completed (%.1f%% watched). Exiting.", percentageWatched))
 			} else {
@@ -1773,9 +1812,11 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 		// Handle scoring and completion for the last episode
 		HandleLastEpisodeCompletion(userCurdConfig, anime, userToken)
 
-		err := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
-		if err != nil {
-			Log("Error updating Anilist progress: " + err.Error())
+		if !anime.Rewatching {
+			err := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
+			if err != nil {
+				Log("Error updating Anilist progress: " + err.Error())
+			}
 		}
 		// Note: UpdateAnimeProgress already outputs a message on success
 
@@ -1880,6 +1921,10 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userT
 
 // handleSequelCheck checks for sequels and prompts the user accordingly
 func handleSequelCheck(userCurdConfig *CurdConfig, anime *Anime, userToken string) {
+	if !UsesRemoteTracking(userCurdConfig) {
+		return
+	}
+
 	// Recover from any panics in this function to prevent crashes
 	defer func() {
 		if r := recover(); r != nil {
@@ -1939,28 +1984,16 @@ func handleSequelCheck(userCurdConfig *CurdConfig, anime *Anime, userToken strin
 		return
 	}
 
-	// Fetch user's anime list to check if sequel is already there
-	userId, _, err := GetAnilistUserID(userToken)
-	if err != nil {
-		Log(fmt.Sprintf("Error getting user ID: %v", err))
-		return
+	currentUser := GetGlobalUser()
+	userAnimeList := AnimeList{}
+	if currentUser != nil {
+		userAnimeList = currentUser.AnimeList
 	}
-
-	userData, err := GetUserData(userToken, userId)
-	if err != nil {
-		Log(fmt.Sprintf("Error getting user data: %v", err))
-		return
-	}
-
-	// Check if userData is valid before parsing
-	if userData == nil || userData["data"] == nil {
-		Log("User data is nil or malformed, skipping sequel list check")
-		// Still show the sequel prompt, but assume it's not in any list
+	if !hasAnyEntries(userAnimeList) {
+		Log("Tracked anime list is empty, skipping sequel list check")
 		promptSequelNotInList(sequel, sequelTitle, userToken, anime)
 		return
 	}
-
-	userAnimeList := ParseAnimeList(userData)
 	sequelStatus, isInList := FindSequelInAnimeList(userAnimeList, sequel.ID)
 
 	if !isInList {

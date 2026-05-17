@@ -257,9 +257,9 @@ func LocalFindAnime(animeList []Anime, anilistID int, allanimeID string) *Anime 
 	for i := range animeList {
 		anime := &animeList[i]
 		if anime.AnilistId == anilistID || (allanimeID != "" && anime.ProviderId == allanimeID) {
-			if bestMatch == nil || 
-			   anime.Ep.Number > bestMatch.Ep.Number || 
-			   (anime.Ep.Number == bestMatch.Ep.Number && anime.Ep.Player.PlaybackTime > bestMatch.Ep.Player.PlaybackTime) {
+			if bestMatch == nil ||
+				anime.Ep.Number > bestMatch.Ep.Number ||
+				(anime.Ep.Number == bestMatch.Ep.Number && anime.Ep.Player.PlaybackTime > bestMatch.Ep.Player.PlaybackTime) {
 				bestMatch = anime
 			}
 		}

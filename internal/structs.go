@@ -1,5 +1,7 @@
 package internal
 
+import "time"
+
 type AnimeTitle struct {
 	Romaji   string `json:"title_romanji"`
 	English  string `json:"title"`
@@ -78,6 +80,16 @@ type User struct {
 	ListSync  *AnimeListSync
 }
 
+var globalUser *User
+
+func SetGlobalUser(user *User) {
+	globalUser = user
+}
+
+func GetGlobalUser() *User {
+	return globalUser
+}
+
 // AniListAnime is the struct for the API response
 type AniListAnime struct {
 	ID    int `json:"id"`
@@ -105,11 +117,13 @@ type Media struct {
 	Duration int        `json:"duration"`
 	Episodes int        `json:"episodes"`
 	ID       int        `json:"id"`
+	MalID    int        `json:"mal_id"`
 	Title    AnimeTitle `json:"title"`
 	Status   string     `json:"status"`
 }
 
 type Entry struct {
+	ListID      int       `json:"id"`
 	Media       Media     `json:"media"`
 	Progress    int       `json:"progress"`
 	Repeat      int       `json:"repeat"`
@@ -118,6 +132,7 @@ type Entry struct {
 	StartedAt   FuzzyDate `json:"startedAt"`
 	CompletedAt FuzzyDate `json:"completedAt"`
 	CoverImage  string    `json:"coverImage"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type AnimeList struct {

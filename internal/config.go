@@ -61,6 +61,12 @@ type CurdConfig struct {
 	DiscordPresence          bool     `config:"DiscordPresence"`
 	DiscordClientId          string   `config:"DiscordClientId"`
 	Provider                 string   `config:"Provider"`
+	TrackingLocal            bool     `config:"TrackingLocal"`
+	TrackingRemote           string   `config:"TrackingRemote"`
+	TrackingConfigured       bool     `config:"TrackingConfigured"`
+	MyAnimeListClientID      string   `config:"MyAnimeListClientID"`
+	MyAnimeListClientSecret  string   `config:"MyAnimeListClientSecret"`
+	MyAnimeListImported      bool     `config:"MyAnimeListImported"`
 }
 
 func GetStoragePath() string {
@@ -78,7 +84,7 @@ func defaultConfigMap() map[string]string {
 		"StoragePath":              "$HOME/.local/share/curd",
 		"AnimeNameLanguage":        "english",
 		"SubsLanguage":             "english",
-		"MenuOrder":                "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,PROVIDER",
+		"MenuOrder":                "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,TRACKER,PROVIDER",
 		"SubOrDub":                 "sub",
 		"PercentageToMarkComplete": "85",
 		"NextEpisodePrompt":        "false",
@@ -95,6 +101,12 @@ func defaultConfigMap() map[string]string {
 		"DiscordPresence":          "true",
 		"DiscordClientId":          "1287457464148820089",
 		"Provider":                 "allanime",
+		"TrackingLocal":            "true",
+		"TrackingRemote":           "anilist",
+		"TrackingConfigured":       "false",
+		"MyAnimeListClientID":      "f76d4c827152327b60654285d221222c",
+		"MyAnimeListClientSecret":  "",
+		"MyAnimeListImported":      "false",
 	}
 }
 
@@ -137,6 +149,7 @@ var GlobalConfigPath string
 func LoadConfig(configPath string) (CurdConfig, error) {
 	configPath = os.ExpandEnv(configPath) // Substitute environment variables like $HOME
 	GlobalConfigPath = configPath
+	createdConfig := false
 
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -145,6 +158,7 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 		if err := createDefaultConfig(configPath); err != nil {
 			return CurdConfig{}, fmt.Errorf("error creating default config file: %v", err)
 		}
+		createdConfig = true
 	}
 
 	// Load the config from file
@@ -159,6 +173,10 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 		addMissing, _ = strconv.ParseBool(val)
 	}
 
+	_, hadTrackingRemote := configMap["TrackingRemote"]
+	_, hadTrackingConfigured := configMap["TrackingConfigured"]
+	legacyConfig := !createdConfig && !hadTrackingRemote && !hadTrackingConfigured
+
 	// Add missing fields to the config map
 	updated := false
 	defaultConfigMap := defaultConfigMap()
@@ -167,6 +185,12 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 			configMap[key] = defaultValue
 			updated = true
 		}
+	}
+	if legacyConfig {
+		configMap["TrackingLocal"] = "true"
+		configMap["TrackingRemote"] = TrackingRemoteAniList
+		configMap["TrackingConfigured"] = "true"
+		updated = true
 	}
 
 	// Write updated config back to file only if AddMissingOptions is true
@@ -183,6 +207,7 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 
 	// Populate the CurdConfig struct from the config map
 	config := PopulateConfig(configMap)
+	normalizeTrackingConfig(&config)
 
 	return config, nil
 }
@@ -592,9 +617,39 @@ func PopulateConfig(configMap map[string]string) CurdConfig {
 	return config
 }
 
+func normalizeRemoteTracker(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "none", "disabled", "off", "local":
+		return TrackingRemoteNone
+	case "anilist", "ani-list":
+		return TrackingRemoteAniList
+	case "myanimelist", "my_anime_list", "my-anime-list", "mal":
+		return TrackingRemoteMyAnimeList
+	case "anilist+myanimelist", "anilist,myanimelist", "myanimelist+anilist", "myanimelist,anilist", "both", "dual":
+		return TrackingRemoteBoth
+	default:
+		return ""
+	}
+}
+
+func normalizeTrackingConfig(config *CurdConfig) {
+	if config == nil {
+		return
+	}
+
+	remote := normalizeRemoteTracker(config.TrackingRemote)
+	if remote == "" {
+		config.TrackingConfigured = false
+		remote = TrackingRemoteAniList
+	}
+
+	config.TrackingRemote = remote
+	config.TrackingLocal = true
+}
+
 func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
 	// Define the default categories and all available labels
-	defaultOrder := []string{"CURRENT", "ALL", "UNTRACKED", "UPDATE", "CONTINUE_LAST", "PROVIDER"}
+	defaultOrder := []string{"CURRENT", "ALL", "UNTRACKED", "UPDATE", "CONTINUE_LAST", "TRACKER", "PROVIDER"}
 	availableLabels := map[string]string{
 		"CURRENT":       "Currently Watching",
 		"ALL":           "Show All",
@@ -606,6 +661,7 @@ func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
 		"PAUSED":        "Paused",
 		"DROPPED":       "Dropped",
 		"REWATCHING":    "Rewatching",
+		"TRACKER":       "Change Tracker",
 		"PROVIDER":      "Change Provider",
 	}
 
@@ -629,8 +685,14 @@ func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
 	}
 
 	// Create the final ordered slice of SelectionOptions
+	if !seen["TRACKER"] {
+		finalOrder = append(finalOrder, "TRACKER")
+	}
 	orderedCategories := make([]SelectionOption, 0, len(finalOrder))
 	for _, key := range finalOrder {
+		if !trackingCategoryEnabled(userCurdConfig, key) {
+			continue
+		}
 		orderedCategories = append(orderedCategories, SelectionOption{
 			Key:   key,
 			Label: availableLabels[key],

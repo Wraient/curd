@@ -27,7 +27,8 @@ https://github.com/user-attachments/assets/cbf799bc-9fdd-4402-ab61-b4e31f1e264d
 - Multiple Content Providers (AllAnime and Animepahe) with up to 1080p support
 - Built-in headless browser to bypass Cloudflare/DDoS-Guard protections
 - Stream anime online
-- Update anime in Anilist after completion
+- Track anime locally, on AniList, or on MyAnimeList
+- Browser-based AniList and MyAnimeList login flows
 - Skip anime Intro and Outro
 - Skip Filler and Recap episodes
 - Discord RPC about the anime
@@ -351,6 +352,24 @@ You can quit it anytime and the resume time would be saved in the history file
 more settings can be found at config file.
 config file is located at ```~/.config/curd/curd.conf```
 
+On first start, curd asks which tracking mode you want to use:
+
+- local
+- anilist
+- myanimelist
+- anilist + myanimelist
+
+Local history stays enabled in all modes. `anilist` means local history + AniList sync, `myanimelist` means local history + MyAnimeList sync, and `anilist + myanimelist` updates both platforms. In dual-sync mode, curd compares the latest remote update time for each anime and pushes the newest status/progress/category back to the older tracker so both sides converge automatically. Legacy installs are migrated to `anilist` automatically. If you switch trackers later, curd exposes a **Change Tracker** menu entry and can either merge both lists, replace MyAnimeList with AniList, or replace AniList with MyAnimeList.
+
+MyAnimeList OAuth requires your own MAL application credentials. You can set them in the config file or with environment variables:
+
+```bash
+CURD_MAL_CLIENT_ID=your_client_id
+CURD_MAL_CLIENT_SECRET=your_client_secret
+```
+
+If the browser reaches the localhost callback page but curd does not continue automatically, rerun the command and paste the full callback URL when prompted. Curd now keeps the pending MyAnimeList PKCE state so the login can be completed manually.
+
 | **Option**               | **Type**   | **Valid Values**                           | **Description**                                                                                   |
 |---------------------------|------------|-------------------------------------------|---------------------------------------------------------------------------------------------------|
 | `DiscordPresence`         | Boolean    | `true`, `false`                           | Enables or disables Discord Rich Presence integration.                                            |
@@ -372,8 +391,14 @@ config file is located at ```~/.config/curd/curd.conf```
 | `Player`                  | String     | any mpv-compatible binary (e.g. `mpv`, `iina`) | Player binary used for playback. If not found, Curd falls back to `mpv`.                          |
 | `SaveMpvSpeed`            | Boolean    | `true`, `false`                           | Retains the playback speed set in MPV for next episode.                                           |
 | `SkipFiller`              | Boolean    | `true`, `false`                           | Skips filler episodes when supported.                                                             |
-| `MenuOrder`               | String     | Comma-separated list                      | Controls which menu items appear and their order. Available options: `CURRENT`, `ALL`, `UNTRACKED`, `UPDATE`, `CONTINUE_LAST`, `PLANNING`, `COMPLETED`, `PAUSED`, `DROPPED`, `REWATCHING`, `PROVIDER`. Only listed items will be shown. Default: `CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,PROVIDER` |
+| `MenuOrder`               | String     | Comma-separated list                      | Controls which menu items appear and their order. Available options: `CURRENT`, `ALL`, `UNTRACKED`, `UPDATE`, `CONTINUE_LAST`, `PLANNING`, `COMPLETED`, `PAUSED`, `DROPPED`, `REWATCHING`, `TRACKER`, `PROVIDER`. Only listed items will be shown. Default: `CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,TRACKER,PROVIDER` |
 | `Provider`                | Enum       | `allanime`, `animepahe`                   | Sets the content provider for anime streams. `animepahe` requires chromium to bypass DDoS-Guard. Default: `allanime` |
+| `TrackingLocal`           | Boolean    | `true`                                    | Legacy compatibility flag. Local playback history is always enabled.                              |
+| `TrackingRemote`          | Enum       | `none`, `anilist`, `myanimelist`, `anilist+myanimelist` | Selects which remote tracker curd syncs with.                                           |
+| `TrackingConfigured`      | Boolean    | `true`, `false`                           | Internal flag used to remember that the startup tracking prompt has already been completed.       |
+| `MyAnimeListClientID`     | String     | MAL OAuth client ID                       | Client ID used for MyAnimeList browser login.                                                     |
+| `MyAnimeListClientSecret` | String     | MAL OAuth client secret                   | Optional secret used for MyAnimeList browser login and token refresh.                             |
+| `MyAnimeListImported`     | Boolean    | `true`, `false`                           | Tracks whether the one-time AniList-to-MyAnimeList import prompt has already been handled.        |
 
 ## Todo (fix)
 - Use Powershell for windows token input instead of notepad or cmd
@@ -388,6 +413,7 @@ config file is located at ```~/.config/curd/curd.conf```
 
 ## API Used
 - [Anilist API](https://anilist.gitbook.io/anilist-apiv2-docs) - Update user data and download user data
+- [MyAnimeList API](https://myanimelist.net/apiconfig/references/api/v2) - MyAnimeList OAuth and tracking sync
 - [AniSkip API](https://api.aniskip.com/api-docs) - Get anime intro and outro timings
 - [AllAnime Content](https://allanime.to/) - Fetch anime url
 - [Animepahe Content](https://animepahe.pw/) - Alternative provider for 1080p streams

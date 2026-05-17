@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const animeListCacheFileName = "anilist_list_cache.json"
+const anilistAnimeListCacheFileName = "anilist_list_cache.json"
 
 type animeListCachePayload struct {
 	AnimeList AnimeList `json:"anime_list"`
@@ -75,12 +75,12 @@ func (s *AnimeListSync) Updates() <-chan AnimeList {
 	return s.updates
 }
 
-func animeListCachePath(storagePath string) string {
-	return filepath.Join(os.ExpandEnv(storagePath), animeListCacheFileName)
+func aniListCachePath(storagePath string) string {
+	return filepath.Join(os.ExpandEnv(storagePath), anilistAnimeListCacheFileName)
 }
 
-func loadAnimeListCache(storagePath string, userID int) (animeListCachePayload, error) {
-	cacheFilePath := animeListCachePath(storagePath)
+func loadAniListAnimeListCache(storagePath string, userID int) (animeListCachePayload, error) {
+	cacheFilePath := aniListCachePath(storagePath)
 	data, err := os.ReadFile(cacheFilePath)
 	if err != nil {
 		return animeListCachePayload{}, err
@@ -98,7 +98,7 @@ func loadAnimeListCache(storagePath string, userID int) (animeListCachePayload, 
 	return payload, nil
 }
 
-func saveAnimeListCache(storagePath string, userID int, list AnimeList) error {
+func saveAniListAnimeListCache(storagePath string, userID int, list AnimeList) error {
 	storagePath = os.ExpandEnv(storagePath)
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		return fmt.Errorf("failed to create storage directory: %w", err)
@@ -115,7 +115,7 @@ func saveAnimeListCache(storagePath string, userID int, list AnimeList) error {
 		return fmt.Errorf("failed to marshal anime list cache: %w", err)
 	}
 
-	cacheFilePath := animeListCachePath(storagePath)
+	cacheFilePath := aniListCachePath(storagePath)
 	tempFilePath := cacheFilePath + ".tmp"
 	if err := os.WriteFile(tempFilePath, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write anime list cache: %w", err)
@@ -141,7 +141,7 @@ func animeListEqual(a, b AnimeList) bool {
 	return string(left) == string(right)
 }
 
-func FetchLatestAnimeList(token string, userID int) (AnimeList, error) {
+func FetchLatestAniListAnimeList(token string, userID int) (AnimeList, error) {
 	userData, err := GetUserDataPreview(token, userID)
 	if err != nil {
 		return AnimeList{}, err
@@ -150,7 +150,7 @@ func FetchLatestAnimeList(token string, userID int) (AnimeList, error) {
 	return ParseAnimeList(userData), nil
 }
 
-func refreshAnimeListInBackground(userCurdConfig *CurdConfig, user *User) {
+func refreshAniListAnimeListInBackground(userCurdConfig *CurdConfig, user *User) {
 	if user == nil || user.ListSync == nil {
 		return
 	}
@@ -173,13 +173,13 @@ func refreshAnimeListInBackground(userCurdConfig *CurdConfig, user *User) {
 			}
 		}
 
-		latestList, err := FetchLatestAnimeList(user.Token, user.Id)
+		latestList, err := FetchLatestAniListAnimeList(user.Token, user.Id)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to refresh anime list in background: %v", err))
 			return
 		}
 
-		if err := saveAnimeListCache(userCurdConfig.StoragePath, user.Id, latestList); err != nil {
+		if err := saveAniListAnimeListCache(userCurdConfig.StoragePath, user.Id, latestList); err != nil {
 			Log(fmt.Sprintf("Failed to save refreshed anime list cache: %v", err))
 		}
 
@@ -187,8 +187,8 @@ func refreshAnimeListInBackground(userCurdConfig *CurdConfig, user *User) {
 	}()
 }
 
-func InitializeUserAnimeList(userCurdConfig *CurdConfig, user *User) error {
-	cachedPayload, err := loadAnimeListCache(userCurdConfig.StoragePath, user.Id)
+func InitializeAniListUserAnimeList(userCurdConfig *CurdConfig, user *User) error {
+	cachedPayload, err := loadAniListAnimeListCache(userCurdConfig.StoragePath, user.Id)
 	if err == nil {
 		// Seed user ID from cache so we skip the blocking GetAnilistUserID network call.
 		if user.Id == 0 && cachedPayload.UserID != 0 {
@@ -197,7 +197,7 @@ func InitializeUserAnimeList(userCurdConfig *CurdConfig, user *User) error {
 		user.AnimeList = cachedPayload.AnimeList
 		user.ListSync = NewAnimeListSync(cachedPayload.AnimeList)
 		// Refresh user ID + anime list in the background (non-blocking).
-		refreshAnimeListInBackground(userCurdConfig, user)
+		refreshAniListAnimeListInBackground(userCurdConfig, user)
 		return nil
 	}
 
@@ -215,7 +215,7 @@ func InitializeUserAnimeList(userCurdConfig *CurdConfig, user *User) error {
 		user.Username = username
 	}
 
-	latestList, err := FetchLatestAnimeList(user.Token, user.Id)
+	latestList, err := FetchLatestAniListAnimeList(user.Token, user.Id)
 	if err != nil {
 		return err
 	}
@@ -224,14 +224,14 @@ func InitializeUserAnimeList(userCurdConfig *CurdConfig, user *User) error {
 	user.ListSync = NewAnimeListSync(latestList)
 	// Blocking fetch already has the freshest data — mark done immediately.
 	user.ListSync.MarkRefreshDone()
-	if err := saveAnimeListCache(userCurdConfig.StoragePath, user.Id, latestList); err != nil {
+	if err := saveAniListAnimeListCache(userCurdConfig.StoragePath, user.Id, latestList); err != nil {
 		Log(fmt.Sprintf("Failed to save anime list cache: %v", err))
 	}
 
 	return nil
 }
 
-func RefreshUserAnimeList(userCurdConfig *CurdConfig, user *User) error {
+func RefreshAniListUserAnimeList(userCurdConfig *CurdConfig, user *User) error {
 	if user.Id == 0 {
 		userID, username, err := GetAnilistUserID(user.Token)
 		if err != nil {
@@ -243,7 +243,7 @@ func RefreshUserAnimeList(userCurdConfig *CurdConfig, user *User) error {
 		}
 	}
 
-	latestList, err := FetchLatestAnimeList(user.Token, user.Id)
+	latestList, err := FetchLatestAniListAnimeList(user.Token, user.Id)
 	if err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func RefreshUserAnimeList(userCurdConfig *CurdConfig, user *User) error {
 		user.ListSync.Replace(latestList, true)
 	}
 
-	if err := saveAnimeListCache(userCurdConfig.StoragePath, user.Id, latestList); err != nil {
+	if err := saveAniListAnimeListCache(userCurdConfig.StoragePath, user.Id, latestList); err != nil {
 		Log(fmt.Sprintf("Failed to save anime list cache: %v", err))
 	}
 
