@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,10 +17,9 @@ import (
 var logFile = "debug.log"
 
 // This is not generic but we have MpvArgs in CurdConfig to add custom ones
-const defaultStreamReferrer = "allanime.day"
+const defaultStreamReferrer = "https://allanime.day/"
 
 // We should really handle this by Provider but keeping simple string here for now
-
 
 func getBundledMPVPath() (string, error) {
 	exePath, err := os.Executable()
@@ -188,6 +188,53 @@ func hasMPVReferrerArg(args []string) bool {
 	return false
 }
 
+func normalizeReferrerValue(referrer string) string {
+	referrer = strings.TrimSpace(referrer)
+	if referrer == "" {
+		return ""
+	}
+
+	if !strings.Contains(referrer, "://") {
+		referrer = "https://" + referrer
+	}
+
+	parsed, err := url.Parse(referrer)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return referrer
+	}
+
+	if parsed.Path == "" {
+		parsed.Path = "/"
+	}
+
+	return parsed.String()
+}
+
+func normalizeReferrerArgs(args []string) []string {
+	normalized := make([]string, 0, len(args))
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch {
+		case strings.HasPrefix(arg, "--referrer="):
+			normalized = append(normalized, "--referrer="+normalizeReferrerValue(strings.TrimPrefix(arg, "--referrer=")))
+		case arg == "--referrer" && i+1 < len(args):
+			normalized = append(normalized, arg, normalizeReferrerValue(args[i+1]))
+			i++
+		case strings.HasPrefix(arg, "--mpv-referrer="):
+			normalized = append(normalized, "--mpv-referrer="+normalizeReferrerValue(strings.TrimPrefix(arg, "--mpv-referrer=")))
+		case arg == "--mpv-referrer" && i+1 < len(args):
+			normalized = append(normalized, arg, normalizeReferrerValue(args[i+1]))
+			i++
+		default:
+			normalized = append(normalized, arg)
+		}
+	}
+
+	return normalized
+}
+
 func StartVideo(link string, args []string, title string, anime *Anime) (string, error) {
 	var command *exec.Cmd
 	var mpvSocketPath string
@@ -208,6 +255,7 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 		}
 		args = append(args, fmt.Sprintf("--referrer=%s", referrer))
 	}
+	args = normalizeReferrerArgs(args)
 
 	// Check if we have an existing socket and if MPV is still running
 	if anime.Ep.Player.SocketPath != "" && IsMPVRunning(anime.Ep.Player.SocketPath) {

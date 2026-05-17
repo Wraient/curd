@@ -1027,7 +1027,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			// 2. Jikan Metadata & Exact Anilist Meta Tag Matching (for animepahe)
 			if !found && GetProvider().Name() == "animepahe" {
 				Log("Attempting deep metadata matching and exact AniList meta tag check for Animepahe...")
-				
+
 				targetAnilistID := strconv.Itoa(anime.AnilistId)
 				var bestMatch *SelectionOption
 				var highestScore int
@@ -1035,7 +1035,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				if anime.MalId == 0 {
 					anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
 				}
-				
+
 				var malData *JikanAnimeData
 				if anime.MalId != 0 {
 					malData, _ = FetchJikanAnimeData(anime.MalId)
@@ -1089,13 +1089,13 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 						Log(fmt.Sprintf("Fetching %s to check exact AniList meta tag...", animeUrl))
 						req, _ := http.NewRequest("GET", animeUrl, nil)
 						req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-						
+
 						resp, err := sharedHTTPClient.Do(req)
 						if err == nil && resp.StatusCode == 200 {
 							body, _ := io.ReadAll(resp.Body)
 							resp.Body.Close()
 							bodyStr := string(body)
-							
+
 							metaTag := fmt.Sprintf(`<meta name="anilist" content="%s">`, targetAnilistID)
 							if strings.Contains(bodyStr, metaTag) {
 								Log(fmt.Sprintf("FOUND EXACT ANILIST META TAG MATCH in %s!", opt.Title))
@@ -1411,12 +1411,19 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 			Log(fmt.Sprintf("Links details: %+v", link))
 		}
 		if err != nil {
-			Log(fmt.Sprintf("GetEpisodeURL failed: %v", err))
+			linkErr := err
+			Log(fmt.Sprintf("GetEpisodeURL failed: %v", linkErr))
 			// If unable to get episode link automatically get manually
-			episodeList, err := EpisodesList(anime.ProviderId, userCurdConfig.SubOrDub)
-			if err != nil {
-				CurdOut("No episode list found: " + err.Error())
-				Log(fmt.Sprintf("EpisodesList failed: %v", err))
+			episodeList, listErr := EpisodesList(anime.ProviderId, userCurdConfig.SubOrDub)
+			if listErr != nil {
+				CurdOut("No episode list found: " + listErr.Error())
+				Log(fmt.Sprintf("EpisodesList failed: %v", listErr))
+				RestoreScreen()
+				os.Exit(1)
+			}
+			if len(episodeList) == 0 {
+				CurdOut("No episodes were returned by the current provider for this anime.")
+				Log(fmt.Sprintf("EpisodesList returned no episodes for provider %s and id %s after GetEpisodeURL error: %v", GetProvider().Name(), anime.ProviderId, linkErr))
 				RestoreScreen()
 				os.Exit(1)
 			}
