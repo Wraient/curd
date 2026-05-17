@@ -18,20 +18,28 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 )
+
+type allanimeSource struct {
+	SourceUrl  string  `json:"sourceUrl"`
+	SourceName string  `json:"sourceName"`
+	Priority   float64 `json:"priority"`
+}
 
 type allanimeResponse struct {
 	Data struct {
 		M          string `json:"_m"`
 		Tobeparsed string `json:"tobeparsed"`
 		Episode    struct {
-			SourceUrls []struct {
-				SourceUrl  string `json:"sourceUrl"`
-				SourceName string `json:"sourceName"`
-			} `json:"sourceUrls"`
+			SourceUrls []allanimeSource `json:"sourceUrls"`
 		} `json:"episode"`
 	} `json:"data"`
+}
+
+type allanimeTobeparsedPayload struct {
+	Episode struct {
+		SourceUrls []allanimeSource `json:"sourceUrls"`
+	} `json:"episode"`
 }
 
 type result struct {
@@ -46,27 +54,24 @@ type filemoonResponse struct {
 	KeyParts []string `json:"key_parts"`
 }
 
-func decodeTobeparsed(blob string) string {
+func decodeTobeparsed(blob string) ([]allanimeSource, error) {
 	key := []byte("Xot36i3lK3:v1")
 	hash := sha256.Sum256(key)
 
 	data, err := base64.StdEncoding.DecodeString(blob)
 	if err != nil {
-		Log(fmt.Sprint("Error decoding base64:", err))
-		return ""
+		return nil, fmt.Errorf("error decoding base64: %w", err)
 	}
 
 	if len(data) < 29 {
-		Log("Data too short to contain tobeparsed payload")
-		return ""
+		return nil, fmt.Errorf("data too short to contain tobeparsed payload")
 	}
 
 	// The payload format is: 1-byte header, 12-byte IV, ciphertext, 16-byte trailer.
 	iv := data[1:13]
 	ctLen := len(data) - 13 - 16
 	if ctLen <= 0 {
-		Log("Ciphertext length is invalid in tobeparsed payload")
-		return ""
+		return nil, fmt.Errorf("ciphertext length is invalid in tobeparsed payload")
 	}
 	ct := data[13 : 13+ctLen]
 
@@ -76,32 +81,23 @@ func decodeTobeparsed(blob string) string {
 
 	block, err := aes.NewCipher(hash[:])
 	if err != nil {
-		Log(fmt.Sprint("Error creating cipher:", err))
-		return ""
+		return nil, fmt.Errorf("error creating cipher: %w", err)
 	}
 
 	stream := cipher.NewCTR(block, ctrIV)
 	plain := make([]byte, len(ct))
 	stream.XORKeyStream(plain, ct)
 
-	result := string(plain)
-	result = strings.ReplaceAll(result, "{", "\n")
-	result = strings.ReplaceAll(result, "}", "\n")
-
-	re := regexp.MustCompile(`"sourceUrl":"--([^"]+)".*"sourceName":"([^"]+)"`)
-	matches := re.FindAllStringSubmatch(result, -1)
-
-	var sb strings.Builder
-	for _, match := range matches {
-		if len(match) == 3 {
-			sb.WriteString(match[2])
-			sb.WriteString(" :")
-			sb.WriteString(match[1])
-			sb.WriteString("\n")
-		}
+	var payload allanimeTobeparsedPayload
+	if err := json.Unmarshal(plain, &payload); err != nil {
+		return nil, fmt.Errorf("failed to parse decrypted tobeparsed payload: %w", err)
 	}
 
-	return sb.String()
+	if len(payload.Episode.SourceUrls) == 0 {
+		return nil, fmt.Errorf("no source URLs found in decrypted tobeparsed payload")
+	}
+
+	return payload.Episode.SourceUrls, nil
 }
 
 func decodeProviderID(encoded string) string {
@@ -145,6 +141,43 @@ func decodeProviderID(encoded string) string {
 
 	// Print the final result
 	return result
+}
+
+func isDirectPlayableAllanimeSource(source allanimeSource) bool {
+	sourceURL := strings.TrimSpace(source.SourceUrl)
+	if sourceURL == "" {
+		return false
+	}
+
+	if strings.EqualFold(source.SourceName, "Yt-mp4") || strings.EqualFold(source.SourceName, "S-mp4") {
+		return true
+	}
+
+	lowerURL := strings.ToLower(sourceURL)
+	if strings.Contains(lowerURL, "tools.fast4speed.rsvp/") {
+		return true
+	}
+
+	parsedURL, err := url.Parse(sourceURL)
+	if err != nil {
+		return false
+	}
+
+	path := strings.ToLower(parsedURL.Path)
+	return strings.HasSuffix(path, ".mp4") || strings.HasSuffix(path, ".m3u8")
+}
+
+func sortAllanimeSourcesByPriority(sourceUrls []allanimeSource) []allanimeSource {
+	if len(sourceUrls) == 0 {
+		return nil
+	}
+
+	sorted := append([]allanimeSource(nil), sourceUrls...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].Priority > sorted[j].Priority
+	})
+
+	return sorted
 }
 
 func extractLinks(provider_id string) map[string]interface{} {
@@ -543,58 +576,58 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 	}
 
 	if response.Data.Tobeparsed != "" {
-		Log("Found tobeparsed field, using decoded response")
-		decoded := decodeTobeparsed(response.Data.Tobeparsed)
-		lines := strings.Split(strings.TrimSpace(decoded), "\n")
-		var parsedURLs []struct {
-			SourceName string
-			SourceUrl  string
-		}
-		for _, line := range lines {
-			if parts := strings.Split(line, " :"); len(parts) == 2 {
-				parsedURLs = append(parsedURLs, struct {
-					SourceName string
-					SourceUrl  string
-				}{SourceName: parts[0], SourceUrl: "--" + parts[1]})
-			}
+		Log("Found tobeparsed field, decoding source URLs")
+		decodedSources, err := decodeTobeparsed(response.Data.Tobeparsed)
+		if err != nil {
+			return nil, err
 		}
 
-		validURLs := make([]string, 0)
-		for _, url := range parsedURLs {
-			validURLs = append(validURLs, url.SourceUrl)
-		}
-
-		if len(validURLs) == 0 {
-			return nil, fmt.Errorf("no valid source URLs found in decoded tobeparsed")
-		}
-
-		return getLinksFromURLs(validURLs)
+		Log(fmt.Sprintf("Decoded %d Allanime source URLs from tobeparsed payload", len(decodedSources)))
+		return getLinksFromSourceUrls(decodedSources)
 	}
 
 	return getLinksFromSourceUrls(response.Data.Episode.SourceUrls)
 }
 
-func getLinksFromSourceUrls(sourceUrls []struct {
-	SourceUrl  string `json:"sourceUrl"`
-	SourceName string `json:"sourceName"`
-}) ([]string, error) {
+func getLinksFromSourceUrls(sourceUrls []allanimeSource) ([]string, error) {
+	sourceUrls = sortAllanimeSourcesByPriority(sourceUrls)
+
+	directURLs := make([]string, 0)
 	validURLs := make([]string, 0)
-	highestPriority := -1
+	highestPriority := -1.0
 	var highestPriorityURL string
 
 	for _, url := range sourceUrls {
-		if len(url.SourceUrl) > 2 && unicode.IsDigit(rune(url.SourceUrl[2])) {
-			decodedURL := decodeProviderID(url.SourceUrl[2:])
-			if strings.Contains(decodedURL, LinkPriorities[0]) {
-				priority := int(url.SourceUrl[2] - '0')
-				if priority > highestPriority {
-					highestPriority = priority
-					highestPriorityURL = url.SourceUrl
-				}
-			} else {
-				validURLs = append(validURLs, url.SourceUrl)
-			}
+		sourceURL := strings.TrimSpace(url.SourceUrl)
+		if sourceURL == "" {
+			continue
 		}
+
+		if isDirectPlayableAllanimeSource(url) {
+			directURLs = append(directURLs, sourceURL)
+			continue
+		}
+
+		if !strings.HasPrefix(sourceURL, "--") || len(sourceURL) <= 2 {
+			Log(fmt.Sprintf("Skipping unsupported Allanime source %q (%s)", url.SourceName, sourceURL))
+			continue
+		}
+
+		decodedURL := decodeProviderID(sourceURL[2:])
+		if strings.Contains(decodedURL, LinkPriorities[0]) {
+			priority := url.Priority
+			if priority > highestPriority {
+				highestPriority = priority
+				highestPriorityURL = sourceURL
+			}
+		} else {
+			validURLs = append(validURLs, sourceURL)
+		}
+	}
+
+	if len(directURLs) > 0 {
+		Log(fmt.Sprintf("Using %d direct Allanime source URL(s)", len(directURLs)))
+		return directURLs, nil
 	}
 
 	if highestPriorityURL != "" {
@@ -602,7 +635,7 @@ func getLinksFromSourceUrls(sourceUrls []struct {
 	}
 
 	if len(validURLs) == 0 {
-		return nil, fmt.Errorf("no valid source URLs found in response")
+		return nil, fmt.Errorf("no supported source URLs found in response")
 	}
 
 	return getLinksFromURLs(validURLs)
