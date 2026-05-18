@@ -143,6 +143,100 @@ type AnimepaheSearchItem struct {
 	Session  string  `json:"session"`
 }
 
+type animepaheAnimeRef struct {
+	ReleaseID string
+	Session   string
+}
+
+func (r animepaheAnimeRef) apiID() string {
+	if r.Session != "" {
+		return r.Session
+	}
+	return r.ReleaseID
+}
+
+func formatAnimepaheProviderID(item AnimepaheSearchItem) string {
+	if item.ID > 0 && item.Session != "" {
+		return fmt.Sprintf("%d:%s", item.ID, item.Session)
+	}
+	if item.Session != "" {
+		return item.Session
+	}
+	if item.ID > 0 {
+		return strconv.Itoa(item.ID)
+	}
+	return ""
+}
+
+func parseAnimepaheProviderID(providerID string) animepaheAnimeRef {
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		return animepaheAnimeRef{}
+	}
+
+	parts := strings.SplitN(providerID, ":", 2)
+	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		if _, err := strconv.Atoi(parts[0]); err == nil {
+			return animepaheAnimeRef{ReleaseID: parts[0], Session: parts[1]}
+		}
+	}
+
+	if _, err := strconv.Atoi(providerID); err == nil {
+		return animepaheAnimeRef{ReleaseID: providerID}
+	}
+
+	return animepaheAnimeRef{Session: providerID}
+}
+
+func stableAnimepaheProviderID(providerID string) string {
+	animeRef := parseAnimepaheProviderID(providerID)
+	if animeRef.ReleaseID != "" {
+		return animeRef.ReleaseID
+	}
+	return providerID
+}
+
+func (p *AnimepaheProvider) ResolveProviderID(providerID, query string) (string, error) {
+	animeRef := parseAnimepaheProviderID(providerID)
+	query = strings.TrimSpace(query)
+	if query == "" {
+		if animeRef.Session != "" {
+			return providerID, nil
+		}
+		return "", fmt.Errorf("cannot resolve animepahe provider id %q without an anime title", providerID)
+	}
+
+	options, err := p.SearchAnime(query, "")
+	if err != nil {
+		if animeRef.Session != "" {
+			Log(fmt.Sprintf("Animepahe provider id refresh failed for %q, using existing session: %v", providerID, err))
+			return providerID, nil
+		}
+		return "", err
+	}
+
+	for _, option := range options {
+		item, ok := option.ExtraData.(AnimepaheSearchItem)
+		if !ok {
+			continue
+		}
+
+		if animeRef.ReleaseID != "" && strconv.Itoa(item.ID) == animeRef.ReleaseID {
+			return formatAnimepaheProviderID(item), nil
+		}
+		if animeRef.Session != "" && item.Session == animeRef.Session {
+			return formatAnimepaheProviderID(item), nil
+		}
+	}
+
+	if animeRef.Session != "" {
+		Log(fmt.Sprintf("Animepahe provider id %q was not found in search results for %q, using existing session", providerID, query))
+		return providerID, nil
+	}
+
+	return "", fmt.Errorf("animepahe id %q was not found in search results for %q", providerID, query)
+}
+
 type animepaheSearchResponse struct {
 	Total       int                   `json:"total"`
 	PerPage     int                   `json:"per_page"`
@@ -187,7 +281,7 @@ func (p *AnimepaheProvider) SearchAnime(query, mode string) ([]SelectionOption, 
 		result = append(result, SelectionOption{
 			Title:     item.Title,
 			Label:     label,
-			Key:       item.Session, // Using session as ID
+			Key:       formatAnimepaheProviderID(item),
 			Thumbnail: item.Poster,
 			ExtraData: item,
 		})
@@ -213,12 +307,17 @@ func (p *AnimepaheProvider) EpisodesList(showID, mode string) ([]string, error) 
 	if err := p.ensureBypass(); err != nil {
 		return nil, err
 	}
-	// showID here is the session ID for animepahe
+	animeRef := parseAnimepaheProviderID(showID)
+	apiID := animeRef.apiID()
+	if apiID == "" {
+		return nil, fmt.Errorf("animepahe provider id %q is invalid; please reselect this anime", showID)
+	}
+
 	var allEpisodes []int
 	page := 1
 
 	for {
-		epUrl := fmt.Sprintf("https://animepahe.pw/api?m=release&id=%s&sort=episode_asc&page=%d", showID, page)
+		epUrl := fmt.Sprintf("https://animepahe.pw/api?m=release&id=%s&sort=episode_asc&page=%d", apiID, page)
 		req, _ := http.NewRequest("GET", epUrl, nil)
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 		req.Header.Set("Referer", "https://animepahe.pw/")
@@ -265,6 +364,12 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	if err := p.ensureBypass(); err != nil {
 		return nil, err
 	}
+	animeRef := parseAnimepaheProviderID(id)
+	if animeRef.Session == "" {
+		return nil, fmt.Errorf("animepahe provider id %q is missing session id; please reselect this anime", id)
+	}
+	apiID := animeRef.apiID()
+
 	// 1. Get episode session ID
 	// Map the 1-based Anilist episode number to Animepahe's actual episode number
 	eps, err := p.EpisodesList(id, "")
@@ -284,7 +389,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	var episodeSession string
 	page := 1
 	for {
-		reqUrl := fmt.Sprintf("https://animepahe.pw/api?m=release&id=%s&sort=episode_asc&page=%d", id, page)
+		reqUrl := fmt.Sprintf("https://animepahe.pw/api?m=release&id=%s&sort=episode_asc&page=%d", apiID, page)
 		req, _ := http.NewRequest("GET", reqUrl, nil)
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 		req.Header.Set("Referer", "https://animepahe.pw/")
@@ -327,7 +432,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 
 	// player page: https://animepahe.pw/play/<anime_session>/<episode_session>
 	// stream links in player page: <button type=\"button\" data-src=\"https://kwik.cx/e/Jwd0hMNswksj\"
-	playerUrl := fmt.Sprintf("https://animepahe.pw/play/%s/%s", id, episodeSession)
+	playerUrl := fmt.Sprintf("https://animepahe.pw/play/%s/%s", animeRef.Session, episodeSession)
 	req, _ := http.NewRequest("GET", playerUrl, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", "https://animepahe.pw/")

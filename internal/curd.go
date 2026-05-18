@@ -1121,7 +1121,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 					// If it has a decent score (or there are very few options), let's verify with the exact AniList meta tag
 					if score >= 2 || len(animeList) <= 3 {
-						animeUrl := fmt.Sprintf("https://animepahe.pw/anime/%s", opt.Key)
+						animeRef := parseAnimepaheProviderID(opt.Key)
+						if animeRef.Session == "" {
+							continue
+						}
+						animeUrl := fmt.Sprintf("https://animepahe.pw/anime/%s", animeRef.Session)
 						Log(fmt.Sprintf("Fetching %s to check exact AniList meta tag...", animeUrl))
 						req, _ := http.NewRequest("GET", animeUrl, nil)
 						req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -1428,6 +1432,11 @@ func WriteTokenToFile(token string, filePath string) error {
 }
 
 func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
+	if err := resolveRuntimeProviderID(userCurdConfig, anime); err != nil {
+		Log(fmt.Sprintf("Failed to resolve provider id: %v", err))
+		CurdOut("Failed to resolve anime provider id: " + err.Error())
+		os.Exit(1)
+	}
 
 	// Validate inputs
 	if anime.ProviderId == "" {
@@ -1450,6 +1459,16 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 		if err != nil {
 			linkErr := err
 			Log(fmt.Sprintf("GetEpisodeURL failed: %v", linkErr))
+			if reselectProviderAnime(userCurdConfig, anime, linkErr) {
+				link, err = GetEpisodeURL(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
+				if err == nil {
+					Log(fmt.Sprintf("Successfully retrieved episode link after provider reselect. Links count: %d", len(link)))
+					anime.Ep.Links = link
+					goto episodeLinksReady
+				}
+				linkErr = err
+				Log(fmt.Sprintf("GetEpisodeURL still failed after provider reselect: %v", linkErr))
+			}
 			// If unable to get episode link automatically get manually
 			episodeList, listErr := EpisodesList(anime.ProviderId, userCurdConfig.SubOrDub)
 			if listErr != nil {
@@ -1486,6 +1505,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 		anime.Ep.Links = link
 	}
 
+episodeLinksReady:
 	if len(anime.Ep.Links) == 0 {
 		CurdOut("No episode links found")
 		os.Exit(1)
@@ -1559,6 +1579,83 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 	}
 
 	return mpvSocketPath
+}
+
+func resolveRuntimeProviderID(userCurdConfig *CurdConfig, anime *Anime) error {
+	if GetProvider().Name() != "animepahe" || anime == nil || anime.ProviderId == "" {
+		return nil
+	}
+
+	provider, ok := GetProvider().(*AnimepaheProvider)
+	if !ok {
+		return nil
+	}
+
+	query := GetAnimeName(*anime)
+	if query == "" {
+		query = anime.Title.Romaji
+	}
+	if query == "" {
+		query = anime.Title.English
+	}
+
+	resolved, err := provider.ResolveProviderID(anime.ProviderId, query)
+	if err != nil {
+		return err
+	}
+	if resolved != "" && resolved != anime.ProviderId {
+		Log(fmt.Sprintf("Resolved Animepahe provider id %s to runtime id %s", anime.ProviderId, resolved))
+		anime.ProviderId = resolved
+		anime.ProviderName = GetProvider().Name()
+	}
+
+	return nil
+}
+
+func reselectProviderAnime(userCurdConfig *CurdConfig, anime *Anime, reason error) bool {
+	if GetProvider().Name() != "animepahe" {
+		return false
+	}
+
+	if reason != nil {
+		Log(fmt.Sprintf("Attempting Animepahe provider reselect after error: %v", reason))
+	}
+
+	query := GetAnimeName(*anime)
+	if query == "" {
+		query = anime.Title.Romaji
+	}
+	if query == "" {
+		query = anime.Title.English
+	}
+	if query == "" {
+		return false
+	}
+
+	options, err := SearchAnime(query, userCurdConfig.SubOrDub)
+	if err != nil {
+		Log(fmt.Sprintf("Animepahe provider reselect search failed for %q: %v", query, err))
+		return false
+	}
+	if len(options) == 0 {
+		Log(fmt.Sprintf("Animepahe provider reselect found no results for %q", query))
+		return false
+	}
+
+	CurdOut("The saved Animepahe mapping is stale. Please select the anime again.")
+	selected, err := DynamicSelect(options)
+	if err != nil || selected.Key == "-1" || selected.Key == "-2" || selected.Key == "" {
+		if err != nil {
+			Log(fmt.Sprintf("Animepahe provider reselect failed: %v", err))
+		}
+		return false
+	}
+
+	anime.ProviderId = selected.Key
+	anime.ProviderName = GetProvider().Name()
+	anime.Ep.NextEpisode = NextEpisode{}
+	Log(fmt.Sprintf("Updated Animepahe ProviderId to %s after stale mapping", anime.ProviderId))
+	return true
 }
 
 func CheckAndDownloadFiles(storagePath string, filesToCheck []string) error {

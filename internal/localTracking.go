@@ -38,6 +38,23 @@ func LocalAddAnime(databaseFile string, anilistID int, allanimeID string, watchi
 	}
 }
 
+func normalizeLocalProviderID(providerName, providerID, animeName string) string {
+	if providerName != "animepahe" {
+		return providerID
+	}
+
+	if providerID == "" {
+		return ""
+	}
+
+	stableID := stableAnimepaheProviderID(providerID)
+	if stableID != "" {
+		return stableID
+	}
+
+	return providerID
+}
+
 // Function to delete an anime entry by Anilist ID and Allanime ID
 func LocalDeleteAnime(databaseFile string, anilistID int, allanimeID string) {
 	animeList := [][]string{}
@@ -184,16 +201,19 @@ func GetAnimeName(anime Anime) string {
 
 // Function to update or add a new anime entry
 func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, watchingEpisode int, playbackTime int, animeDuration int, animeName string, providerName string) error {
+	allanimeID = normalizeLocalProviderID(providerName, allanimeID, animeName)
 	// Read existing entries
 	animeList := LocalGetAllAnime(databaseFile)
 
 	// Find and update existing entry or add new one
 	updated := false
 	for i, anime := range animeList {
-		if anime.AnilistId == anilistID && anime.ProviderId == allanimeID {
+		existingProviderID := normalizeLocalProviderID(anime.ProviderName, anime.ProviderId, GetAnimeName(anime))
+		if anime.AnilistId == anilistID && existingProviderID == allanimeID {
 			animeList[i].Ep.Number = watchingEpisode
 			animeList[i].Ep.Player.PlaybackTime = playbackTime
 			animeList[i].Ep.Duration = animeDuration
+			animeList[i].ProviderId = allanimeID
 			animeList[i].Title.English = animeName
 			animeList[i].Title.Romaji = animeName
 			animeList[i].ProviderName = providerName
@@ -234,9 +254,10 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 	defer writer.Flush()
 
 	for _, anime := range animeList {
+		providerID := normalizeLocalProviderID(anime.ProviderName, anime.ProviderId, GetAnimeName(anime))
 		record := []string{
 			strconv.Itoa(anime.AnilistId),
-			anime.ProviderId,
+			providerID,
 			strconv.Itoa(anime.Ep.Number),
 			strconv.Itoa(anime.Ep.Player.PlaybackTime),
 			strconv.Itoa(anime.Ep.Duration),
