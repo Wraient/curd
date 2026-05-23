@@ -1203,6 +1203,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 					found = true
 				} else if bestMatch != nil {
 					Log(fmt.Sprintf("Highest match score was %d (needed 100 for Animepahe exact meta tag match). Not selecting automatically to prevent false positives.", highestScore))
+					if confirmProviderMatch(*bestMatch, "Animepahe metadata") {
+						anime.ProviderId = bestMatch.Key
+						Log(fmt.Sprintf("User confirmed Animepahe match. Setting ProviderId to: %s", anime.ProviderId))
+						found = true
+					}
 				}
 			}
 
@@ -1211,9 +1216,11 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				targetLabel := fmt.Sprintf("%v (%d episodes)", userQuery, selectedAnilistAnime.Media.Episodes)
 				for _, option := range animeList {
 					if fmt.Sprintf("%s (%d episodes)", option.Title, selectedAnilistAnime.Media.Episodes) == targetLabel {
-						anime.ProviderId = option.Key
-						Log(fmt.Sprintf("Found exact text match! Setting ProviderId to: %s", anime.ProviderId))
-						found = true
+						if confirmProviderMatch(option, "title and episode count") {
+							anime.ProviderId = option.Key
+							Log(fmt.Sprintf("User confirmed exact text match. Setting ProviderId to: %s", anime.ProviderId))
+							found = true
+						}
 						break
 					}
 				}
@@ -1466,6 +1473,27 @@ func WriteTokenToFile(token string, filePath string) error {
 	}
 
 	return nil
+}
+
+func confirmProviderMatch(option SelectionOption, reason string) bool {
+	label := option.Label
+	if label == "" {
+		label = option.Title
+	}
+	if label == "" {
+		label = option.Key
+	}
+
+	CurdOut(fmt.Sprintf("Provider match found by %s: %s", reason, label))
+	selected, err := DynamicSelect([]SelectionOption{
+		{Key: "use", Label: "Use this match"},
+		{Key: "manual", Label: "Select manually"},
+	})
+	if err != nil {
+		Log(fmt.Sprintf("Error confirming provider match: %v", err))
+		return false
+	}
+	return selected.Key == "use"
 }
 
 func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
