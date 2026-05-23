@@ -504,18 +504,18 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	sortFunc(dubLinks)
 
 	var links []string
-	if config.SubOrDub == "dub" && len(dubLinks) > 0 {
+	mode := normalizeTranslationType(config.SubOrDub)
+	if mode == "dub" {
 		for _, l := range dubLinks {
 			links = append(links, l.url)
 		}
-	} else if len(subLinks) > 0 {
+	} else {
 		for _, l := range subLinks {
 			links = append(links, l.url)
 		}
-	} else if len(dubLinks) > 0 {
-		for _, l := range dubLinks {
-			links = append(links, l.url)
-		}
+	}
+	if len(links) == 0 {
+		return nil, fmt.Errorf("no %s streams found for episode %d", mode, epNo)
 	}
 
 	var finalLinks []string
@@ -527,7 +527,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	}
 
 	if len(finalLinks) == 0 {
-		return nil, fmt.Errorf("failed to extract any stream links from kwik")
+		return nil, fmt.Errorf("failed to extract any %s stream links from kwik", mode)
 	}
 
 	return finalLinks, nil

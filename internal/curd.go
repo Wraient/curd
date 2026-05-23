@@ -1452,17 +1452,17 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 		anime.Ep.Links = anime.Ep.NextEpisode.Links
 	} else {
 		// Get episode link
-		link, err := GetEpisodeURL(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
+		link, playbackMode, err := GetEpisodeURLForPlayback(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
 		if len(link) > 0 {
-			Log(fmt.Sprintf("Links details: %+v", link))
+			Log(fmt.Sprintf("Links details (%s): %+v", playbackMode, link))
 		}
 		if err != nil {
 			linkErr := err
 			Log(fmt.Sprintf("GetEpisodeURL failed: %v", linkErr))
 			if reselectProviderAnime(userCurdConfig, anime, linkErr) {
-				link, err = GetEpisodeURL(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
+				link, playbackMode, err = GetEpisodeURLForPlayback(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
 				if err == nil {
-					Log(fmt.Sprintf("Successfully retrieved episode link after provider reselect. Links count: %d", len(link)))
+					Log(fmt.Sprintf("Successfully retrieved %s episode link after provider reselect. Links count: %d", playbackMode, len(link)))
 					anime.Ep.Links = link
 					goto episodeLinksReady
 				}
@@ -1494,13 +1494,13 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 				CurdOut(fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
 				fmt.Scanln(&anime.Ep.Number)
 			}
-			link, err = GetEpisodeURL(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
+			link, _, err = GetEpisodeURLForPlayback(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
 			if err != nil {
 				CurdOut("Failed to get episode link")
 				os.Exit(1)
 			}
 		} else {
-			Log(fmt.Sprintf("Successfully retrieved episode link on first try. Links count: %d", len(link)))
+			Log(fmt.Sprintf("Successfully retrieved %s episode link on first try. Links count: %d", playbackMode, len(link)))
 		}
 		anime.Ep.Links = link
 	}

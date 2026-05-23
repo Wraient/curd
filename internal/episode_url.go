@@ -421,63 +421,7 @@ func extractFilemoonLinks(videoData map[string]interface{}) []string {
 // - error: an error if the episode is not found or if there is an issue during the search.
 func getAllanimeEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	preferredMode := normalizeTranslationType(config.SubOrDub)
-	fallbackMode := alternateTranslationType(preferredMode)
-
-	type modeResult struct {
-		mode  string
-		links []string
-		err   error
-	}
-
-	ch := make(chan modeResult, 2)
-
-	go func() {
-		links, err := getEpisodeURLForMode(id, preferredMode, epNo)
-		ch <- modeResult{mode: preferredMode, links: links, err: err}
-	}()
-
-	go func() {
-		links, err := getEpisodeURLForMode(id, fallbackMode, epNo)
-		ch <- modeResult{mode: fallbackMode, links: links, err: err}
-	}()
-
-	var preferredRes, fallbackRes modeResult
-	hasPreferredRes := false
-	hasFallbackRes := false
-	for i := 0; i < 2; i++ {
-		res := <-ch
-
-		if res.mode == preferredMode {
-			preferredRes = res
-			hasPreferredRes = true
-			if res.err == nil && len(res.links) > 0 {
-				return res.links, nil
-			}
-			continue
-		}
-
-		if res.mode == fallbackMode {
-			fallbackRes = res
-			hasFallbackRes = true
-		}
-	}
-
-	if hasPreferredRes && preferredRes.err == nil && len(preferredRes.links) > 0 {
-		return preferredRes.links, nil
-	}
-	if hasFallbackRes && fallbackRes.err == nil && len(fallbackRes.links) > 0 {
-		Log(fmt.Sprintf("Falling back to %s for anime %s episode %d", fallbackMode, id, epNo))
-		return fallbackRes.links, nil
-	}
-
-	if hasPreferredRes && preferredRes.err != nil {
-		return nil, preferredRes.err
-	}
-	if hasFallbackRes && fallbackRes.err != nil {
-		return nil, fallbackRes.err
-	}
-
-	return nil, fmt.Errorf("no valid links found for anime %s episode %d", id, epNo)
+	return getEpisodeURLForMode(id, preferredMode, epNo)
 }
 
 func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {

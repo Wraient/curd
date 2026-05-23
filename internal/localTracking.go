@@ -401,7 +401,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 
 	for {
 		// Get episode link
-		link, err := GetEpisodeURL(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
+		link, _, err := GetEpisodeURLForPlayback(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to get episode link: %v", err))
 			ExitCurd(fmt.Errorf("Failed to get episode link"))
