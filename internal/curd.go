@@ -1264,10 +1264,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				trackerLabel := RemoteTrackingDisplayName(userCurdConfig)
 				Log(fmt.Sprintf("Local history episode (%d) is ahead of %s episode (%d), prompting user", animePointer.Ep.Number, trackerLabel, anilistEpisode))
 				options := []SelectionOption{
-					{Key: "update_upstream", Label: fmt.Sprintf("Update %s to episode %d (local history)", trackerLabel, animePointer.Ep.Number-1)},
+					{Key: "update_upstream", Label: fmt.Sprintf("Use Curd episode %d", animePointer.Ep.Number)},
 					{Key: "use_anilist", Label: fmt.Sprintf("Use %s episode %d", trackerLabel, anilistEpisode)},
 				}
-				CurdOut(fmt.Sprintf("Local history (ep %d) is ahead of %s (ep %d).", animePointer.Ep.Number, trackerLabel, anilistEpisode))
+				CurdOut(fmt.Sprintf("Curd has episode %d. %s has episode %d. Pick one.", animePointer.Ep.Number, trackerLabel, anilistEpisode))
 				selectedOption, err := DynamicSelect(options)
 				if err != nil {
 					Log("Error in episode conflict selection: " + err.Error())
