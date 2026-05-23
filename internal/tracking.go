@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -287,6 +288,94 @@ func BuildLocalAnimeList(storagePath string) AnimeList {
 
 func hasAnyEntries(list AnimeList) bool {
 	return len(list.Watching)+len(list.Completed)+len(list.Paused)+len(list.Dropped)+len(list.Planning)+len(list.Rewatching) > 0
+}
+
+func animeListEntryCount(list AnimeList) int {
+	return len(getEntriesByCategory(list, "ALL"))
+}
+
+func countEntriesMissingMyAnimeListID(list AnimeList) int {
+	count := 0
+	for _, entry := range getEntriesByCategory(list, "ALL") {
+		if entry.Media.MalID == 0 {
+			count++
+		}
+	}
+	return count
+}
+
+func countAniListDeletes(list AnimeList) int {
+	count := 0
+	for _, entry := range getEntriesByCategory(list, "ALL") {
+		if entry.ListID != 0 {
+			count++
+		}
+	}
+	return count
+}
+
+type remoteSyncPreview struct {
+	Action             string
+	AniListEntries     int
+	MyAnimeListEntries int
+	Writes             int
+	Deletes            int
+	MissingMALIDs      int
+}
+
+func confirmRemoteSync(preview remoteSyncPreview) (bool, error) {
+	CurdOut(fmt.Sprintf("%s: AniList %d, MyAnimeList %d.", preview.Action, preview.AniListEntries, preview.MyAnimeListEntries))
+	if preview.Deletes > 0 {
+		CurdOut(fmt.Sprintf("This will write %d entries and delete %d entries.", preview.Writes, preview.Deletes))
+	} else {
+		CurdOut(fmt.Sprintf("This will write %d entries.", preview.Writes))
+	}
+	if preview.MissingMALIDs > 0 {
+		CurdOut(fmt.Sprintf("%d entries need a MyAnimeList ID lookup.", preview.MissingMALIDs))
+	}
+
+	selected, err := DynamicSelect([]SelectionOption{
+		{Key: "continue", Label: "Continue"},
+		{Key: "cancel", Label: "Cancel"},
+	})
+	if err != nil {
+		return false, err
+	}
+	return selected.Key == "continue", nil
+}
+
+func writeTrackingBackup(config *CurdConfig, action string, aniList, myAnimeList AnimeList) (string, error) {
+	if config == nil {
+		return "", fmt.Errorf("missing config")
+	}
+
+	backupDir := filepath.Join(os.ExpandEnv(config.StoragePath), "tracking-backups")
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return "", err
+	}
+
+	slug := strings.NewReplacer(" ", "-", "+", "-", ":", "", "/", "-").Replace(strings.ToLower(action))
+	backupPath := filepath.Join(backupDir, fmt.Sprintf("%s-%s.json", time.Now().Format("20060102-150405"), slug))
+	payload := struct {
+		Action      string    `json:"action"`
+		CreatedAt   time.Time `json:"created_at"`
+		AniList     AnimeList `json:"anilist"`
+		MyAnimeList AnimeList `json:"myanimelist"`
+	}{
+		Action:      action,
+		CreatedAt:   time.Now(),
+		AniList:     aniList,
+		MyAnimeList: myAnimeList,
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+		return "", err
+	}
+	return backupPath, nil
 }
 
 func currentFuzzyDate() FuzzyDate {
@@ -1268,6 +1357,30 @@ func ReplaceMyAnimeListWithAniList(config *CurdConfig) error {
 	if err != nil {
 		return err
 	}
+	targetList, err := FetchLatestMyAnimeList(config, &User{})
+	if err != nil {
+		return err
+	}
+	ok, err := confirmRemoteSync(remoteSyncPreview{
+		Action:             "Replace MyAnimeList with AniList",
+		AniListEntries:     animeListEntryCount(sourceList),
+		MyAnimeListEntries: animeListEntryCount(targetList),
+		Writes:             animeListEntryCount(sourceList),
+		Deletes:            animeListEntryCount(targetList),
+		MissingMALIDs:      countEntriesMissingMyAnimeListID(sourceList),
+	})
+	if err != nil {
+		return err
+	}
+	if !ok {
+		CurdOut("Tracker sync cancelled.")
+		return nil
+	}
+	backupPath, err := writeTrackingBackup(config, "replace-myanimelist-with-anilist", sourceList, targetList)
+	if err != nil {
+		return err
+	}
+	CurdOut(fmt.Sprintf("Tracker backup saved: %s", backupPath))
 	if err := wipeMyAnimeListRemote(config); err != nil {
 		return err
 	}
@@ -1283,6 +1396,30 @@ func ReplaceAniListWithMyAnimeList(config *CurdConfig) error {
 	if err != nil {
 		return err
 	}
+	targetList, err := fetchAniListAnimeListFromToken(token)
+	if err != nil {
+		return err
+	}
+	ok, err := confirmRemoteSync(remoteSyncPreview{
+		Action:             "Replace AniList with MyAnimeList",
+		AniListEntries:     animeListEntryCount(targetList),
+		MyAnimeListEntries: animeListEntryCount(sourceList),
+		Writes:             animeListEntryCount(sourceList),
+		Deletes:            countAniListDeletes(targetList),
+		MissingMALIDs:      countEntriesMissingMyAnimeListID(sourceList),
+	})
+	if err != nil {
+		return err
+	}
+	if !ok {
+		CurdOut("Tracker sync cancelled.")
+		return nil
+	}
+	backupPath, err := writeTrackingBackup(config, "replace-anilist-with-myanimelist", targetList, sourceList)
+	if err != nil {
+		return err
+	}
+	CurdOut(fmt.Sprintf("Tracker backup saved: %s", backupPath))
 	if err := wipeAniListRemote(config); err != nil {
 		return err
 	}
@@ -1308,6 +1445,27 @@ func MergeRemoteLists(config *CurdConfig) error {
 	}
 	myAnimeListUser.AnimeList = myAnimeList
 
+	plan := buildDualRemoteSyncPlan(aniList, myAnimeList)
+	ok, err := confirmRemoteSync(remoteSyncPreview{
+		Action:             "Merge AniList and MyAnimeList",
+		AniListEntries:     animeListEntryCount(aniList),
+		MyAnimeListEntries: animeListEntryCount(myAnimeList),
+		Writes:             len(plan.AniListUpdates) + len(plan.MyAnimeListUpdates),
+		Deletes:            0,
+		MissingMALIDs:      countEntriesMissingMyAnimeListID(plan.Merged),
+	})
+	if err != nil {
+		return err
+	}
+	if !ok {
+		CurdOut("Tracker sync cancelled.")
+		return nil
+	}
+	backupPath, err := writeTrackingBackup(config, "merge-anilist-and-myanimelist", aniList, myAnimeList)
+	if err != nil {
+		return err
+	}
+	CurdOut(fmt.Sprintf("Tracker backup saved: %s", backupPath))
 	_, err = syncDualRemoteTrackers(config, token, aniListUser, myAnimeListUser)
 	return err
 }
