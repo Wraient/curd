@@ -923,7 +923,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 		if selectedAnilistAnime.Status == "COMPLETED" {
 			CurdOut("This anime is completed. Start rewatch from episode 1? Continue without updating tracker? Open details?")
-			selectedOption, err := DynamicSelect([]SelectionOption{
+			selectedOption, err := promptSelect([]SelectionOption{
 				{Key: "rewatch", Label: "Start rewatch from episode 1"},
 				{Key: "continue", Label: "Continue without updating tracker"},
 				{Key: "details", Label: "Open details"},
@@ -1492,7 +1492,7 @@ func handleUnreleasedAnime(userCurdConfig *CurdConfig, user *User, anime *Anime,
 		SelectionOption{Key: "back", Label: "Back to list"},
 	)
 
-	selected, err := DynamicSelect(options)
+	selected, err := promptSelect(options)
 	if err != nil {
 		Log(fmt.Sprintf("Error in unreleased anime prompt: %v", err))
 		anime.Ep.ContinueLast = false
@@ -1533,7 +1533,7 @@ func confirmProviderMatch(option SelectionOption, reason string) bool {
 	}
 
 	CurdOut(fmt.Sprintf("Provider match found by %s: %s", reason, label))
-	selected, err := DynamicSelect([]SelectionOption{
+	selected, err := promptSelect([]SelectionOption{
 		{Key: "use", Label: "Use this match"},
 		{Key: "manual", Label: "Select manually"},
 	})
@@ -1756,7 +1756,7 @@ func reselectProviderAnime(userCurdConfig *CurdConfig, anime *Anime, reason erro
 	}
 
 	CurdOut("The saved Animepahe mapping is stale. Please select the anime again.")
-	selected, err := DynamicSelect(options)
+	selected, err := promptSelect(options)
 	if err != nil || selected.Key == "-1" || selected.Key == "-2" || selected.Key == "" {
 		if err != nil {
 			Log(fmt.Sprintf("Animepahe provider reselect failed: %v", err))
@@ -2081,9 +2081,14 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 
 // HandleLastEpisodeCompletion handles scoring and completion for the last episode
 func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userToken string) {
-	// Check if this is the last episode and scoring is enabled
-	if userCurdConfig.ScoreOnCompletion && anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !anime.IsAiring {
-		// Prompt user to score the anime
+	if anime.TotalEpisodes <= 0 || anime.Ep.Number != anime.TotalEpisodes {
+		return
+	}
+
+	summary := []string{}
+	canWriteRemote := ShouldWriteRemoteTracking(userCurdConfig, anime)
+
+	if userCurdConfig.ScoreOnCompletion && !anime.IsAiring && canWriteRemote {
 		CurdOut("You've completed this anime! Would you like to rate it?")
 
 		scoreOptions := []SelectionOption{
@@ -2099,46 +2104,60 @@ func HandleLastEpisodeCompletion(userCurdConfig *CurdConfig, anime *Anime, userT
 			if err != nil {
 				Log(fmt.Sprintf("Error rating anime: %v", err))
 				CurdOut("Failed to rate anime")
+				summary = append(summary, "rating failed")
 			} else {
 				CurdOut("Anime rated successfully!")
+				summary = append(summary, "rating saved")
 			}
+		} else {
+			summary = append(summary, "rating skipped")
 		}
 		// Back (-2) and no are treated as skip
+	} else {
+		summary = append(summary, "rating skipped")
 	}
 
-	// Update anime status to completed on AniList.
-	// For rewatches, preserve the original completion date and only increment repeat count.
-	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && !anime.IsAiring {
+	if !anime.IsAiring && canWriteRemote {
 		if anime.Rewatching {
 			err := CompleteAnimeRewatch(userToken, *anime)
 			if err != nil {
 				Log("Error completing anime rewatch: " + err.Error())
+				summary = append(summary, "rewatch completion failed")
+			} else {
+				summary = append(summary, "rewatch completed")
 			}
 		} else {
 			err := UpdateAnimeStatus(userToken, anime.AnilistId, "COMPLETED")
 			if err != nil {
 				Log("Error updating anime status to completed: " + err.Error())
+				summary = append(summary, "status update failed")
+			} else {
+				summary = append(summary, "marked completed")
 			}
-			// Note: UpdateAnimeStatus already outputs a message on success
 		}
+	} else if !anime.IsAiring {
+		summary = append(summary, "tracker updates skipped")
 	}
 
-	// Check for sequel after completion (only if this is the last episode)
-	if anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes {
-		handleSequelCheck(userCurdConfig, anime, userToken)
+	if sequelSummary := handleSequelCheck(userCurdConfig, anime, userToken); sequelSummary != "" {
+		summary = append(summary, sequelSummary)
+	}
+	if len(summary) > 0 {
+		CurdOut("Completion summary: " + strings.Join(summary, "; "))
 	}
 }
 
 // handleSequelCheck checks for sequels and prompts the user accordingly
-func handleSequelCheck(userCurdConfig *CurdConfig, anime *Anime, userToken string) {
+func handleSequelCheck(userCurdConfig *CurdConfig, anime *Anime, userToken string) (summary string) {
 	if !ShouldWriteRemoteTracking(userCurdConfig, anime) {
-		return
+		return "sequel check skipped"
 	}
 
 	// Recover from any panics in this function to prevent crashes
 	defer func() {
 		if r := recover(); r != nil {
 			Log(fmt.Sprintf("Recovered from panic in handleSequelCheck: %v", r))
+			summary = "sequel check failed"
 		}
 	}()
 
@@ -2146,24 +2165,24 @@ func handleSequelCheck(userCurdConfig *CurdConfig, anime *Anime, userToken strin
 	sequels, err := GetAnimeSequel(anime.AnilistId, userToken)
 	if err != nil {
 		Log(fmt.Sprintf("Error fetching sequel information: %v", err))
-		return
+		return "sequel check failed"
 	}
 
 	if len(sequels) == 0 {
 		Log("No sequel found for this anime")
-		return
+		return "no sequel found"
 	}
 
 	sequel := &sequels[0]
 	if len(sequels) > 1 {
 		selectedSequel, ok := selectSequel(userCurdConfig, sequels)
 		if !ok {
-			return
+			return "sequel skipped"
 		}
 		sequel = selectedSequel
 	}
 
-	promptSequelAction(userCurdConfig, sequel, userToken)
+	return promptSequelAction(userCurdConfig, sequel, userToken)
 }
 
 func selectSequel(userCurdConfig *CurdConfig, sequels []SequelInfo) (*SequelInfo, bool) {
@@ -2179,7 +2198,7 @@ func selectSequel(userCurdConfig *CurdConfig, sequels []SequelInfo) (*SequelInfo
 	}
 	options = append(options, SelectionOption{Key: "skip", Label: "Skip"})
 
-	selected, err := DynamicSelect(options)
+	selected, err := promptSelect(options)
 	if err != nil {
 		Log(fmt.Sprintf("Error selecting sequel: %v", err))
 		return nil, false
@@ -2207,9 +2226,9 @@ func sequelDisplayTitle(userCurdConfig *CurdConfig, sequel *SequelInfo) string {
 	return strconv.Itoa(sequel.ID)
 }
 
-func promptSequelAction(userCurdConfig *CurdConfig, sequel *SequelInfo, userToken string) {
+func promptSequelAction(userCurdConfig *CurdConfig, sequel *SequelInfo, userToken string) string {
 	if sequel == nil {
-		return
+		return ""
 	}
 
 	sequelTitle := sequelDisplayTitle(userCurdConfig, sequel)
@@ -2245,10 +2264,10 @@ func promptSequelAction(userCurdConfig *CurdConfig, sequel *SequelInfo, userToke
 		SelectionOption{Key: "skip", Label: "Skip"},
 	)
 
-	selected, err := DynamicSelect(options)
+	selected, err := promptSelect(options)
 	if err != nil {
 		Log(fmt.Sprintf("Error in sequel action prompt: %v", err))
-		return
+		return "sequel action failed"
 	}
 
 	switch selected.Key {
@@ -2256,15 +2275,19 @@ func promptSequelAction(userCurdConfig *CurdConfig, sequel *SequelInfo, userToke
 		if err := AddAnimeToList(sequel.ID, "CURRENT", userToken); err != nil {
 			Log(fmt.Sprintf("Error adding sequel to watching list: %v", err))
 			CurdOut("Failed to add sequel to Watching.")
+			return "sequel add failed"
 		} else {
 			CurdOut(fmt.Sprintf("Added '%s' to Watching.", sequelTitle))
+			return "sequel added to Watching"
 		}
 	case "planning":
 		if err := AddAnimeToList(sequel.ID, "PLANNING", userToken); err != nil {
 			Log(fmt.Sprintf("Error adding sequel to planning list: %v", err))
 			CurdOut("Failed to add sequel to Plan to Watch.")
+			return "sequel add failed"
 		} else {
 			CurdOut(fmt.Sprintf("Added '%s' to Plan to Watch.", sequelTitle))
+			return "sequel added to Plan to Watch"
 		}
 	case "details":
 		url := sequel.SiteURL
@@ -2275,10 +2298,13 @@ func promptSequelAction(userCurdConfig *CurdConfig, sequel *SequelInfo, userToke
 		if err := browser.OpenURL(url); err != nil {
 			Log(fmt.Sprintf("Error opening browser: %v", err))
 			CurdOut("Failed to open browser.")
+			return "sequel details failed"
 		}
+		return "sequel details opened"
 	case "skip", "-1", "-2":
 		Log("User skipped sequel action")
 	}
+	return "sequel skipped"
 }
 
 // ChangeProvider allows the user to switch the anime provider

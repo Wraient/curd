@@ -624,6 +624,8 @@ func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
 	return dynamicSelectInternal(options, nil)
 }
 
+var promptSelect = DynamicSelect
+
 func DynamicSelectWithRefresh(options []SelectionOption, refreshConfig *SelectionRefreshConfig) (SelectionOption, error) {
 	return dynamicSelectInternal(options, refreshConfig)
 }

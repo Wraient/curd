@@ -81,36 +81,39 @@ func (p *AnimepaheProvider) ensureBypass() error {
 		Log("Cached Animepahe session expired. Requesting new session...")
 	}
 
-	CurdOut("Solving Animepahe DDoS-Guard challenge via headless browser...")
-
-	l := launcher.New().Headless(true)
-	defer l.Cleanup()
-	browser := rod.New().ControlURL(l.MustLaunch()).MustConnect()
-	defer browser.MustClose()
-
-	page := browser.MustPage("https://animepahe.pw/")
-	page.MustWaitLoad()
-
-	for i := 0; i < 30; i++ {
-		info, err := page.Info()
-		if err == nil && info.Title != "DDoS-Guard" && info.Title != "Just a moment..." && info.Title != "" {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	rodCookies, err := page.Cookies(nil)
-	if err != nil {
-		return fmt.Errorf("failed to acquire DDoS guard cookies: %v", err)
-	}
-
 	u, _ := url.Parse("https://animepahe.pw")
 	var httpCookies []*http.Cookie
-	for _, cookie := range rodCookies {
-		httpCookies = append(httpCookies, &http.Cookie{
-			Name:  cookie.Name,
-			Value: cookie.Value,
-		})
+	CurdOut("Animepahe needs a browser challenge before Curd can search or play. Starting a temporary headless browser...")
+	if err := rod.Try(func() {
+		l := launcher.New().Headless(true)
+		defer l.Cleanup()
+		browser := rod.New().ControlURL(l.MustLaunch()).MustConnect()
+		defer browser.MustClose()
+
+		page := browser.MustPage("https://animepahe.pw/")
+		page.MustWaitLoad()
+
+		for i := 0; i < 30; i++ {
+			info, err := page.Info()
+			if err == nil && info.Title != "DDoS-Guard" && info.Title != "Just a moment..." && info.Title != "" {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		rodCookies, err := page.Cookies(nil)
+		if err != nil {
+			panic(err)
+		}
+		for _, cookie := range rodCookies {
+			httpCookies = append(httpCookies, &http.Cookie{
+				Name:  cookie.Name,
+				Value: cookie.Value,
+			})
+		}
+	}); err != nil {
+		CurdOut("Animepahe browser challenge failed. Try again later or switch provider.")
+		return fmt.Errorf("animepahe browser challenge failed: %w", err)
 	}
 	SetCookiesForAnimepahe(u, httpCookies)
 

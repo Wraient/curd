@@ -60,7 +60,7 @@ func GetEpisodeURLForPlayback(config CurdConfig, id string, epNo int) ([]string,
 	}
 
 	CurdOut(audioFallbackPrompt(preferredMode, fallbackMode))
-	selected, selectErr := DynamicSelect([]SelectionOption{
+	selected, selectErr := promptSelect([]SelectionOption{
 		{Key: "play", Label: "Play " + fallbackMode},
 		{Key: "cancel", Label: "Cancel"},
 	})

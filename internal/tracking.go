@@ -325,6 +325,10 @@ type remoteSyncPreview struct {
 }
 
 func confirmRemoteSync(preview remoteSyncPreview) (bool, error) {
+	if os.Getenv("CURD_TEST_AUTO_CONFIRM_REMOTE_SYNC") == "1" {
+		return true, nil
+	}
+
 	CurdOut(fmt.Sprintf("%s: AniList %d, MyAnimeList %d.", preview.Action, preview.AniListEntries, preview.MyAnimeListEntries))
 	if preview.Deletes > 0 {
 		CurdOut(fmt.Sprintf("This will write %d entries and delete %d entries.", preview.Writes, preview.Deletes))
@@ -335,7 +339,7 @@ func confirmRemoteSync(preview remoteSyncPreview) (bool, error) {
 		CurdOut(fmt.Sprintf("%d entries need a MyAnimeList ID lookup.", preview.MissingMALIDs))
 	}
 
-	selected, err := DynamicSelect([]SelectionOption{
+	selected, err := promptSelect([]SelectionOption{
 		{Key: "continue", Label: "Continue"},
 		{Key: "cancel", Label: "Cancel"},
 	})
@@ -1144,7 +1148,7 @@ func maybeImportAniListToMyAnimeList(config *CurdConfig, user *User) error {
 	}
 
 	CurdOut("AniList tracking data was found.")
-	selected, err := DynamicSelect(options)
+	selected, err := promptSelect(options)
 	if err != nil {
 		return err
 	}

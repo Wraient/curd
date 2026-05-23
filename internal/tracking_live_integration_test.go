@@ -421,12 +421,33 @@ func TestTrackerLiveRuntimeIntegration(t *testing.T) {
 	})
 }
 
+func TestLiveTrackerContextForcesTerminalPrompts(t *testing.T) {
+	if os.Getenv("CURD_RUN_TRACKER_LIVE_INTEGRATION") == "1" {
+		t.Skip("live integration context is covered by the live suite")
+	}
+
+	config := CurdConfig{
+		RofiSelection:   true,
+		ImagePreview:    true,
+		AlternateScreen: true,
+	}
+	forceTerminalTestMode(&config)
+
+	if config.RofiSelection || config.ImagePreview || config.AlternateScreen {
+		t.Fatalf("expected live tests to force terminal prompt mode, got %+v", config)
+	}
+	if !config.MyAnimeListImportDismissed {
+		t.Fatalf("expected live tests to dismiss import prompt")
+	}
+}
+
 func loadLiveTrackerTestContext(t *testing.T) (*CurdConfig, string, []liveTestAnime, func()) {
 	t.Helper()
 
 	if os.Getenv("CURD_RUN_TRACKER_LIVE_INTEGRATION") != "1" {
 		t.Skip("set CURD_RUN_TRACKER_LIVE_INTEGRATION=1 to run live tracker integration tests")
 	}
+	t.Setenv("CURD_TEST_AUTO_CONFIRM_REMOTE_SYNC", "1")
 
 	configPath := os.Getenv("CURD_CONFIG_PATH")
 	if configPath == "" {
@@ -443,6 +464,7 @@ func loadLiveTrackerTestContext(t *testing.T) (*CurdConfig, string, []liveTestAn
 	}
 	config.TrackingConfigured = true
 	config.TrackingLocal = true
+	forceTerminalTestMode(&config)
 
 	previousGlobalConfig := GetGlobalConfig()
 	previousGlobalUser := GetGlobalUser()
@@ -475,6 +497,13 @@ func loadLiveTrackerTestContext(t *testing.T) (*CurdConfig, string, []liveTestAn
 	}
 
 	return &config, anilistToken, resolveLiveTestAnime(t), cleanup
+}
+
+func forceTerminalTestMode(config *CurdConfig) {
+	config.RofiSelection = false
+	config.ImagePreview = false
+	config.AlternateScreen = false
+	config.MyAnimeListImportDismissed = true
 }
 
 func resolveLiveTestAnime(t *testing.T) []liveTestAnime {

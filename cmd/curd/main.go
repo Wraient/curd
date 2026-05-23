@@ -217,6 +217,9 @@ func main() {
 	}
 
 	anime.Ep.Player.Speed = 1.0
+	if userCurdConfig.DiscordPresence {
+		internal.CurdOut("Starting Discord broadcast.")
+	}
 
 	// Get filler list concurrently
 	go func() {
