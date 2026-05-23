@@ -29,6 +29,13 @@ func UsesRemoteTracking(config *CurdConfig) bool {
 	return normalizeRemoteTracker(config.TrackingRemote) != TrackingRemoteNone
 }
 
+func ShouldWriteRemoteTracking(config *CurdConfig, anime *Anime) bool {
+	if !UsesRemoteTracking(config) {
+		return false
+	}
+	return anime == nil || !anime.SkipRemoteSync
+}
+
 func UsesAniListTracking(config *CurdConfig) bool {
 	if config == nil {
 		return true
@@ -758,7 +765,7 @@ func resolveMyAnimeListID(anilistID int) (int, error) {
 func UpdateAnimeProgress(token string, mediaID, progress int) error {
 	config := GetGlobalConfig()
 	switch {
-	case !UsesRemoteTracking(config):
+	case !ShouldWriteRemoteTracking(config, GetGlobalAnime()):
 		return nil
 	case UsesDualRemoteTracking(config):
 		var firstErr error
@@ -792,7 +799,7 @@ func UpdateAnimeProgress(token string, mediaID, progress int) error {
 func UpdateAnimeStatus(token string, mediaID int, status string) error {
 	config := GetGlobalConfig()
 	switch {
-	case !UsesRemoteTracking(config):
+	case !ShouldWriteRemoteTracking(config, GetGlobalAnime()):
 		return nil
 	case UsesDualRemoteTracking(config):
 		var firstErr error
@@ -826,7 +833,7 @@ func UpdateAnimeStatus(token string, mediaID int, status string) error {
 func RateAnime(token string, mediaID int) error {
 	config := GetGlobalConfig()
 	switch {
-	case !UsesRemoteTracking(config):
+	case !ShouldWriteRemoteTracking(config, GetGlobalAnime()):
 		return nil
 	case UsesDualRemoteTracking(config):
 		score, err := promptAnimeScoreValue()
@@ -864,7 +871,7 @@ func RateAnime(token string, mediaID int) error {
 func AddAnimeToWatchingList(animeID int, token string) error {
 	config := GetGlobalConfig()
 	switch {
-	case !UsesRemoteTracking(config):
+	case !ShouldWriteRemoteTracking(config, GetGlobalAnime()):
 		return nil
 	case UsesDualRemoteTracking(config):
 		var firstErr error
@@ -898,7 +905,7 @@ func AddAnimeToWatchingList(animeID int, token string) error {
 func CompleteAnimeRewatch(token string, anime Anime) error {
 	config := GetGlobalConfig()
 	switch {
-	case !UsesRemoteTracking(config):
+	case !ShouldWriteRemoteTracking(config, &anime):
 		return nil
 	case UsesDualRemoteTracking(config):
 		var firstErr error
@@ -942,7 +949,7 @@ func StartAnimeRewatch(token string, anime Anime) error {
 	startedAt := currentFuzzyDate()
 	completedAt := FuzzyDate{}
 	switch {
-	case !UsesRemoteTracking(config):
+	case !ShouldWriteRemoteTracking(config, &anime):
 		return nil
 	case UsesDualRemoteTracking(config):
 		var firstErr error
@@ -1000,7 +1007,7 @@ func StartAnimeRewatch(token string, anime Anime) error {
 func AddAnimeToList(animeID int, status string, token string) error {
 	config := GetGlobalConfig()
 	switch {
-	case !UsesRemoteTracking(config):
+	case !ShouldWriteRemoteTracking(config, GetGlobalAnime()):
 		return nil
 	case UsesDualRemoteTracking(config):
 		var firstErr error

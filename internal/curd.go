@@ -924,22 +924,59 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		userQuery = anime.Title.Romaji
 
 		if selectedAnilistAnime.Status == "COMPLETED" {
-			err = StartAnimeRewatch(user.Token, *anime)
+			CurdOut("This anime is completed. Start rewatch from episode 1? Continue without updating tracker? Open details?")
+			selectedOption, err := DynamicSelect([]SelectionOption{
+				{Key: "rewatch", Label: "Start rewatch from episode 1"},
+				{Key: "continue", Label: "Continue without updating tracker"},
+				{Key: "details", Label: "Open details"},
+			})
 			if err != nil {
-				Log(fmt.Sprintf("Error starting anime rewatch: %v", err))
-				ExitCurd(fmt.Errorf("Failed to move anime to rewatching"))
+				Log(fmt.Sprintf("Error in completed anime prompt: %v", err))
+				ExitCurd(fmt.Errorf("Failed to select completed anime action"))
 			}
 
-			anime.Rewatching = true
-			anime.Ep.Number = 1
-			anime.Ep.Player.PlaybackTime = 0
-			anime.Ep.Resume = false
-			startingRewatch = true
-			CurdOut("Moved anime to Rewatching and restarting from episode 1.")
+			switch selectedOption.Key {
+			case "rewatch":
+				err = StartAnimeRewatch(user.Token, *anime)
+				if err != nil {
+					Log(fmt.Sprintf("Error starting anime rewatch: %v", err))
+					ExitCurd(fmt.Errorf("Failed to move anime to rewatching"))
+				}
 
-			if err := RefreshUserAnimeList(userCurdConfig, user); err != nil {
-				Log("Error refreshing anime list: " + err.Error())
-				ExitCurd(err)
+				anime.Rewatching = true
+				anime.SkipRemoteSync = false
+				anime.Ep.Number = 1
+				anime.Ep.Player.PlaybackTime = 0
+				anime.Ep.Resume = false
+				startingRewatch = true
+				CurdOut("Moved anime to Rewatching and restarting from episode 1.")
+
+				if err := RefreshUserAnimeList(userCurdConfig, user); err != nil {
+					Log("Error refreshing anime list: " + err.Error())
+					ExitCurd(err)
+				}
+			case "continue":
+				anime.Rewatching = false
+				anime.SkipRemoteSync = true
+				anime.Ep.Number = 1
+				anime.Ep.Player.PlaybackTime = 0
+				anime.Ep.Resume = false
+				startingRewatch = true
+				CurdOut("Starting episode 1 without updating your tracker.")
+			case "details":
+				url := fmt.Sprintf("https://anilist.co/anime/%d", anime.AnilistId)
+				CurdOut(fmt.Sprintf("Opening %s", url))
+				if err := browser.OpenURL(url); err != nil {
+					Log(fmt.Sprintf("Error opening browser: %v", err))
+					CurdOut("Failed to open browser.")
+				}
+				anime.Ep.ContinueLast = false
+				continue
+			case "-1":
+				ExitCurd(nil)
+			default:
+				anime.Ep.ContinueLast = false
+				continue
 			}
 		}
 
@@ -1286,7 +1323,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			isInWatchingList = true
 		}
 
-		if UsesRemoteTracking(userCurdConfig) && !isInWatchingList {
+		if ShouldWriteRemoteTracking(userCurdConfig, anime) && !isInWatchingList {
 			// Create options for the prompt
 			options := []SelectionOption{
 				{Key: "yes", Label: "Add to watching list"},
