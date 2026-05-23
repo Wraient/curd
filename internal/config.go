@@ -38,35 +38,36 @@ type AnilistToken struct {
 
 // CurdConfig struct with field names that match the config keys
 type CurdConfig struct {
-	Player                   string   `config:"Player"`
-	MpvArgs                  []string `config:"MpvArgs"`
-	SubsLanguage             string   `config:"SubsLanguage"`
-	SubOrDub                 string   `config:"SubOrDub"`
-	StoragePath              string   `config:"StoragePath"`
-	AnimeNameLanguage        string   `config:"AnimeNameLanguage"`
-	MenuOrder                string   `config:"MenuOrder"`
-	PercentageToMarkComplete int      `config:"PercentageToMarkComplete"`
-	NextEpisodePrompt        bool     `config:"NextEpisodePrompt"`
-	SkipOp                   bool     `config:"SkipOp"`
-	SkipEd                   bool     `config:"SkipEd"`
-	SkipFiller               bool     `config:"SkipFiller"`
-	ImagePreview             bool     `config:"ImagePreview"`
-	SkipRecap                bool     `config:"SkipRecap"`
-	RofiSelection            bool     `config:"RofiSelection"`
-	CurrentCategory          bool     `config:"CurrentCategory"`
-	ScoreOnCompletion        bool     `config:"ScoreOnCompletion"`
-	SaveMpvSpeed             bool     `config:"SaveMpvSpeed"`
-	AddMissingOptions        bool     `config:"AddMissingOptions"`
-	AlternateScreen          bool     `config:"AlternateScreen"`
-	DiscordPresence          bool     `config:"DiscordPresence"`
-	DiscordClientId          string   `config:"DiscordClientId"`
-	Provider                 string   `config:"Provider"`
-	TrackingLocal            bool     `config:"TrackingLocal"`
-	TrackingRemote           string   `config:"TrackingRemote"`
-	TrackingConfigured       bool     `config:"TrackingConfigured"`
-	MyAnimeListClientID      string   `config:"MyAnimeListClientID"`
-	MyAnimeListClientSecret  string   `config:"MyAnimeListClientSecret"`
-	MyAnimeListImported      bool     `config:"MyAnimeListImported"`
+	Player                     string   `config:"Player"`
+	MpvArgs                    []string `config:"MpvArgs"`
+	SubsLanguage               string   `config:"SubsLanguage"`
+	SubOrDub                   string   `config:"SubOrDub"`
+	StoragePath                string   `config:"StoragePath"`
+	AnimeNameLanguage          string   `config:"AnimeNameLanguage"`
+	MenuOrder                  string   `config:"MenuOrder"`
+	PercentageToMarkComplete   int      `config:"PercentageToMarkComplete"`
+	NextEpisodePrompt          bool     `config:"NextEpisodePrompt"`
+	SkipOp                     bool     `config:"SkipOp"`
+	SkipEd                     bool     `config:"SkipEd"`
+	SkipFiller                 bool     `config:"SkipFiller"`
+	ImagePreview               bool     `config:"ImagePreview"`
+	SkipRecap                  bool     `config:"SkipRecap"`
+	RofiSelection              bool     `config:"RofiSelection"`
+	CurrentCategory            bool     `config:"CurrentCategory"`
+	ScoreOnCompletion          bool     `config:"ScoreOnCompletion"`
+	SaveMpvSpeed               bool     `config:"SaveMpvSpeed"`
+	AddMissingOptions          bool     `config:"AddMissingOptions"`
+	AlternateScreen            bool     `config:"AlternateScreen"`
+	DiscordPresence            bool     `config:"DiscordPresence"`
+	DiscordClientId            string   `config:"DiscordClientId"`
+	Provider                   string   `config:"Provider"`
+	TrackingLocal              bool     `config:"TrackingLocal"`
+	TrackingRemote             string   `config:"TrackingRemote"`
+	TrackingConfigured         bool     `config:"TrackingConfigured"`
+	MyAnimeListClientID        string   `config:"MyAnimeListClientID"`
+	MyAnimeListClientSecret    string   `config:"MyAnimeListClientSecret"`
+	MyAnimeListImported        bool     `config:"MyAnimeListImported"`
+	MyAnimeListImportDismissed bool     `config:"MyAnimeListImportDismissed"`
 }
 
 func GetStoragePath() string {
@@ -79,34 +80,35 @@ func GetStoragePath() string {
 // Default configuration values as a map
 func defaultConfigMap() map[string]string {
 	return map[string]string{
-		"Player":                   "mpv",
-		"MpvArgs":                  "[]",
-		"StoragePath":              "$HOME/.local/share/curd",
-		"AnimeNameLanguage":        "english",
-		"SubsLanguage":             "english",
-		"MenuOrder":                "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,TRACKER,PROVIDER",
-		"SubOrDub":                 "sub",
-		"PercentageToMarkComplete": "85",
-		"NextEpisodePrompt":        "false",
-		"SkipOp":                   "true",
-		"SkipEd":                   "true",
-		"SkipFiller":               "true",
-		"SkipRecap":                "true",
-		"RofiSelection":            "false",
-		"ImagePreview":             "false",
-		"ScoreOnCompletion":        "true",
-		"SaveMpvSpeed":             "true",
-		"AddMissingOptions":        "true",
-		"AlternateScreen":          "true",
-		"DiscordPresence":          "true",
-		"DiscordClientId":          "1287457464148820089",
-		"Provider":                 "allanime",
-		"TrackingLocal":            "true",
-		"TrackingRemote":           "anilist",
-		"TrackingConfigured":       "false",
-		"MyAnimeListClientID":      "f76d4c827152327b60654285d221222c",
-		"MyAnimeListClientSecret":  "",
-		"MyAnimeListImported":      "false",
+		"Player":                     "mpv",
+		"MpvArgs":                    "[]",
+		"StoragePath":                "$HOME/.local/share/curd",
+		"AnimeNameLanguage":          "english",
+		"SubsLanguage":               "english",
+		"MenuOrder":                  "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,TRACKER,PROVIDER",
+		"SubOrDub":                   "sub",
+		"PercentageToMarkComplete":   "85",
+		"NextEpisodePrompt":          "false",
+		"SkipOp":                     "true",
+		"SkipEd":                     "true",
+		"SkipFiller":                 "true",
+		"SkipRecap":                  "true",
+		"RofiSelection":              "false",
+		"ImagePreview":               "false",
+		"ScoreOnCompletion":          "true",
+		"SaveMpvSpeed":               "true",
+		"AddMissingOptions":          "true",
+		"AlternateScreen":            "true",
+		"DiscordPresence":            "true",
+		"DiscordClientId":            "1287457464148820089",
+		"Provider":                   "allanime",
+		"TrackingLocal":              "true",
+		"TrackingRemote":             "anilist",
+		"TrackingConfigured":         "false",
+		"MyAnimeListClientID":        "f76d4c827152327b60654285d221222c",
+		"MyAnimeListClientSecret":    "",
+		"MyAnimeListImported":        "false",
+		"MyAnimeListImportDismissed": "false",
 	}
 }
 

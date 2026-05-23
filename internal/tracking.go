@@ -142,6 +142,7 @@ func persistTrackingConfig(config *CurdConfig) error {
 	configMap["MyAnimeListClientID"] = config.MyAnimeListClientID
 	configMap["MyAnimeListClientSecret"] = config.MyAnimeListClientSecret
 	configMap["MyAnimeListImported"] = strconv.FormatBool(config.MyAnimeListImported)
+	configMap["MyAnimeListImportDismissed"] = strconv.FormatBool(config.MyAnimeListImportDismissed)
 
 	return SaveConfigToFile(GlobalConfigPath, configMap)
 }
@@ -1128,14 +1129,13 @@ func AddAnimeToList(animeID int, status string, token string) error {
 }
 
 func maybeImportAniListToMyAnimeList(config *CurdConfig, user *User) error {
-	if config == nil || user == nil || !UsesMyAnimeListTracking(config) || config.MyAnimeListImported || hasAnyEntries(user.AnimeList) {
+	if config == nil || user == nil || !UsesMyAnimeListTracking(config) || config.MyAnimeListImported || config.MyAnimeListImportDismissed || hasAnyEntries(user.AnimeList) {
 		return nil
 	}
 
 	legacyTokenPath := filepath.Join(os.ExpandEnv(config.StoragePath), "anilist_token.json")
 	if _, err := os.Stat(legacyTokenPath); err != nil {
-		config.MyAnimeListImported = true
-		return persistTrackingConfig(config)
+		return nil
 	}
 
 	options := []SelectionOption{
@@ -1156,9 +1156,12 @@ func maybeImportAniListToMyAnimeList(config *CurdConfig, user *User) error {
 		if err := RefreshMyAnimeListUserAnimeList(config, user); err != nil {
 			return err
 		}
+		config.MyAnimeListImported = true
+		config.MyAnimeListImportDismissed = false
+		return persistTrackingConfig(config)
 	}
 
-	config.MyAnimeListImported = true
+	config.MyAnimeListImportDismissed = true
 	return persistTrackingConfig(config)
 }
 
