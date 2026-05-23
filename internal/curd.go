@@ -897,9 +897,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		}
 
 		if selectedAnilistAnime.Media.Status == "NOT_YET_RELEASED" {
-			CurdOut("This anime is not yet released. Cannot play.")
-			time.Sleep(2 * time.Second)
-			anime.Ep.ContinueLast = false
+			handleUnreleasedAnime(userCurdConfig, user, anime, *selectedAnilistAnime)
 			ClearScreen()
 			continue
 		}
@@ -1473,6 +1471,56 @@ func WriteTokenToFile(token string, filePath string) error {
 	}
 
 	return nil
+}
+
+func handleUnreleasedAnime(userCurdConfig *CurdConfig, user *User, anime *Anime, entry Entry) {
+	title := entry.Media.Title.Romaji
+	if userCurdConfig != nil && userCurdConfig.AnimeNameLanguage == "english" && entry.Media.Title.English != "" {
+		title = entry.Media.Title.English
+	}
+	if title == "" {
+		title = strconv.Itoa(entry.Media.ID)
+	}
+
+	CurdOut(fmt.Sprintf("%s is not released yet.", title))
+	options := []SelectionOption{}
+	if UsesRemoteTracking(userCurdConfig) {
+		options = append(options, SelectionOption{Key: "planning", Label: "Add to Plan to Watch"})
+	}
+	options = append(options,
+		SelectionOption{Key: "details", Label: "Open AniList details"},
+		SelectionOption{Key: "back", Label: "Back to list"},
+	)
+
+	selected, err := DynamicSelect(options)
+	if err != nil {
+		Log(fmt.Sprintf("Error in unreleased anime prompt: %v", err))
+		anime.Ep.ContinueLast = false
+		return
+	}
+
+	switch selected.Key {
+	case "planning":
+		if err := AddAnimeToList(entry.Media.ID, "PLANNING", user.Token); err != nil {
+			Log(fmt.Sprintf("Error adding unreleased anime to planning: %v", err))
+			CurdOut("Failed to add to Plan to Watch.")
+		} else {
+			CurdOut("Added to Plan to Watch.")
+			if err := RefreshUserAnimeList(userCurdConfig, user); err != nil {
+				Log("Error refreshing anime list: " + err.Error())
+			}
+		}
+	case "details":
+		url := fmt.Sprintf("https://anilist.co/anime/%d", entry.Media.ID)
+		CurdOut(fmt.Sprintf("Opening %s", url))
+		if err := browser.OpenURL(url); err != nil {
+			Log(fmt.Sprintf("Error opening browser: %v", err))
+			CurdOut("Failed to open browser.")
+		}
+	case "-1":
+		ExitCurd(nil)
+	}
+	anime.Ep.ContinueLast = false
 }
 
 func confirmProviderMatch(option SelectionOption, reason string) bool {
