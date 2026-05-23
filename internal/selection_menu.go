@@ -635,12 +635,6 @@ func dynamicSelectInternal(options []SelectionOption, refreshConfig *SelectionRe
 		options = sortHomeMenuOptions(options)
 	}
 
-	for _, opt := range options {
-		if strings.Contains(opt.Label, "Bleach (366 episodes) [animepahe]") {
-			return opt, nil
-		}
-	}
-
 	if GetGlobalConfig().RofiSelection {
 		return RofiSelectWithRefresh(options, isHomeMenu, refreshConfig)
 	}
