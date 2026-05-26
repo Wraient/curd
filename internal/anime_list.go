@@ -57,38 +57,7 @@ func alternateTranslationType(mode string) string {
 
 func searchAllAnime(query, mode string) ([]SelectionOption, error) {
 	preferredMode := normalizeTranslationType(mode)
-	alternateMode := alternateTranslationType(preferredMode)
-
-	preferredResults, preferredErr := searchAnimeByMode(query, preferredMode, preferredMode)
-	alternateResults, alternateErr := searchAnimeByMode(query, alternateMode, preferredMode)
-
-	if preferredErr != nil {
-		Log(fmt.Sprintf("Failed searching %s results for %q: %v", preferredMode, query, preferredErr))
-	}
-	if alternateErr != nil {
-		Log(fmt.Sprintf("Failed searching %s results for %q: %v", alternateMode, query, alternateErr))
-	}
-
-	if preferredErr != nil && alternateErr != nil {
-		return nil, preferredErr
-	}
-
-	animeList := make([]SelectionOption, 0, len(preferredResults)+len(alternateResults))
-	seen := make(map[string]struct{}, len(preferredResults)+len(alternateResults))
-
-	for _, option := range preferredResults {
-		animeList = append(animeList, option)
-		seen[option.Key] = struct{}{}
-	}
-
-	for _, option := range alternateResults {
-		if _, exists := seen[option.Key]; exists {
-			continue
-		}
-		animeList = append(animeList, option)
-	}
-
-	return animeList, nil
+	return searchAnimeByMode(query, preferredMode, preferredMode)
 }
 
 func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, error) {
@@ -170,6 +139,11 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 	// Debug: Log the response status and first part of the body
 	Log(fmt.Sprintf("Response Status: %s", resp.Status))
 	Log(fmt.Sprintf("Response Body (first 500 chars): %s", string(body[:min(len(body), 500)])))
+	if !httpStatusOK(resp.StatusCode) {
+		err := httpStatusError("allanime search", resp.StatusCode, body)
+		Log(err)
+		return animeList, err
+	}
 
 	// Parse the JSON response
 	var response response

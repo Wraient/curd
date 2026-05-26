@@ -35,7 +35,7 @@ type episodesResponse struct {
 func getAllAnimeEpisodesList(showID, mode string) ([]string, error) {
 	preferredMode := normalizeTranslationType(mode)
 
-	episodesListGql := `query ($showId String!) { show( _id: $showId ) { _id availableEpisodesDetail }}`
+	episodesListGql := `query ($showId: String!) { show( _id: $showId ) { _id availableEpisodesDetail }}`
 
 	// Build POST request body
 	requestBody, err := json.Marshal(map[string]interface{}{
@@ -68,6 +68,9 @@ func getAllAnimeEpisodesList(showID, mode string) ([]string, error) {
 		Log(fmt.Sprint("Error reading response body:", err))
 		return nil, err
 	}
+	if !httpStatusOK(resp.StatusCode) {
+		return nil, httpStatusError("allanime episode list", resp.StatusCode, body)
+	}
 
 	// Parse the JSON response
 	var response episodesResponse
@@ -80,14 +83,7 @@ func getAllAnimeEpisodesList(showID, mode string) ([]string, error) {
 	// Extract and sort the episodes
 	episodes := extractEpisodes(response.Data.Show.AvailableEpisodesDetail, preferredMode)
 	if len(episodes) == 0 {
-		fallbackMode := alternateTranslationType(preferredMode)
-		episodes = extractEpisodes(response.Data.Show.AvailableEpisodesDetail, fallbackMode)
-		if len(episodes) > 0 {
-			Log(fmt.Sprintf("Falling back to %s episode list for anime %s", fallbackMode, showID))
-		}
-	}
-	if len(episodes) == 0 {
-		return episodes, fmt.Errorf("no episodes found for anime %s", showID)
+		return episodes, fmt.Errorf("no %s episodes found for anime %s", preferredMode, showID)
 	}
 	return episodes, nil
 }

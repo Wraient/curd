@@ -38,35 +38,36 @@ type AnilistToken struct {
 
 // CurdConfig struct with field names that match the config keys
 type CurdConfig struct {
-	Player                   string   `config:"Player"`
-	MpvArgs                  []string `config:"MpvArgs"`
-	SubsLanguage             string   `config:"SubsLanguage"`
-	SubOrDub                 string   `config:"SubOrDub"`
-	StoragePath              string   `config:"StoragePath"`
-	AnimeNameLanguage        string   `config:"AnimeNameLanguage"`
-	MenuOrder                string   `config:"MenuOrder"`
-	PercentageToMarkComplete int      `config:"PercentageToMarkComplete"`
-	NextEpisodePrompt        bool     `config:"NextEpisodePrompt"`
-	SkipOp                   bool     `config:"SkipOp"`
-	SkipEd                   bool     `config:"SkipEd"`
-	SkipFiller               bool     `config:"SkipFiller"`
-	ImagePreview             bool     `config:"ImagePreview"`
-	SkipRecap                bool     `config:"SkipRecap"`
-	RofiSelection            bool     `config:"RofiSelection"`
-	CurrentCategory          bool     `config:"CurrentCategory"`
-	ScoreOnCompletion        bool     `config:"ScoreOnCompletion"`
-	SaveMpvSpeed             bool     `config:"SaveMpvSpeed"`
-	AddMissingOptions        bool     `config:"AddMissingOptions"`
-	AlternateScreen          bool     `config:"AlternateScreen"`
-	DiscordPresence          bool     `config:"DiscordPresence"`
-	DiscordClientId          string   `config:"DiscordClientId"`
-	Provider                 string   `config:"Provider"`
-	TrackingLocal            bool     `config:"TrackingLocal"`
-	TrackingRemote           string   `config:"TrackingRemote"`
-	TrackingConfigured       bool     `config:"TrackingConfigured"`
-	MyAnimeListClientID      string   `config:"MyAnimeListClientID"`
-	MyAnimeListClientSecret  string   `config:"MyAnimeListClientSecret"`
-	MyAnimeListImported      bool     `config:"MyAnimeListImported"`
+	Player                     string   `config:"Player"`
+	MpvArgs                    []string `config:"MpvArgs"`
+	SubsLanguage               string   `config:"SubsLanguage"`
+	SubOrDub                   string   `config:"SubOrDub"`
+	StoragePath                string   `config:"StoragePath"`
+	AnimeNameLanguage          string   `config:"AnimeNameLanguage"`
+	MenuOrder                  string   `config:"MenuOrder"`
+	PercentageToMarkComplete   int      `config:"PercentageToMarkComplete"`
+	NextEpisodePrompt          bool     `config:"NextEpisodePrompt"`
+	SkipOp                     bool     `config:"SkipOp"`
+	SkipEd                     bool     `config:"SkipEd"`
+	SkipFiller                 bool     `config:"SkipFiller"`
+	ImagePreview               bool     `config:"ImagePreview"`
+	SkipRecap                  bool     `config:"SkipRecap"`
+	RofiSelection              bool     `config:"RofiSelection"`
+	CurrentCategory            bool     `config:"CurrentCategory"`
+	ScoreOnCompletion          bool     `config:"ScoreOnCompletion"`
+	SaveMpvSpeed               bool     `config:"SaveMpvSpeed"`
+	AddMissingOptions          bool     `config:"AddMissingOptions"`
+	AlternateScreen            bool     `config:"AlternateScreen"`
+	DiscordPresence            bool     `config:"DiscordPresence"`
+	DiscordClientId            string   `config:"DiscordClientId"`
+	Provider                   string   `config:"Provider"`
+	TrackingLocal              bool     `config:"TrackingLocal"`
+	TrackingRemote             string   `config:"TrackingRemote"`
+	TrackingConfigured         bool     `config:"TrackingConfigured"`
+	MyAnimeListClientID        string   `config:"MyAnimeListClientID"`
+	MyAnimeListClientSecret    string   `config:"MyAnimeListClientSecret"`
+	MyAnimeListImported        bool     `config:"MyAnimeListImported"`
+	MyAnimeListImportDismissed bool     `config:"MyAnimeListImportDismissed"`
 }
 
 func GetStoragePath() string {
@@ -79,34 +80,35 @@ func GetStoragePath() string {
 // Default configuration values as a map
 func defaultConfigMap() map[string]string {
 	return map[string]string{
-		"Player":                   "mpv",
-		"MpvArgs":                  "[]",
-		"StoragePath":              "$HOME/.local/share/curd",
-		"AnimeNameLanguage":        "english",
-		"SubsLanguage":             "english",
-		"MenuOrder":                "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,TRACKER,PROVIDER",
-		"SubOrDub":                 "sub",
-		"PercentageToMarkComplete": "85",
-		"NextEpisodePrompt":        "false",
-		"SkipOp":                   "true",
-		"SkipEd":                   "true",
-		"SkipFiller":               "true",
-		"SkipRecap":                "true",
-		"RofiSelection":            "false",
-		"ImagePreview":             "false",
-		"ScoreOnCompletion":        "true",
-		"SaveMpvSpeed":             "true",
-		"AddMissingOptions":        "true",
-		"AlternateScreen":          "true",
-		"DiscordPresence":          "true",
-		"DiscordClientId":          "1287457464148820089",
-		"Provider":                 "allanime",
-		"TrackingLocal":            "true",
-		"TrackingRemote":           "anilist",
-		"TrackingConfigured":       "false",
-		"MyAnimeListClientID":      "f76d4c827152327b60654285d221222c",
-		"MyAnimeListClientSecret":  "",
-		"MyAnimeListImported":      "false",
+		"Player":                     "mpv",
+		"MpvArgs":                    "[]",
+		"StoragePath":                "$HOME/.local/share/curd",
+		"AnimeNameLanguage":          "english",
+		"SubsLanguage":               "english",
+		"MenuOrder":                  "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,TRACKER,PROVIDER",
+		"SubOrDub":                   "sub",
+		"PercentageToMarkComplete":   "85",
+		"NextEpisodePrompt":          "false",
+		"SkipOp":                     "true",
+		"SkipEd":                     "true",
+		"SkipFiller":                 "true",
+		"SkipRecap":                  "true",
+		"RofiSelection":              "false",
+		"ImagePreview":               "false",
+		"ScoreOnCompletion":          "true",
+		"SaveMpvSpeed":               "true",
+		"AddMissingOptions":          "true",
+		"AlternateScreen":            "true",
+		"DiscordPresence":            "true",
+		"DiscordClientId":            "1287457464148820089",
+		"Provider":                   "allanime",
+		"TrackingLocal":              "true",
+		"TrackingRemote":             "anilist",
+		"TrackingConfigured":         "false",
+		"MyAnimeListClientID":        "f76d4c827152327b60654285d221222c",
+		"MyAnimeListClientSecret":    "",
+		"MyAnimeListImported":        "false",
+		"MyAnimeListImportDismissed": "false",
 	}
 }
 
@@ -120,8 +122,25 @@ func GetGlobalConfig() *CurdConfig {
 	return globalConfig
 }
 
+func useEnglishAnimeNames(config *CurdConfig) bool {
+	return config == nil || strings.EqualFold(strings.TrimSpace(config.AnimeNameLanguage), "english")
+}
+
 // Helper function to parse string array from config
 func parseStringArray(value string) []string {
+	value = strings.TrimSpace(value)
+	var parsed []string
+	if err := json.Unmarshal([]byte(value), &parsed); err == nil {
+		result := make([]string, 0, len(parsed))
+		for _, part := range parsed {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				result = append(result, part)
+			}
+		}
+		return result
+	}
+
 	// Remove brackets and split by comma
 	value = strings.TrimPrefix(value, "[")
 	value = strings.TrimSuffix(value, "]")
@@ -170,7 +189,9 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 	// Check AddMissingOptions setting first
 	addMissing := true
 	if val, exists := configMap["AddMissingOptions"]; exists {
-		addMissing, _ = strconv.ParseBool(val)
+		if parsed, parseErr := strconv.ParseBool(val); parseErr == nil {
+			addMissing = parsed
+		}
 	}
 
 	_, hadTrackingRemote := configMap["TrackingRemote"]
@@ -321,7 +342,7 @@ func authenticateWithBrowser(tokenPath string) (string, error) {
 				"code":          {code},
 			}
 
-			resp, err := http.PostForm(tokenURL, data)
+			resp, err := sharedHTTPClient.PostForm(tokenURL, data)
 			if err != nil {
 				errCh <- fmt.Errorf("failed to exchange code for token: %w", err)
 				return
@@ -579,25 +600,34 @@ func SaveConfigToFile(path string, configMap map[string]string) error {
 func PopulateConfig(configMap map[string]string) CurdConfig {
 	config := CurdConfig{}
 	configValue := reflect.ValueOf(&config).Elem()
+	defaults := defaultConfigMap()
 
 	for i := 0; i < configValue.NumField(); i++ {
 		field := configValue.Type().Field(i)
 		tag := field.Tag.Get("config")
 
-		if value, exists := configMap[tag]; exists {
-			fieldValue := configValue.FieldByName(field.Name)
+		value, exists := configMap[tag]
+		if !exists || value == "" {
+			value = defaults[tag]
+		}
+		fieldValue := configValue.FieldByName(field.Name)
 
-			if fieldValue.CanSet() {
-				switch fieldValue.Kind() {
-				case reflect.String:
-					fieldValue.SetString(value)
-				case reflect.Int:
-					intVal, _ := strconv.Atoi(value)
-					fieldValue.SetInt(int64(intVal))
-				case reflect.Bool:
-					boolVal, _ := strconv.ParseBool(value)
-					fieldValue.SetBool(boolVal)
+		if fieldValue.CanSet() {
+			switch fieldValue.Kind() {
+			case reflect.String:
+				fieldValue.SetString(value)
+			case reflect.Int:
+				intVal, err := strconv.Atoi(value)
+				if err != nil {
+					intVal, _ = strconv.Atoi(defaults[tag])
 				}
+				fieldValue.SetInt(int64(intVal))
+			case reflect.Bool:
+				boolVal, err := strconv.ParseBool(value)
+				if err != nil {
+					boolVal, _ = strconv.ParseBool(defaults[tag])
+				}
+				fieldValue.SetBool(boolVal)
 			}
 		}
 	}

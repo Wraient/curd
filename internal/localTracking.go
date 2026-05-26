@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bufio"
 	"encoding/csv"
 	"fmt"
 	"os"
@@ -21,7 +20,6 @@ func LocalAddAnime(databaseFile string, anilistID int, allanimeID string, watchi
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
-	defer writer.Flush()
 
 	err = writer.Write([]string{
 		strconv.Itoa(anilistID),
@@ -33,9 +31,14 @@ func LocalAddAnime(databaseFile string, anilistID int, allanimeID string, watchi
 	})
 	if err != nil {
 		CurdOut(fmt.Sprintf("Error writing to file: %v", err))
-	} else {
-		CurdOut("Written to file")
+		return
 	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		CurdOut(fmt.Sprintf("Error flushing file: %v", err))
+		return
+	}
+	CurdOut("Written to file")
 }
 
 func normalizeLocalProviderID(providerName, providerID, animeName string) string {
@@ -74,8 +77,15 @@ func LocalDeleteAnime(databaseFile string, anilistID int, allanimeID string) {
 
 	// Filter out the anime entry
 	for _, row := range records {
-		aid, _ := strconv.Atoi(row[0]) // Anilist ID
-		if aid != anilistID || row[1] != allanimeID {
+		anime := parseAnimeRow(row)
+		if anime == nil {
+			CurdOut(fmt.Sprintf("Skipping invalid local history row: %v", row))
+			continue
+		}
+
+		existingProviderID := normalizeLocalProviderID(anime.ProviderName, anime.ProviderId, GetAnimeName(*anime))
+		targetProviderID := normalizeLocalProviderID(anime.ProviderName, allanimeID, GetAnimeName(*anime))
+		if anime.AnilistId != anilistID || existingProviderID != targetProviderID {
 			animeList = append(animeList, row)
 		}
 	}
@@ -89,11 +99,14 @@ func LocalDeleteAnime(databaseFile string, anilistID int, allanimeID string) {
 	defer fileWrite.Close()
 
 	writer := csv.NewWriter(fileWrite)
-	defer writer.Flush()
-
 	err = writer.WriteAll(animeList)
 	if err != nil {
 		CurdOut(fmt.Sprintf("Error writing to file: %v", err))
+		return
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		CurdOut(fmt.Sprintf("Error flushing file: %v", err))
 	}
 }
 
@@ -150,10 +163,34 @@ func parseAnimeRow(row []string) *Anime {
 		return nil
 	}
 
-	anilistID, _ := strconv.Atoi(row[0])
-	watchingEpisode, _ := strconv.Atoi(row[2])
-	playbackTime, _ := strconv.Atoi(row[3])
-	animeDuration, _ := strconv.Atoi(row[4])
+	anilistID, ok := parseRequiredLocalInt(row[0], "AniList ID", row)
+	if !ok {
+		return nil
+	}
+	watchingEpisode, ok := parseRequiredLocalInt(row[2], "episode", row)
+	if !ok {
+		return nil
+	}
+	playbackTime, ok := parseRequiredLocalInt(row[3], "playback time", row)
+	if !ok {
+		return nil
+	}
+	animeDuration := 0
+	animeName := strconv.Itoa(anilistID)
+	providerName := "allanime"
+
+	if len(row) >= 7 {
+		animeDuration = parseLocalInt(row[4])
+		providerName = row[5]
+		animeName = row[6]
+	} else if len(row) >= 6 {
+		animeDuration = parseLocalInt(row[4])
+		animeName = row[5]
+	} else if duration, err := strconv.Atoi(row[4]); err == nil {
+		animeDuration = duration
+	} else {
+		animeName = row[4]
+	}
 
 	anime := &Anime{
 		AnilistId:  anilistID,
@@ -165,38 +202,46 @@ func parseAnimeRow(row []string) *Anime {
 			},
 			Duration: animeDuration,
 		},
-	}
-
-	if len(row) >= 7 {
-		anime.ProviderName = row[5]
-		anime.Title = AnimeTitle{
-			English: row[6],
-			Romaji:  row[6],
-		}
-	} else if len(row) >= 6 {
-		anime.ProviderName = "allanime"
-		anime.Title = AnimeTitle{
-			English: row[5],
-			Romaji:  row[5],
-		}
-	} else if len(row) == 5 {
-		anime.ProviderName = "allanime"
-		anime.Title = AnimeTitle{
-			English: row[4],
-			Romaji:  row[4],
-		}
+		ProviderName: providerName,
+		Title: AnimeTitle{
+			English: animeName,
+			Romaji:  animeName,
+		},
 	}
 
 	return anime
 }
 
+func parseLocalInt(value string) int {
+	parsed, _ := strconv.Atoi(strings.TrimSpace(value))
+	return parsed
+}
+
+func parseRequiredLocalInt(value, field string, row []string) (int, bool) {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		CurdOut(fmt.Sprintf("Invalid %s in local history row %v: %v", field, row, err))
+		return 0, false
+	}
+	return parsed, true
+}
+
 // Function to get the anime name (English or Romaji) from an Anime struct
 func GetAnimeName(anime Anime) string {
 	userCurdConfig := GetGlobalConfig()
-	if anime.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
+	if anime.Title.English != "" && useEnglishAnimeNames(userCurdConfig) {
 		return anime.Title.English
 	}
-	return anime.Title.Romaji
+	if anime.Title.Romaji != "" {
+		return anime.Title.Romaji
+	}
+	if anime.Title.English != "" {
+		return anime.Title.English
+	}
+	if anime.AnilistId != 0 {
+		return strconv.Itoa(anime.AnilistId)
+	}
+	return ""
 }
 
 // Function to update or add a new anime entry
@@ -251,7 +296,6 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
-	defer writer.Flush()
 
 	for _, anime := range animeList {
 		providerID := normalizeLocalProviderID(anime.ProviderName, anime.ProviderId, GetAnimeName(anime))
@@ -266,7 +310,14 @@ func LocalUpdateAnime(databaseFile string, anilistID int, allanimeID string, wat
 		}
 		if err := writer.Write(record); err != nil {
 			CurdOut(fmt.Sprintf("Error writing record: %v", err))
+			return err
 		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		CurdOut(fmt.Sprintf("Error flushing records: %v", err))
+		return err
 	}
 
 	return nil
@@ -297,16 +348,10 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 	// Anime search and selection loop
 	for {
 		// Get anime name from user
-		if userCurdConfig.RofiSelection {
-			userInput, err := GetUserInputFromRofi("Enter the anime name")
-			if err != nil {
-				Log("Error getting user input: " + err.Error())
-				ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
-			}
-			query = userInput
-		} else {
-			CurdOut("Enter the anime name:")
-			fmt.Scanln(&query)
+		query, err = promptText(userCurdConfig, "Enter the anime name", false)
+		if err != nil {
+			Log("Error getting user input: " + err.Error())
+			ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 		}
 
 		// Search for the anime
@@ -320,19 +365,10 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 			// Prompt user for manual query
 			for {
 				var manualQuery string
-				if userCurdConfig.RofiSelection {
-					userInput, err := GetUserInputFromRofi(fmt.Sprintf("No results found for '%s'. Press Enter to search with the original name, or enter a custom name to search on AllAnime.", query))
-					if err != nil {
-						Log("Error getting user input: " + err.Error())
-						ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
-					}
-					manualQuery = userInput
-				} else {
-					CurdOut(fmt.Sprintf("No results found for '%s'.", query))
-					CurdOut("Press Enter to search with the original name, or enter a custom name to search on AllAnime:")
-					reader := bufio.NewReader(os.Stdin)
-					input, _ := reader.ReadString('\n')
-					manualQuery = strings.TrimSpace(input)
+				manualQuery, err = promptText(userCurdConfig, fmt.Sprintf("No results found for '%s'. Press Enter to search with the original name, or enter a custom name to search on AllAnime.", query), true)
+				if err != nil {
+					Log("Error getting user input: " + err.Error())
+					ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 				}
 
 				// If empty, use original query name
@@ -380,28 +416,17 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 	}
 
 	// Get episode number
-	var episodeNumber int
-	if userCurdConfig.RofiSelection {
-		userInput, err := GetUserInputFromRofi("Enter the episode number")
-		if err != nil {
-			Log("Error getting episode number: " + err.Error())
-			ExitCurd(fmt.Errorf("Error getting episode number: " + err.Error()))
-		}
-		episodeNumber, err = strconv.Atoi(userInput)
-		if err != nil {
-			Log(fmt.Sprintf("Invalid episode number: %v", err))
-			ExitCurd(fmt.Errorf("Invalid episode number"))
-		}
-	} else {
-		CurdOut("Enter the episode number:")
-		fmt.Scanln(&episodeNumber)
+	episodeNumber, err := promptPositiveEpisodeNumber(userCurdConfig, "Enter the episode number")
+	if err != nil {
+		Log(fmt.Sprintf("Invalid episode number: %v", err))
+		ExitCurd(fmt.Errorf("Invalid episode number"))
 	}
 
 	anime.Ep.Number = episodeNumber
 
 	for {
 		// Get episode link
-		link, err := GetEpisodeURL(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
+		link, _, err := GetEpisodeURLForPlayback(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to get episode link: %v", err))
 			ExitCurd(fmt.Errorf("Failed to get episode link"))

@@ -19,6 +19,7 @@ import (
 )
 
 var animepaheCookiesBypassed bool
+var solveAnimepaheBrowserChallenge = solveAnimepaheBrowserChallengeWithRod
 
 func getCookieFilePath() string {
 	return filepath.Join(GetStoragePath(), "animepahe_cookies.json")
@@ -38,16 +39,40 @@ func loadCookies() []*http.Cookie {
 		return nil
 	}
 	var cookies []*http.Cookie
-	json.Unmarshal(b, &cookies)
+	if err := json.Unmarshal(b, &cookies); err != nil {
+		return nil
+	}
 	return cookies
 }
 
-func checkCookiesValid() bool {
-	req, _ := http.NewRequest("GET", "https://animepahe.pw/api?m=search&q=test", nil)
+func newAnimepaheAPIRequest(rawURL string) (*http.Request, error) {
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", "https://animepahe.pw/")
 	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	return req, nil
+}
+
+func newAnimepahePageRequest(rawURL string) (*http.Request, error) {
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Referer", "https://animepahe.pw/")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	return req, nil
+}
+
+func checkCookiesValid() bool {
+	req, err := newAnimepaheAPIRequest("https://animepahe.pw/api?m=search&q=test")
+	if err != nil {
+		return false
+	}
 
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
@@ -55,7 +80,14 @@ func checkCookiesValid() bool {
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
 	if resp.StatusCode != 200 {
+		return false
+	}
+	if isAnimepaheChallengeBody(body) {
 		return false
 	}
 
@@ -63,7 +95,30 @@ func checkCookiesValid() bool {
 	return strings.Contains(contentType, "application/json")
 }
 
-func (p *AnimepaheProvider) ensureBypass() error {
+func isAnimepaheChallengeResponse(resp *http.Response, body []byte) bool {
+	if resp == nil {
+		return false
+	}
+	if isAnimepaheChallengeBody(body) {
+		return true
+	}
+	return resp.StatusCode == http.StatusForbidden && strings.Contains(strings.ToLower(resp.Header.Get("Server")), "ddos-guard")
+}
+
+func isAnimepaheChallengeBody(body []byte) bool {
+	normalized := strings.ToLower(string(body))
+	return strings.Contains(normalized, "ddos-guard") ||
+		strings.Contains(normalized, "/.well-known/ddos-guard/") ||
+		strings.Contains(normalized, "checking your browser")
+}
+
+func (p *AnimepaheProvider) ensureBypass() (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("failed to solve Animepahe DDoS-Guard challenge: %v", recovered)
+		}
+	}()
+
 	if animepaheCookiesBypassed {
 		return nil
 	}
@@ -81,36 +136,24 @@ func (p *AnimepaheProvider) ensureBypass() error {
 		Log("Cached Animepahe session expired. Requesting new session...")
 	}
 
-	CurdOut("Solving Animepahe DDoS-Guard challenge via headless browser...")
+	return p.refreshBypass()
+}
 
-	l := launcher.New().Headless(true)
-	defer l.Cleanup()
-	browser := rod.New().ControlURL(l.MustLaunch()).MustConnect()
-	defer browser.MustClose()
-
-	page := browser.MustPage("https://animepahe.pw/")
-	page.MustWaitLoad()
-
-	for i := 0; i < 30; i++ {
-		info, err := page.Info()
-		if err == nil && info.Title != "DDoS-Guard" && info.Title != "Just a moment..." && info.Title != "" {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	rodCookies, err := page.Cookies(nil)
-	if err != nil {
-		return fmt.Errorf("failed to acquire DDoS guard cookies: %v", err)
-	}
-
+func (p *AnimepaheProvider) refreshBypass() error {
 	u, _ := url.Parse("https://animepahe.pw")
-	var httpCookies []*http.Cookie
-	for _, cookie := range rodCookies {
-		httpCookies = append(httpCookies, &http.Cookie{
-			Name:  cookie.Name,
-			Value: cookie.Value,
-		})
+	animepaheCookiesBypassed = false
+	if err := os.Remove(getCookieFilePath()); err != nil && !os.IsNotExist(err) {
+		Log(fmt.Sprintf("Failed to remove cached Animepahe cookies: %v", err))
+	}
+
+	CurdOut("Animepahe needs a browser challenge before Curd can search or play. Starting a temporary headless browser...")
+	httpCookies, err := solveAnimepaheBrowserChallenge()
+	if err != nil {
+		CurdOut("Animepahe browser challenge failed. Try again later or switch provider.")
+		return fmt.Errorf("animepahe browser challenge failed: %w", err)
+	}
+	if len(httpCookies) == 0 {
+		return fmt.Errorf("animepahe browser challenge returned no cookies")
 	}
 	SetCookiesForAnimepahe(u, httpCookies)
 
@@ -122,6 +165,40 @@ func (p *AnimepaheProvider) ensureBypass() error {
 	animepaheCookiesBypassed = true
 	CurdOut("Successfully bypassed DDoS-Guard.")
 	return nil
+}
+
+func solveAnimepaheBrowserChallengeWithRod() (httpCookies []*http.Cookie, err error) {
+	if err := rod.Try(func() {
+		l := launcher.New().Headless(true)
+		defer l.Cleanup()
+		browser := rod.New().ControlURL(l.MustLaunch()).MustConnect()
+		defer browser.MustClose()
+
+		page := browser.MustPage("https://animepahe.pw/")
+		page.MustWaitLoad()
+
+		for i := 0; i < 30; i++ {
+			info, err := page.Info()
+			if err == nil && info.Title != "DDoS-Guard" && info.Title != "Just a moment..." && info.Title != "" {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		rodCookies, err := page.Cookies(nil)
+		if err != nil {
+			panic(err)
+		}
+		for _, cookie := range rodCookies {
+			httpCookies = append(httpCookies, &http.Cookie{
+				Name:  cookie.Name,
+				Value: cookie.Value,
+			})
+		}
+	}); err != nil {
+		return nil, err
+	}
+	return httpCookies, nil
 }
 
 type AnimepaheProvider struct{}
@@ -252,11 +329,10 @@ func (p *AnimepaheProvider) SearchAnime(query, mode string) ([]SelectionOption, 
 	// animepahe doesn't distinguish sub/dub at the search level
 	searchUrl := fmt.Sprintf("https://animepahe.pw/api?m=search&q=%s", url.QueryEscape(query))
 
-	req, _ := http.NewRequest("GET", searchUrl, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", "https://animepahe.pw/")
-	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req, err := newAnimepaheAPIRequest(searchUrl)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
@@ -267,6 +343,9 @@ func (p *AnimepaheProvider) SearchAnime(query, mode string) ([]SelectionOption, 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+	if !httpStatusOK(resp.StatusCode) {
+		return nil, httpStatusError("animepahe search", resp.StatusCode, body)
 	}
 
 	var searchResp animepaheSearchResponse
@@ -315,14 +394,14 @@ func (p *AnimepaheProvider) EpisodesList(showID, mode string) ([]string, error) 
 
 	var allEpisodes []int
 	page := 1
+	challengeRetried := false
 
 	for {
 		epUrl := fmt.Sprintf("https://animepahe.pw/api?m=release&id=%s&sort=episode_asc&page=%d", apiID, page)
-		req, _ := http.NewRequest("GET", epUrl, nil)
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-		req.Header.Set("Referer", "https://animepahe.pw/")
-		req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
-		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+		req, err := newAnimepaheAPIRequest(epUrl)
+		if err != nil {
+			return nil, err
+		}
 
 		resp, err := sharedHTTPClient.Do(req)
 		if err != nil {
@@ -333,6 +412,20 @@ func (p *AnimepaheProvider) EpisodesList(showID, mode string) ([]string, error) 
 		resp.Body.Close()
 		if err != nil {
 			return nil, err
+		}
+		if isAnimepaheChallengeResponse(resp, body) {
+			if challengeRetried {
+				return nil, fmt.Errorf("animepahe episode list is still blocked by DDoS-Guard after refreshing browser session")
+			}
+			Log("Animepahe episode list returned DDoS-Guard challenge. Refreshing browser session...")
+			if err := p.refreshBypass(); err != nil {
+				return nil, err
+			}
+			challengeRetried = true
+			continue
+		}
+		if !httpStatusOK(resp.StatusCode) {
+			return nil, httpStatusError("animepahe episode list", resp.StatusCode, body)
 		}
 
 		var epsResp animepaheEpisodesResponse
@@ -390,11 +483,10 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	page := 1
 	for {
 		reqUrl := fmt.Sprintf("https://animepahe.pw/api?m=release&id=%s&sort=episode_asc&page=%d", apiID, page)
-		req, _ := http.NewRequest("GET", reqUrl, nil)
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-		req.Header.Set("Referer", "https://animepahe.pw/")
-		req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
-		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+		req, err := newAnimepaheAPIRequest(reqUrl)
+		if err != nil {
+			return nil, err
+		}
 
 		resp, err := sharedHTTPClient.Do(req)
 		if err != nil {
@@ -405,6 +497,9 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 		resp.Body.Close()
 		if err != nil {
 			return nil, err
+		}
+		if !httpStatusOK(resp.StatusCode) {
+			return nil, httpStatusError("animepahe episode lookup", resp.StatusCode, body)
 		}
 
 		var epsResp animepaheEpisodesResponse
@@ -433,10 +528,10 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	// player page: https://animepahe.pw/play/<anime_session>/<episode_session>
 	// stream links in player page: <button type=\"button\" data-src=\"https://kwik.cx/e/Jwd0hMNswksj\"
 	playerUrl := fmt.Sprintf("https://animepahe.pw/play/%s/%s", animeRef.Session, episodeSession)
-	req, _ := http.NewRequest("GET", playerUrl, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", "https://animepahe.pw/")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	req, err := newAnimepahePageRequest(playerUrl)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
@@ -447,6 +542,9 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+	if !httpStatusOK(resp.StatusCode) {
+		return nil, httpStatusError("animepahe player page", resp.StatusCode, body)
 	}
 
 	bodyStr := string(body)
@@ -504,18 +602,18 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	sortFunc(dubLinks)
 
 	var links []string
-	if config.SubOrDub == "dub" && len(dubLinks) > 0 {
+	mode := normalizeTranslationType(config.SubOrDub)
+	if mode == "dub" {
 		for _, l := range dubLinks {
 			links = append(links, l.url)
 		}
-	} else if len(subLinks) > 0 {
+	} else {
 		for _, l := range subLinks {
 			links = append(links, l.url)
 		}
-	} else if len(dubLinks) > 0 {
-		for _, l := range dubLinks {
-			links = append(links, l.url)
-		}
+	}
+	if len(links) == 0 {
+		return nil, fmt.Errorf("no %s streams found for episode %d", mode, epNo)
 	}
 
 	var finalLinks []string
@@ -527,17 +625,17 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	}
 
 	if len(finalLinks) == 0 {
-		return nil, fmt.Errorf("failed to extract any stream links from kwik")
+		return nil, fmt.Errorf("failed to extract any %s stream links from kwik", mode)
 	}
 
 	return finalLinks, nil
 }
 
 func (p *AnimepaheProvider) extractKwikM3u8(kwikUrl string) (string, error) {
-	req, _ := http.NewRequest("GET", kwikUrl, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", "https://animepahe.pw/")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	req, err := newAnimepahePageRequest(kwikUrl)
+	if err != nil {
+		return "", err
+	}
 
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
@@ -548,6 +646,9 @@ func (p *AnimepaheProvider) extractKwikM3u8(kwikUrl string) (string, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
+	}
+	if !httpStatusOK(resp.StatusCode) {
+		return "", httpStatusError("kwik stream page", resp.StatusCode, body)
 	}
 	bodyStr := string(body)
 

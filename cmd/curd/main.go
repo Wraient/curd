@@ -217,6 +217,9 @@ func main() {
 	}
 
 	anime.Ep.Player.Speed = 1.0
+	if userCurdConfig.DiscordPresence {
+		internal.CurdOut("Starting Discord broadcast.")
+	}
 
 	// Get filler list concurrently
 	go func() {
@@ -270,9 +273,8 @@ func main() {
 		// Start curd (loop while episode is playing)
 		for {
 			// Check if current episode is filler/recap
-			err = internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime)
-			if err != nil {
-				internal.Log("Error getting episode data, assuming non-filler: " + err.Error())
+			if episodeErr := internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime); episodeErr != nil {
+				internal.Log("Error getting episode data, assuming non-filler: " + episodeErr.Error())
 				break // Break the loop and continue with playback
 			}
 
@@ -302,7 +304,7 @@ func main() {
 			internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, 0, 0, internal.GetAnimeName(anime), internal.GetProvider().Name())
 
 			// Check if we've reached the end of the series
-			if anime.Ep.Number > anime.TotalEpisodes {
+			if anime.TotalEpisodes > 0 && anime.Ep.Number > anime.TotalEpisodes {
 				internal.CurdOut("Reached end of series")
 				internal.ExitCurd(nil)
 			}
@@ -353,9 +355,8 @@ func main() {
 		// Get episode data
 		go func() {
 			defer wg.Done()
-			err = internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime)
-			if err != nil {
-				internal.Log("Error getting episode data: " + err.Error())
+			if episodeErr := internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime); episodeErr != nil {
+				internal.Log("Error getting episode data: " + episodeErr.Error())
 			} else {
 				internal.Log(anime)
 
@@ -434,7 +435,11 @@ func main() {
 							}
 						}
 
-						currentPauseState := isPaused.(bool)
+						currentPauseState, ok := isPaused.(bool)
+						if !ok {
+							internal.Log(fmt.Sprintf("Error: pause state is not a bool (%T)", isPaused))
+							currentPauseState = true
+						}
 
 						// Simple seek detection: position gap > 5 seconds
 						hasSeekEvent := false
@@ -483,14 +488,15 @@ func main() {
 							}
 
 							// Force update on seek events to bypass Discord's internal filtering
+							var presenceErr error
 							if hasSeekEvent {
-								err = internal.DiscordPresenceWithForce(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId, true)
+								presenceErr = internal.DiscordPresenceWithForce(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId, true)
 							} else {
-								err = internal.DiscordPresence(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId)
+								presenceErr = internal.DiscordPresence(anime, currentPauseState, currentPos, totalDuration, userCurdConfig.DiscordClientId)
 							}
 
-							if err != nil {
-								internal.Log("Error setting Discord presence: " + err.Error())
+							if presenceErr != nil {
+								internal.Log("Error setting Discord presence: " + presenceErr.Error())
 							}
 
 							lastKnownPauseState = currentPauseState
@@ -508,9 +514,8 @@ func main() {
 
 		// Get skip times Parallel
 		go func() {
-			err = internal.GetAndParseAniSkipData(anime.MalId, anime.Ep.Number, 1, &anime)
-			if err != nil {
-				internal.Log("Error getting and parsing AniSkip data: " + err.Error())
+			if skipErr := internal.GetAndParseAniSkipData(anime.MalId, anime.Ep.Number, 1, &anime); skipErr != nil {
+				internal.Log("Error getting and parsing AniSkip data: " + skipErr.Error())
 			}
 			internal.Log(anime.Ep.SkipTimes)
 		}()
@@ -540,12 +545,15 @@ func main() {
 									}
 									pauseState := false
 									if isPaused != nil {
-										pauseState = isPaused.(bool)
+										if value, ok := isPaused.(bool); ok {
+											pauseState = value
+										} else {
+											internal.Log(fmt.Sprintf("Error: pause state is not a bool (%T)", isPaused))
+										}
 									}
 									internal.Log("Initializing Discord presence with real video duration")
-									err = internal.DiscordPresence(anime, pauseState, currentPos, anime.Ep.Duration, userCurdConfig.DiscordClientId)
-									if err != nil {
-										internal.Log("Discord presence error: " + err.Error())
+									if presenceErr := internal.DiscordPresence(anime, pauseState, currentPos, anime.Ep.Duration, userCurdConfig.DiscordClientId); presenceErr != nil {
+										internal.Log("Discord presence error: " + presenceErr.Error())
 									}
 								}
 							} else {
@@ -633,9 +641,8 @@ func main() {
 
 											// Update Anilist progress if not rewatching
 											if !anime.Rewatching {
-												err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
-												if err != nil {
-													internal.Log("Error updating Anilist progress on quit: " + err.Error())
+												if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number); progressErr != nil {
+													internal.Log("Error updating Anilist progress on quit: " + progressErr.Error())
 												} else {
 													internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
 												}
@@ -684,16 +691,14 @@ func main() {
 							// Set the playback speed
 							if userCurdConfig.SaveMpvSpeed {
 								speedCmd := []interface{}{"set_property", "speed", anime.Ep.Player.Speed}
-								_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, speedCmd)
-								if err != nil {
-									internal.Log("Error setting playback speed: " + err.Error())
+								if _, speedErr := internal.MPVSendCommand(anime.Ep.Player.SocketPath, speedCmd); speedErr != nil {
+									internal.Log("Error setting playback speed: " + speedErr.Error())
 								}
 							}
 
 							// Apply OP/ED Chapters
-							err = internal.SendSkipTimesToMPV(&anime)
-							if err != nil {
-								internal.Log("Error sending skip times to MPV: " + err.Error())
+							if skipErr := internal.SendSkipTimesToMPV(&anime); skipErr != nil {
+								internal.Log("Error sending skip times to MPV: " + skipErr.Error())
 							}
 						}
 
@@ -711,9 +716,8 @@ func main() {
 
 						anime.Ep.Player.PlaybackTime = int(animePosition + 0.5) // Round to nearest integer
 						// Update Local Database
-						err = internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime), internal.GetProvider().Name())
-						if err != nil {
-							internal.Log("Error updating local database: " + err.Error())
+						if updateErr := internal.LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, internal.ConvertSecondsToMinutes(anime.Ep.Duration), internal.GetAnimeName(anime), internal.GetProvider().Name()); updateErr != nil {
+							internal.Log("Error updating local database: " + updateErr.Error())
 						}
 					}
 
@@ -761,9 +765,8 @@ func main() {
 
 											// Update Anilist progress if not rewatching
 											if !anime.Rewatching {
-												err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
-												if err != nil {
-													internal.Log("Error updating Anilist progress on quit: " + err.Error())
+												if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number); progressErr != nil {
+													internal.Log("Error updating Anilist progress on quit: " + progressErr.Error())
 												} else {
 													internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
 												}
@@ -781,9 +784,8 @@ func main() {
 
 										// Update Anilist progress if not rewatching
 										if !anime.Rewatching {
-											err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
-											if err != nil {
-												internal.Log("Error updating Anilist progress on completion: " + err.Error())
+											if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number); progressErr != nil {
+												internal.Log("Error updating Anilist progress on completion: " + progressErr.Error())
 											} else {
 												internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
 											}
@@ -843,11 +845,12 @@ func main() {
 						internal.SeekMPV(anime.Ep.Player.SocketPath, anime.Ep.SkipTimes.Ed.End)
 					}
 				}
-				_, err := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"})
-				if err == nil && anime.Ep.Started {
-					anime.Ep.Player.Speed, err = internal.GetMPVPlaybackSpeed(anime.Ep.Player.SocketPath)
-					if err != nil {
-						internal.Log("Failed to get mpv speed " + err.Error())
+				if _, positionErr := internal.MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"get_property", "time-pos"}); positionErr == nil && anime.Ep.Started {
+					speed, speedErr := internal.GetMPVPlaybackSpeed(anime.Ep.Player.SocketPath)
+					if speedErr != nil {
+						internal.Log("Failed to get mpv speed " + speedErr.Error())
+					} else {
+						anime.Ep.Player.Speed = speed
 					}
 				}
 			}
@@ -870,22 +873,21 @@ func main() {
 		if anime.Ep.IsCompleted && !anime.Rewatching {
 			// Update progress for both regular episodes and skipped fillers
 			if anime.TotalEpisodes > 0 && anime.Ep.Number-1 != anime.TotalEpisodes {
-				go func() {
+				progressEpisode := anime.Ep.Number - 1
+				go func(episode int) {
 					// Update progress for regular episodes
-					err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
-					if err != nil {
-						internal.Log("Error updating Anilist progress: " + err.Error())
+					if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, episode); progressErr != nil {
+						internal.Log("Error updating Anilist progress: " + progressErr.Error())
 					}
-				}()
+				}(progressEpisode)
 			} else {
 				// Update progress for last episode
 
 				// Exit MPV
 				internal.ExitMPV(anime.Ep.Player.SocketPath)
 
-				err = internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
-				if err != nil {
-					internal.Log("Error updating Anilist progress: " + err.Error())
+				if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1); progressErr != nil {
+					internal.Log("Error updating Anilist progress: " + progressErr.Error())
 				}
 			}
 
@@ -901,10 +903,9 @@ func main() {
 				} else if !updatedAnime.IsAiring {
 					anime.Ep.Number = anime.Ep.Number - 1
 					internal.CurdOut("Completed anime.")
-					err = internal.RateAnime(user.Token, anime.AnilistId)
-					if err != nil {
-						internal.Log("Error rating anime: " + err.Error())
-						internal.CurdOut("Error rating anime: " + err.Error())
+					if rateErr := internal.RateAnime(user.Token, anime.AnilistId); rateErr != nil {
+						internal.Log("Error rating anime: " + rateErr.Error())
+						internal.CurdOut("Error rating anime: " + rateErr.Error())
 					}
 					internal.LocalDeleteAnime(databaseFile, anime.AnilistId, anime.ProviderId)
 					internal.ExitCurd(nil)
@@ -946,7 +947,7 @@ func main() {
 
 		// If we still don't have links, get them now
 		if len(anime.Ep.Links) == 0 {
-			links, err := internal.GetEpisodeURL(userCurdConfig, anime.ProviderId, anime.Ep.Number)
+			links, _, err := internal.GetEpisodeURLForPlayback(userCurdConfig, anime.ProviderId, anime.Ep.Number)
 			if err != nil {
 				internal.Log("Failed to get episode links: " + err.Error())
 				internal.CurdOut("Failed to get episode links. Try again later.")

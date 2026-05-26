@@ -100,7 +100,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			// Return quit selection option directly
+			m.filteredKeys = []SelectionOption{{Key: "-1", Label: "Quit"}}
+			m.selected = 0
 			return m, tea.Quit
 		case "esc":
 			// ESC: quit on home menu, go back on sub-menus
@@ -140,6 +141,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollOffset--
 			}
 		case "enter":
+			if len(m.filteredKeys) == 0 {
+				return m, nil
+			}
 			if m.filteredKeys[m.selected].Key == "add_new" {
 				CurdOut("Adding a new anime...")
 				m.filteredKeys[m.selected] = SelectionOption{Label: "add_new", Key: "0"}
@@ -242,7 +246,11 @@ func (m Model) View() string {
 // visibleItemsCount calculates how many options fit in the terminal
 func (m Model) visibleItemsCount() int {
 	// Leave space for the filter and other UI elements
-	return m.terminalHeight - 4 // Adjust this number based on your terminal layout
+	count := m.terminalHeight - 4 // Adjust this number based on your terminal layout
+	if count < 1 {
+		return 1
+	}
+	return count
 }
 
 // filterOptions filters and sorts options based on the search term
@@ -335,7 +343,12 @@ func findSelectionIndex(options []SelectionOption, previousKey string, previousL
 }
 
 func sortHomeMenuOptions(options []SelectionOption) []SelectionOption {
-	menuOrder := strings.Split(GetGlobalConfig().MenuOrder, ",")
+	config := GetGlobalConfig()
+	if config == nil || strings.TrimSpace(config.MenuOrder) == "" {
+		return options
+	}
+
+	menuOrder := strings.Split(config.MenuOrder, ",")
 	optMap := make(map[string]SelectionOption)
 	for _, opt := range options {
 		optMap[opt.Key] = opt
@@ -501,6 +514,10 @@ func parsePreviewSelection(rawSelection string, selectionOptions []SelectionOpti
 }
 
 func downloadToCache(imageURL string) (string, error) {
+	if strings.TrimSpace(imageURL) == "" {
+		return "", fmt.Errorf("image URL is empty")
+	}
+
 	cacheDir := os.ExpandEnv("${HOME}/.cache/curd/images")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create cache directory: %w", err)
@@ -511,26 +528,36 @@ func downloadToCache(imageURL string) (string, error) {
 	cachePath := filepath.Join(cacheDir, filename)
 
 	// Check if file already exists in cache
-	if _, err := os.Stat(cachePath); err == nil {
-		return cachePath, nil
+	if info, err := os.Stat(cachePath); err == nil {
+		if info.Size() > 0 {
+			return cachePath, nil
+		}
+		_ = os.Remove(cachePath)
 	}
 
 	// Download the image
-	resp, err := http.Get(imageURL)
+	resp, err := sharedHTTPClient.Get(imageURL)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download image: status %d", resp.StatusCode)
+	}
 
 	file, err := os.Create(cachePath)
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
 
 	_, err = io.Copy(file, resp.Body)
 	if err != nil {
+		file.Close()
 		os.Remove(cachePath) // Clean up on error
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		os.Remove(cachePath)
 		return "", err
 	}
 
@@ -624,6 +651,8 @@ func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
 	return dynamicSelectInternal(options, nil)
 }
 
+var promptSelect = DynamicSelect
+
 func DynamicSelectWithRefresh(options []SelectionOption, refreshConfig *SelectionRefreshConfig) (SelectionOption, error) {
 	return dynamicSelectInternal(options, refreshConfig)
 }
@@ -635,13 +664,7 @@ func dynamicSelectInternal(options []SelectionOption, refreshConfig *SelectionRe
 		options = sortHomeMenuOptions(options)
 	}
 
-	for _, opt := range options {
-		if strings.Contains(opt.Label, "Bleach (366 episodes) [animepahe]") {
-			return opt, nil
-		}
-	}
-
-	if GetGlobalConfig().RofiSelection {
+	if config := GetGlobalConfig(); config != nil && config.RofiSelection {
 		return RofiSelectWithRefresh(options, isHomeMenu, refreshConfig)
 	}
 
