@@ -177,7 +177,11 @@ func hasMPVReferrerArg(args []string) bool {
 			return true
 		}
 
-		if normalizedArg == "--http-header-fields" && i+1 < len(args) {
+		if strings.HasPrefix(normalizedArg, "--http-header-fields-append=") && strings.Contains(normalizedArg, "referer:") {
+			return true
+		}
+
+		if (normalizedArg == "--http-header-fields" || normalizedArg == "--http-header-fields-append") && i+1 < len(args) {
 			nextArg := strings.ToLower(strings.TrimSpace(args[i+1]))
 			if strings.Contains(nextArg, "referer:") {
 				return true
@@ -241,6 +245,16 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	var err error
 
 	userConfig := GetGlobalConfig()
+	if userConfig == nil {
+		defaultConfig := PopulateConfig(map[string]string{})
+		userConfig = &defaultConfig
+	}
+	if anime == nil {
+		return "", fmt.Errorf("missing anime playback state")
+	}
+	if strings.TrimSpace(link) == "" {
+		return "", fmt.Errorf("empty video link")
+	}
 
 	// Add custom MPV arguments from config if they exist
 	if userConfig.MpvArgs != nil {
@@ -486,15 +500,34 @@ func MPVSendCommand(ipcSocketPath string, command []interface{}) (interface{}, e
 			continue // Try again
 		}
 
-		// Success!
-		if data, exists := response["data"]; exists {
-			return data, nil
+		data, responseErr := mpvResponseData(response)
+		if responseErr != nil {
+			lastErr = responseErr
+			Log(fmt.Sprintf("MPV command error (attempt %d/%d): %v", attempt+1, maxRetries, responseErr))
+			continue
 		}
-		return nil, nil
+		return data, nil
 	}
 
 	// All retries failed
 	return nil, fmt.Errorf("command failed after %d attempts: %w", maxRetries, lastErr)
+}
+
+func mpvResponseData(response map[string]interface{}) (interface{}, error) {
+	if errorValue, exists := response["error"]; exists {
+		errorText, ok := errorValue.(string)
+		if !ok {
+			return nil, fmt.Errorf("mpv returned non-string error field: %T", errorValue)
+		}
+		if errorText != "" && errorText != "success" {
+			return nil, fmt.Errorf("mpv command error: %s", errorText)
+		}
+	}
+
+	if data, exists := response["data"]; exists {
+		return data, nil
+	}
+	return nil, nil
 }
 
 func SeekMPV(ipcSocketPath string, time int) (interface{}, error) {
@@ -747,7 +780,11 @@ func StartMPVEventListener(ipcSocketPath string, eventCallback func(string, inte
 
 				// Handle both events and property changes
 				if event, exists := response["event"]; exists {
-					eventType := event.(string)
+					eventType, ok := event.(string)
+					if !ok {
+						Log(fmt.Sprintf("MPV event field is not a string: %T", event))
+						continue
+					}
 					Log(fmt.Sprintf("Event type detected: %s", eventType))
 
 					// Handle specific MPV events
@@ -773,7 +810,11 @@ func StartMPVEventListener(ipcSocketPath string, eventCallback func(string, inte
 					case "property-change":
 						if name, exists := response["name"]; exists {
 							if data, exists := response["data"]; exists {
-								propertyName := name.(string)
+								propertyName, ok := name.(string)
+								if !ok {
+									Log(fmt.Sprintf("Property change name is not a string: %T", name))
+									continue
+								}
 								Log(fmt.Sprintf("MPV PROPERTY CHANGE EVENT - %s: %v", propertyName, data))
 
 								// Call the callback with the event details

@@ -35,7 +35,7 @@ type episodesResponse struct {
 func getAllAnimeEpisodesList(showID, mode string) ([]string, error) {
 	preferredMode := normalizeTranslationType(mode)
 
-	episodesListGql := `query ($showId String!) { show( _id: $showId ) { _id availableEpisodesDetail }}`
+	episodesListGql := `query ($showId: String!) { show( _id: $showId ) { _id availableEpisodesDetail }}`
 
 	// Build POST request body
 	requestBody, err := json.Marshal(map[string]interface{}{
@@ -67,6 +67,9 @@ func getAllAnimeEpisodesList(showID, mode string) ([]string, error) {
 	if err != nil {
 		Log(fmt.Sprint("Error reading response body:", err))
 		return nil, err
+	}
+	if !httpStatusOK(resp.StatusCode) {
+		return nil, httpStatusError("allanime episode list", resp.StatusCode, body)
 	}
 
 	// Parse the JSON response

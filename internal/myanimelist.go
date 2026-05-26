@@ -209,6 +209,9 @@ func exchangeMyAnimeListAuthorizationCode(config *CurdConfig, tokenPath string, 
 	if err := json.Unmarshal(body, &token); err != nil {
 		return "", err
 	}
+	if strings.TrimSpace(token.AccessToken) == "" {
+		return "", fmt.Errorf("MyAnimeList token response did not include an access token")
+	}
 	token.ExpiresAt = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
 	if err := saveToken(tokenPath, &token); err != nil {
 		return "", err
@@ -380,6 +383,8 @@ func authenticateMyAnimeListWithBrowser(config *CurdConfig, tokenPath string) (s
 	return exchangeMyAnimeListAuthorizationCode(config, tokenPath, codeVerifier, code)
 }
 
+var authenticateMyAnimeList = authenticateMyAnimeListWithBrowser
+
 func refreshMyAnimeListToken(config *CurdConfig, tokenPath string, refreshToken string) (*OAuthToken, error) {
 	clientID, clientSecret := myAnimeListClientCredentials(config)
 	if clientID == "" {
@@ -422,6 +427,12 @@ func refreshMyAnimeListToken(config *CurdConfig, tokenPath string, refreshToken 
 	if err := json.Unmarshal(body, &token); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(token.AccessToken) == "" {
+		return nil, fmt.Errorf("MyAnimeList refresh response did not include an access token")
+	}
+	if strings.TrimSpace(token.RefreshToken) == "" {
+		token.RefreshToken = refreshToken
+	}
 	token.ExpiresAt = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
 	if err := saveToken(tokenPath, &token); err != nil {
 		return nil, err
@@ -434,11 +445,31 @@ func refreshMyAnimeListToken(config *CurdConfig, tokenPath string, refreshToken 
 	return &token, nil
 }
 
+func renewMyAnimeListAccessToken(config *CurdConfig, tokenPath string, token *OAuthToken, reason string) (string, error) {
+	if token != nil && strings.TrimSpace(token.RefreshToken) != "" {
+		refreshed, refreshErr := refreshMyAnimeListToken(config, tokenPath, token.RefreshToken)
+		if refreshErr == nil {
+			return refreshed.AccessToken, nil
+		}
+		Log(fmt.Sprintf("Failed to refresh MyAnimeList token after %s: %v", reason, refreshErr))
+	}
+
+	accessToken, authErr := authenticateMyAnimeList(config, tokenPath)
+	if authErr != nil {
+		return "", authErr
+	}
+	if user := GetGlobalUser(); user != nil {
+		user.Token = accessToken
+	}
+	return accessToken, nil
+}
+
 func GetMyAnimeListAccessToken(config *CurdConfig) (string, error) {
 	tokenPath := myAnimeListTokenPath(config)
 	token, err := loadToken(tokenPath)
 	if err != nil {
-		return "", err
+		Log(fmt.Sprintf("Failed to load MyAnimeList token, starting login: %v", err))
+		return renewMyAnimeListAccessToken(config, tokenPath, nil, "token load failure")
 	}
 	if isTokenValid(token) {
 		if user := GetGlobalUser(); user != nil {
@@ -447,18 +478,15 @@ func GetMyAnimeListAccessToken(config *CurdConfig) (string, error) {
 		return token.AccessToken, nil
 	}
 	if token.RefreshToken == "" {
-		return "", fmt.Errorf("MyAnimeList token has expired and cannot be refreshed")
+		Log("MyAnimeList token is expired and has no refresh token, starting login")
+		return renewMyAnimeListAccessToken(config, tokenPath, token, "expired token")
 	}
-	refreshed, err := refreshMyAnimeListToken(config, tokenPath, token.RefreshToken)
-	if err != nil {
-		return "", err
-	}
-	return refreshed.AccessToken, nil
+	return renewMyAnimeListAccessToken(config, tokenPath, token, "expired token")
 }
 
 func ChangeMyAnimeListToken(config *CurdConfig, user *User) error {
 	tokenPath := myAnimeListTokenPath(config)
-	accessToken, err := authenticateMyAnimeListWithBrowser(config, tokenPath)
+	accessToken, err := authenticateMyAnimeList(config, tokenPath)
 	if err != nil {
 		return err
 	}
@@ -520,15 +548,22 @@ func myAnimeListRequest(config *CurdConfig, method, requestURL string, form url.
 		}
 
 		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
-			storedToken, tokenErr := loadToken(myAnimeListTokenPath(config))
+			tokenPath := myAnimeListTokenPath(config)
+			storedToken, tokenErr := loadToken(tokenPath)
 			if tokenErr != nil {
-				return tokenErr
+				Log(fmt.Sprintf("Failed to load MyAnimeList token after unauthorized response, starting login: %v", tokenErr))
+				accessToken, authErr := renewMyAnimeListAccessToken(config, tokenPath, nil, "unauthorized API response")
+				if authErr != nil {
+					return authErr
+				}
+				token = accessToken
+				continue
 			}
-			refreshed, refreshErr := refreshMyAnimeListToken(config, myAnimeListTokenPath(config), storedToken.RefreshToken)
-			if refreshErr != nil {
-				return refreshErr
+			accessToken, renewErr := renewMyAnimeListAccessToken(config, tokenPath, storedToken, "unauthorized API response")
+			if renewErr != nil {
+				return renewErr
 			}
-			token = refreshed.AccessToken
+			token = accessToken
 			continue
 		}
 
@@ -556,9 +591,12 @@ func parseMyAnimeListDate(value string) FuzzyDate {
 		return FuzzyDate{}
 	}
 
-	year, _ := strconv.Atoi(parts[0])
-	month, _ := strconv.Atoi(parts[1])
-	day, _ := strconv.Atoi(parts[2])
+	year, yearErr := strconv.Atoi(parts[0])
+	month, monthErr := strconv.Atoi(parts[1])
+	day, dayErr := strconv.Atoi(parts[2])
+	if yearErr != nil || monthErr != nil || dayErr != nil || year <= 0 || month < 1 || month > 12 || day < 1 || day > 31 {
+		return FuzzyDate{}
+	}
 	return FuzzyDate{Year: year, Month: month, Day: day}
 }
 
@@ -711,8 +749,13 @@ func lookupAniListMediaByMalID(malID int) (Media, string, error) {
 		return Media{}, "", fmt.Errorf("AniList media not found for MAL ID %d", malID)
 	}
 
+	aniListID, ok := mediaData["id"].(float64)
+	if !ok || aniListID == 0 {
+		return Media{}, "", fmt.Errorf("AniList media response for MAL ID %d is missing id", malID)
+	}
+
 	media := Media{
-		ID:       int(mediaData["id"].(float64)),
+		ID:       int(aniListID),
 		MalID:    malID,
 		Episodes: 0,
 		Duration: 0,
@@ -823,8 +866,12 @@ func lookupAniListMediaByMalIDs(malIDs []int) (map[int]aniListMediaLookupResult,
 		if !ok || rawMedia == nil {
 			continue
 		}
+		aniListID, ok := rawMedia["id"].(float64)
+		if !ok || aniListID == 0 {
+			continue
+		}
 		media := Media{
-			ID:       int(rawMedia["id"].(float64)),
+			ID:       int(aniListID),
 			MalID:    malID,
 			Episodes: 0,
 			Duration: 0,

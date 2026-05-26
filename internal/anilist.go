@@ -24,6 +24,25 @@ func FindKeyByValue(m map[string]string, value string) (string, error) {
 	return "", fmt.Errorf("no key with value %v", value) // Return empty string and false if the value is not found
 }
 
+func mediaDisplayTitle(media Media, config *CurdConfig) string {
+	if media.Title.English != "" && useEnglishAnimeNames(config) {
+		return media.Title.English
+	}
+	if media.Title.Romaji != "" {
+		return media.Title.Romaji
+	}
+	if media.Title.English != "" {
+		return media.Title.English
+	}
+	if media.Title.Japanese != "" {
+		return media.Title.Japanese
+	}
+	if media.ID != 0 {
+		return strconv.Itoa(media.ID)
+	}
+	return "Unknown Anime"
+}
+
 // GetAnimeMap takes an AnimeList and returns a map with media.id as key and media.title.english as value.
 func GetAnimeMap(animeList AnimeList) map[string]string {
 	animeMap := make(map[string]string)
@@ -32,13 +51,7 @@ func GetAnimeMap(animeList AnimeList) map[string]string {
 	// Helper function to populate the map from a slice of entries
 	populateMap := func(entries []Entry) {
 		for _, entry := range entries {
-			// Only include entries with a non-empty English title
-
-			if entry.Media.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
-				animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.English
-			} else {
-				animeMap[strconv.Itoa(entry.Media.ID)] = entry.Media.Title.Romaji
-			}
+			animeMap[strconv.Itoa(entry.Media.ID)] = mediaDisplayTitle(entry.Media, userCurdConfig)
 		}
 	}
 
@@ -61,19 +74,9 @@ func GetAnimeMapPreview(animeList AnimeList) map[string]RofiSelectPreview {
 	// Helper function to populate the map from a slice of entries
 	populateMap := func(entries []Entry) {
 		for _, entry := range entries {
-			// Only include entries with a non-empty English title
-			Log(fmt.Errorf("AnimeNameLanguage: %v", userCurdConfig.AnimeNameLanguage))
-
-			if entry.Media.Title.English != "" && userCurdConfig.AnimeNameLanguage == "english" {
-				animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-					Title:      entry.Media.Title.English,
-					CoverImage: entry.CoverImage,
-				}
-			} else {
-				animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-					Title:      entry.Media.Title.Romaji,
-					CoverImage: entry.CoverImage,
-				}
+			animeMap[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
+				Title:      mediaDisplayTitle(entry.Media, userCurdConfig),
+				CoverImage: entry.CoverImage,
 			}
 		}
 	}
@@ -138,7 +141,10 @@ func min3(a, b, c int) int {
 }
 
 func doAniListSearchRequest(url string, requestBody []byte, token string) ([]byte, error) {
-	client := &http.Client{}
+	client := sharedHTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
 	for attempt := 0; attempt < 5; attempt++ {
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
 		if err != nil {
@@ -168,6 +174,13 @@ func doAniListSearchRequest(url string, requestBody []byte, token string) ([]byt
 		}
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("failed to search for anime. Status Code: %d, Response: %s", resp.StatusCode, string(body))
+		}
+		var envelope map[string]interface{}
+		if err := json.Unmarshal(body, &envelope); err == nil {
+			if rawErrors, exists := envelope["errors"]; exists {
+				errorBody, _ := json.Marshal(rawErrors)
+				return nil, fmt.Errorf("graphql errors: %s", strings.TrimSpace(string(errorBody)))
+			}
 		}
 		return body, nil
 	}
@@ -346,11 +359,24 @@ func GetAnilistUserID(token string) (int, string, error) {
 		return 0, "", err
 	}
 
-	data := response["data"].(map[string]interface{})["Viewer"].(map[string]interface{})
-	userID := int(data["id"].(float64))
-	userName := data["name"].(string)
+	data, ok := response["data"].(map[string]interface{})
+	if !ok {
+		return 0, "", fmt.Errorf("invalid AniList viewer response: data field missing")
+	}
+	viewer, ok := data["Viewer"].(map[string]interface{})
+	if !ok || viewer == nil {
+		return 0, "", fmt.Errorf("invalid AniList viewer response: Viewer field missing")
+	}
+	userIDFloat, ok := viewer["id"].(float64)
+	if !ok {
+		return 0, "", fmt.Errorf("invalid AniList viewer response: id field missing")
+	}
+	userName, _ := viewer["name"].(string)
+	if userName == "" {
+		return 0, "", fmt.Errorf("invalid AniList viewer response: name field missing")
+	}
 
-	return userID, userName, nil
+	return int(userIDFloat), userName, nil
 }
 
 // Function to add an anime to the watching list
@@ -401,8 +427,19 @@ func GetAnimeMalID(anilistMediaID int) (int, error) {
 		return 0, err
 	}
 
-	malID := int(response["data"].(map[string]interface{})["Media"].(map[string]interface{})["idMal"].(float64))
-	return malID, nil
+	data, ok := response["data"].(map[string]interface{})
+	if !ok {
+		return 0, fmt.Errorf("invalid AniList media response: data field missing")
+	}
+	media, ok := data["Media"].(map[string]interface{})
+	if !ok || media == nil {
+		return 0, fmt.Errorf("AniList media %d not found", anilistMediaID)
+	}
+	malID, ok := media["idMal"].(float64)
+	if !ok || malID == 0 {
+		return 0, fmt.Errorf("AniList media %d has no MyAnimeList ID", anilistMediaID)
+	}
+	return int(malID), nil
 }
 
 // This function retrieves the MAL ID and cover image URL for an anime from AniList
@@ -427,9 +464,22 @@ func GetAnimeIDAndImage(anilistMediaID int) (int, string, error) {
 		return 0, "", err
 	}
 
-	data := response["data"].(map[string]interface{})["Media"].(map[string]interface{})
-	malID := int(data["idMal"].(float64))
-	imageURL := data["coverImage"].(map[string]interface{})["large"].(string)
+	data, ok := response["data"].(map[string]interface{})
+	if !ok {
+		return 0, "", fmt.Errorf("invalid AniList media response: data field missing")
+	}
+	media, ok := data["Media"].(map[string]interface{})
+	if !ok || media == nil {
+		return 0, "", fmt.Errorf("AniList media %d not found", anilistMediaID)
+	}
+	malID := 0
+	if value, ok := media["idMal"].(float64); ok {
+		malID = int(value)
+	}
+	imageURL := ""
+	if coverImage, ok := media["coverImage"].(map[string]interface{}); ok {
+		imageURL = safeAniListString(coverImage["large"])
+	}
 
 	return malID, imageURL, nil
 }
@@ -572,20 +622,52 @@ func LoadJSONFile(filePath string) (map[string]interface{}, error) {
 func SearchAnimeByTitle(jsonData map[string]interface{}, searchTitle string) []map[string]interface{} {
 	results := []map[string]interface{}{}
 
-	lists := jsonData["data"].(map[string]interface{})["MediaListCollection"].(map[string]interface{})["lists"].([]interface{})
+	data, ok := jsonData["data"].(map[string]interface{})
+	if !ok {
+		return results
+	}
+	collection, ok := data["MediaListCollection"].(map[string]interface{})
+	if !ok {
+		return results
+	}
+	lists, ok := collection["lists"].([]interface{})
+	if !ok {
+		return results
+	}
 	for _, list := range lists {
-		entries := list.(map[string]interface{})["entries"].([]interface{})
+		listMap, ok := list.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		entries, ok := listMap["entries"].([]interface{})
+		if !ok {
+			continue
+		}
 		for _, entry := range entries {
-			media := entry.(map[string]interface{})["media"].(map[string]interface{})
-			romajiTitle := media["title"].(map[string]interface{})["romaji"].(string)
-			englishTitle := media["title"].(map[string]interface{})["english"].(string)
-			episodes := int(media["episodes"].(float64))
-			duration := int(media["duration"].(float64))
+			entryMap, ok := entry.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			media, ok := entryMap["media"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			title, _ := media["title"].(map[string]interface{})
+			romajiTitle := safeAniListString(title["romaji"])
+			englishTitle := safeAniListString(title["english"])
+			episodes := 0
+			if value, ok := media["episodes"].(float64); ok {
+				episodes = int(value)
+			}
+			duration := 0
+			if value, ok := media["duration"].(float64); ok {
+				duration = int(value)
+			}
 
 			if strings.Contains(strings.ToLower(romajiTitle), strings.ToLower(searchTitle)) || strings.Contains(strings.ToLower(englishTitle), strings.ToLower(searchTitle)) {
 				result := map[string]interface{}{
 					"id":            media["id"],
-					"progress":      entry.(map[string]interface{})["progress"],
+					"progress":      entryMap["progress"],
 					"romaji_title":  romajiTitle,
 					"english_title": englishTitle,
 					"episodes":      episodes,
@@ -790,7 +872,10 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	client := &http.Client{}
+	client := sharedHTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
 	for attempt := 0; attempt < 5; attempt++ {
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
 		if err != nil {
@@ -827,6 +912,10 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 		var responseData map[string]interface{}
 		if err := json.Unmarshal(body, &responseData); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+		if rawErrors, exists := responseData["errors"]; exists {
+			errorBody, _ := json.Marshal(rawErrors)
+			return nil, fmt.Errorf("graphql errors: %s", strings.TrimSpace(string(errorBody)))
 		}
 
 		return responseData, nil
@@ -876,22 +965,52 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 		}
 	}
 
+	if input == nil {
+		Log("AniList response is nil")
+		return animeList
+	}
+
 	// Access the list entries in the input map
 	if input["data"] == nil {
 		Log("Anilist request failed")
-		CurdOut("Anilist request failed")
-		ExitCurd(fmt.Errorf("Anilist request failed"))
 		return animeList
 	}
-	data := input["data"].(map[string]interface{})
-	mediaList := data["MediaListCollection"].(map[string]interface{})["lists"].([]interface{})
+	data, ok := input["data"].(map[string]interface{})
+	if !ok {
+		Log("AniList response data field is invalid")
+		return animeList
+	}
+	collection, ok := data["MediaListCollection"].(map[string]interface{})
+	if !ok {
+		Log("AniList response MediaListCollection field is invalid")
+		return animeList
+	}
+	mediaList, ok := collection["lists"].([]interface{})
+	if !ok {
+		Log("AniList response lists field is invalid")
+		return animeList
+	}
 
 	for _, list := range mediaList {
-		entries := list.(map[string]interface{})["entries"].([]interface{})
+		listData, ok := list.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		entries, ok := listData["entries"].([]interface{})
+		if !ok {
+			continue
+		}
 
 		for _, entry := range entries {
-			entryData := entry.(map[string]interface{})
-			media := entryData["media"].(map[string]interface{})
+			entryData, ok := entry.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			media, ok := entryData["media"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			title, _ := media["title"].(map[string]interface{})
 			animeEntry := Entry{
 				ListID: toInt(entryData["id"]),
 				Media: Media{
@@ -900,19 +1019,21 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 					ID:       toInt(media["id"]),
 					MalID:    toInt(media["idMal"]),
 					Title: AnimeTitle{
-						English:  safeString(media["title"].(map[string]interface{})["english"]),
-						Romaji:   safeString(media["title"].(map[string]interface{})["romaji"]),
-						Japanese: safeString(media["title"].(map[string]interface{})["native"]),
+						English:  safeString(title["english"]),
+						Romaji:   safeString(title["romaji"]),
+						Japanese: safeString(title["native"]),
 					},
 					Status: safeString(media["status"]),
 				},
 				Progress:    toInt(entryData["progress"]),
 				Repeat:      toInt(entryData["repeat"]),
-				Score:       entryData["score"].(float64),
 				Status:      safeString(entryData["status"]), // Ensure status is fetched safely
 				StartedAt:   parseFuzzyDate(entryData["startedAt"]),
 				CompletedAt: parseFuzzyDate(entryData["completedAt"]),
 				UpdatedAt:   time.Unix(int64(toInt(entryData["updatedAt"])), 0).UTC(),
+			}
+			if score, ok := entryData["score"].(float64); ok {
+				animeEntry.Score = score
 			}
 
 			if coverImage, ok := media["coverImage"].(map[string]interface{}); ok {

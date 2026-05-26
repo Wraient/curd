@@ -122,8 +122,25 @@ func GetGlobalConfig() *CurdConfig {
 	return globalConfig
 }
 
+func useEnglishAnimeNames(config *CurdConfig) bool {
+	return config == nil || strings.EqualFold(strings.TrimSpace(config.AnimeNameLanguage), "english")
+}
+
 // Helper function to parse string array from config
 func parseStringArray(value string) []string {
+	value = strings.TrimSpace(value)
+	var parsed []string
+	if err := json.Unmarshal([]byte(value), &parsed); err == nil {
+		result := make([]string, 0, len(parsed))
+		for _, part := range parsed {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				result = append(result, part)
+			}
+		}
+		return result
+	}
+
 	// Remove brackets and split by comma
 	value = strings.TrimPrefix(value, "[")
 	value = strings.TrimSuffix(value, "]")
@@ -172,7 +189,9 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 	// Check AddMissingOptions setting first
 	addMissing := true
 	if val, exists := configMap["AddMissingOptions"]; exists {
-		addMissing, _ = strconv.ParseBool(val)
+		if parsed, parseErr := strconv.ParseBool(val); parseErr == nil {
+			addMissing = parsed
+		}
 	}
 
 	_, hadTrackingRemote := configMap["TrackingRemote"]
@@ -323,7 +342,7 @@ func authenticateWithBrowser(tokenPath string) (string, error) {
 				"code":          {code},
 			}
 
-			resp, err := http.PostForm(tokenURL, data)
+			resp, err := sharedHTTPClient.PostForm(tokenURL, data)
 			if err != nil {
 				errCh <- fmt.Errorf("failed to exchange code for token: %w", err)
 				return
@@ -581,25 +600,34 @@ func SaveConfigToFile(path string, configMap map[string]string) error {
 func PopulateConfig(configMap map[string]string) CurdConfig {
 	config := CurdConfig{}
 	configValue := reflect.ValueOf(&config).Elem()
+	defaults := defaultConfigMap()
 
 	for i := 0; i < configValue.NumField(); i++ {
 		field := configValue.Type().Field(i)
 		tag := field.Tag.Get("config")
 
-		if value, exists := configMap[tag]; exists {
-			fieldValue := configValue.FieldByName(field.Name)
+		value, exists := configMap[tag]
+		if !exists || value == "" {
+			value = defaults[tag]
+		}
+		fieldValue := configValue.FieldByName(field.Name)
 
-			if fieldValue.CanSet() {
-				switch fieldValue.Kind() {
-				case reflect.String:
-					fieldValue.SetString(value)
-				case reflect.Int:
-					intVal, _ := strconv.Atoi(value)
-					fieldValue.SetInt(int64(intVal))
-				case reflect.Bool:
-					boolVal, _ := strconv.ParseBool(value)
-					fieldValue.SetBool(boolVal)
+		if fieldValue.CanSet() {
+			switch fieldValue.Kind() {
+			case reflect.String:
+				fieldValue.SetString(value)
+			case reflect.Int:
+				intVal, err := strconv.Atoi(value)
+				if err != nil {
+					intVal, _ = strconv.Atoi(defaults[tag])
 				}
+				fieldValue.SetInt(int64(intVal))
+			case reflect.Bool:
+				boolVal, err := strconv.ParseBool(value)
+				if err != nil {
+					boolVal, _ = strconv.ParseBool(defaults[tag])
+				}
+				fieldValue.SetBool(boolVal)
 			}
 		}
 	}

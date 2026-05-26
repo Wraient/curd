@@ -2,8 +2,10 @@ package internal
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,18 +13,35 @@ import (
 )
 
 type fakePlaybackProvider struct {
-	linksByMode map[string][]string
-	errByMode   map[string]error
-	modes       []string
+	name              string
+	linksByMode       map[string][]string
+	errByMode         map[string]error
+	episodeListByMode map[string][]string
+	episodeErrByMode  map[string]error
+	modes             []string
+	episodeModes      []string
 }
 
-func (p *fakePlaybackProvider) Name() string { return "fake" }
+func (p *fakePlaybackProvider) Name() string {
+	if p.name != "" {
+		return p.name
+	}
+	return "fake"
+}
 
 func (p *fakePlaybackProvider) SearchAnime(query, mode string) ([]SelectionOption, error) {
 	return nil, nil
 }
 
 func (p *fakePlaybackProvider) EpisodesList(showID, mode string) ([]string, error) {
+	mode = normalizeTranslationType(mode)
+	p.episodeModes = append(p.episodeModes, mode)
+	if err := p.episodeErrByMode[mode]; err != nil {
+		return nil, err
+	}
+	if episodes, ok := p.episodeListByMode[mode]; ok {
+		return episodes, nil
+	}
 	return []string{"1"}, nil
 }
 
@@ -51,6 +70,106 @@ func withProvider(t *testing.T, provider Provider) {
 	t.Cleanup(func() {
 		CurrentProvider = previous
 	})
+}
+
+func TestInferTotalEpisodesFromEpisodeListUsesHighestWholeEpisode(t *testing.T) {
+	episodes := []string{"1", "12", "2", "12.5", "special", "0"}
+
+	if got := inferTotalEpisodesFromEpisodeList(episodes); got != 12 {
+		t.Fatalf("expected highest whole episode 12, got %d", got)
+	}
+}
+
+func TestGetProviderTotalEpisodesUsesHighestEpisodeAcrossModes(t *testing.T) {
+	provider := &fakePlaybackProvider{
+		episodeListByMode: map[string][]string{
+			"dub": {"1", "2", "12"},
+			"sub": {"1", "99", "100", "100.5"},
+		},
+	}
+	withProvider(t, provider)
+
+	total, err := GetProviderTotalEpisodes("one-piece-id", "dub")
+	if err != nil {
+		t.Fatalf("expected provider total lookup to succeed: %v", err)
+	}
+	if total != 100 {
+		t.Fatalf("expected highest provider episode across modes, got %d", total)
+	}
+	if got := strings.Join(provider.episodeModes, ","); got != "dub,sub" {
+		t.Fatalf("expected preferred then alternate episode lookups, got %s", got)
+	}
+}
+
+func TestGetProviderTotalEpisodesQueriesAnimepaheOnce(t *testing.T) {
+	provider := &fakePlaybackProvider{
+		name: "animepahe",
+		episodeListByMode: map[string][]string{
+			"sub": {"1", "500", "1100"},
+		},
+	}
+	withProvider(t, provider)
+
+	total, err := GetProviderTotalEpisodes("one-piece-id", "sub")
+	if err != nil {
+		t.Fatalf("expected animepahe total lookup to succeed: %v", err)
+	}
+	if total != 3 {
+		t.Fatalf("expected animepahe provider total, got %d", total)
+	}
+	if got := strings.Join(provider.episodeModes, ","); got != "sub" {
+		t.Fatalf("expected animepahe to be queried once, got %s", got)
+	}
+}
+
+func TestGetProviderTotalEpisodesReturnsLookupErrorsWhenNoEpisodesFound(t *testing.T) {
+	provider := &fakePlaybackProvider{
+		episodeErrByMode: map[string]error{
+			"sub": errors.New("no sub episodes"),
+			"dub": errors.New("no dub episodes"),
+		},
+	}
+	withProvider(t, provider)
+
+	_, err := GetProviderTotalEpisodes("show-id", "sub")
+	if err == nil {
+		t.Fatalf("expected provider total lookup to fail")
+	}
+	if !strings.Contains(err.Error(), "no sub episodes") || !strings.Contains(err.Error(), "no dub episodes") {
+		t.Fatalf("expected both lookup errors, got %v", err)
+	}
+}
+
+func TestGetAllAnimeEpisodesListUsesValidGraphQLVariableSyntax(t *testing.T) {
+	previousClient := sharedHTTPClient
+	t.Cleanup(func() {
+		sharedHTTPClient = previousClient
+	})
+
+	sharedHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var payload struct {
+			Query     string            `json:"query"`
+			Variables map[string]string `json:"variables"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode allanime episode request: %v", err)
+		}
+		if !strings.Contains(payload.Query, "query ($showId: String!)") {
+			t.Fatalf("episode list query is missing valid variable syntax: %q", payload.Query)
+		}
+		if payload.Variables["showId"] != "show-id" {
+			t.Fatalf("unexpected show id variable: %#v", payload.Variables)
+		}
+		return testHTTPResponse(req, http.StatusOK, `{"data":{"show":{"_id":"show-id","availableEpisodesDetail":{"sub":[1,2,12]}}}}`), nil
+	})}
+
+	episodes, err := getAllAnimeEpisodesList("show-id", "sub")
+	if err != nil {
+		t.Fatalf("expected allanime episode list lookup to succeed: %v", err)
+	}
+	if got := strings.Join(episodes, ","); got != "1,2,12" {
+		t.Fatalf("unexpected episodes: %s", got)
+	}
 }
 
 func captureStdout(t *testing.T, fn func()) string {

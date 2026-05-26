@@ -176,18 +176,32 @@ func promptTrackingInput(prompt string, allowEmpty bool) (string, error) {
 
 func promptAnimeScoreValue() (float64, error) {
 	config := GetGlobalConfig()
+	parseScore := func(raw string) (float64, error) {
+		score, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		if err != nil {
+			return 0, err
+		}
+		if score < 0 || score > 10 {
+			return 0, fmt.Errorf("score must be between 0 and 10")
+		}
+		return score, nil
+	}
+
 	if config != nil && config.RofiSelection {
 		userInput, err := GetUserInputFromRofi("Enter a score for the anime (0-10)")
 		if err != nil {
 			return 0, err
 		}
-		return strconv.ParseFloat(strings.TrimSpace(userInput), 64)
+		return parseScore(userInput)
 	}
 
 	fmt.Println("Rate this anime: ")
-	var score float64
-	fmt.Scanln(&score)
-	return score, nil
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return 0, err
+	}
+	return parseScore(input)
 }
 
 func ensureMyAnimeListCredentialsConfigured(config *CurdConfig) error {
@@ -280,6 +294,13 @@ func localAnimeListFromHistory(history []Anime) AnimeList {
 		list.Watching = append(list.Watching, entry)
 	}
 	return list
+}
+
+func nextEpisodeFromProgress(progress int) int {
+	if progress < 0 {
+		return 1
+	}
+	return progress + 1
 }
 
 func BuildLocalAnimeList(storagePath string) AnimeList {
@@ -477,9 +498,15 @@ func mergeAnimeEntries(existing, incoming Entry) Entry {
 func mergeAnimeLists(primary, secondary AnimeList) AnimeList {
 	merged := make(map[int]Entry)
 	for _, entry := range getEntriesByCategory(primary, "ALL") {
+		if entry.Media.ID == 0 {
+			continue
+		}
 		merged[entry.Media.ID] = entry
 	}
 	for _, entry := range getEntriesByCategory(secondary, "ALL") {
+		if entry.Media.ID == 0 {
+			continue
+		}
 		if existing, ok := merged[entry.Media.ID]; ok {
 			merged[entry.Media.ID] = mergeAnimeEntries(existing, entry)
 			continue
@@ -510,6 +537,9 @@ func mergeAnimeLists(primary, secondary AnimeList) AnimeList {
 func mapEntriesByMediaID(list AnimeList) map[int]Entry {
 	entries := make(map[int]Entry)
 	for _, entry := range getEntriesByCategory(list, "ALL") {
+		if entry.Media.ID == 0 {
+			continue
+		}
 		entries[entry.Media.ID] = entry
 	}
 	return entries

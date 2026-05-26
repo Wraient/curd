@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bufio"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -63,8 +62,12 @@ func EditConfig(configFilePath string) {
 
 // ClearLogFile removes all contents from the specified log file
 func ClearLogFile(logFile string) error {
-	// Open the file with truncate flag to clear its contents
-	file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_TRUNC, 0666)
+	if err := os.MkdirAll(filepath.Dir(logFile), 0755); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	// Open the file with truncate flag to clear its contents.
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
@@ -137,7 +140,9 @@ func ExitCurd(err error) {
 	RestoreScreen()
 
 	anime := GetGlobalAnime()
+	socketPath := ""
 	if (anime != nil) && (anime.Ep.Player.SocketPath != "") {
+		socketPath = anime.Ep.Player.SocketPath
 		_, err = MPVSendCommand(anime.Ep.Player.SocketPath, []interface{}{"quit"})
 		if err != nil {
 			Log("Error closing MPV: " + err.Error())
@@ -146,7 +151,7 @@ func ExitCurd(err error) {
 
 	CurdOut("Have a great day!")
 	// If the error is not about the connection refused, print the error
-	if err != nil && !strings.Contains(err.Error(), "dial unix "+anime.Ep.Player.SocketPath+": connect: connection refused") {
+	if err != nil && (socketPath == "" || !strings.Contains(err.Error(), "dial unix "+socketPath+": connect: connection refused")) {
 		CurdOut(fmt.Sprintf("Error: %v", err))
 		if runtime.GOOS == "windows" {
 			fmt.Println("Press Enter to exit")
@@ -381,7 +386,7 @@ updateOptionLoop:
 						fmt.Scanln(&progress)
 					}
 
-					progressNum, err := strconv.Atoi(progress)
+					progressNum, err := parseNonNegativeIntInput(progress, "progress")
 					if err != nil {
 						Log(fmt.Sprintf("Failed to convert progress to number: %v", err))
 						ExitCurd(fmt.Errorf("Failed to convert progress to number"))
@@ -464,7 +469,7 @@ func UpdateCurd(repo, fileName string) error {
 	tmpPath := executablePath + ".tmp"
 
 	// Download the curd executable
-	resp, err := http.Get(url)
+	resp, err := sharedHTTPClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("failed to download file: %v", err)
 	}
@@ -528,18 +533,10 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	var err error
 	var anilistSelectedOption SelectionOption
 
-	if userCurdConfig.RofiSelection {
-		userInput, err := GetUserInputFromRofi("Enter the anime name")
-		if err != nil {
-			Log("Error getting user input: " + err.Error())
-			ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
-		}
-		query = userInput
-	} else {
-		CurdOut("Enter the anime name:")
-		reader := bufio.NewReader(os.Stdin)
-		input, _ := reader.ReadString('\n')
-		query = strings.TrimSpace(input)
+	query, err = promptText(userCurdConfig, "Enter the anime name", false)
+	if err != nil {
+		Log("Error getting user input: " + err.Error())
+		ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 	}
 	if userCurdConfig.RofiSelection && userCurdConfig.ImagePreview {
 		animeMapPreview, err = SearchAnimeAnilistPreview(query, user.Token)
@@ -559,6 +556,10 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 	} else {
 		anilistSelectedOption, err = DynamicSelect(animeOptions)
 	}
+	if err != nil {
+		Log(fmt.Sprintf("No anime available: %v", err))
+		ExitCurd(fmt.Errorf("No anime available"))
+	}
 
 	if anilistSelectedOption.Key == "-1" {
 		ExitCurd(nil)
@@ -569,10 +570,6 @@ func AddNewAnime(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseA
 		return SelectionOption{Key: "-2", Label: "Back"}
 	}
 
-	if err != nil {
-		Log(fmt.Sprintf("No anime available: %v", err))
-		ExitCurd(fmt.Errorf("No anime available"))
-	}
 	animeID, err := strconv.Atoi(anilistSelectedOption.Key)
 	if err != nil {
 		Log(fmt.Sprintf("Failed to convert anime ID to integer: %v", err))
@@ -917,7 +914,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		anime.Repeat = selectedAnilistAnime.Repeat
 		anime.StartedAt = selectedAnilistAnime.StartedAt
 		anime.CompletedAt = selectedAnilistAnime.CompletedAt
-		anime.Ep.Number = selectedAnilistAnime.Progress + 1
+		anime.Ep.Number = nextEpisodeFromProgress(selectedAnilistAnime.Progress)
 		var animeList []SelectionOption
 		userQuery = anime.Title.Romaji
 
@@ -1003,19 +1000,10 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			if len(animeList) == 0 {
 				for {
 					var manualQuery string
-					if userCurdConfig.RofiSelection {
-						userInput, err := GetUserInputFromRofi(fmt.Sprintf("No results found for '%s'. Press Enter to search with AniList name, or enter a custom name to search on AllAnime.", userQuery))
-						if err != nil {
-							Log("Error getting user input: " + err.Error())
-							ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
-						}
-						manualQuery = userInput
-					} else {
-						CurdOut(fmt.Sprintf("No results found for '%s'.", userQuery))
-						CurdOut("Press Enter to search with AniList name, or enter a custom name to search on AllAnime:")
-						reader := bufio.NewReader(os.Stdin)
-						input, _ := reader.ReadString('\n')
-						manualQuery = strings.TrimSpace(input)
+					manualQuery, err = promptText(userCurdConfig, fmt.Sprintf("No results found for '%s'. Press Enter to search with AniList name, or enter a custom name to search on AllAnime.", userQuery), true)
+					if err != nil {
+						Log("Error getting user input: " + err.Error())
+						ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 					}
 
 					// If empty, use original AniList name
@@ -1162,13 +1150,24 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 						}
 						animeUrl := fmt.Sprintf("https://animepahe.pw/anime/%s", animeRef.Session)
 						Log(fmt.Sprintf("Fetching %s to check exact AniList meta tag...", animeUrl))
-						req, _ := http.NewRequest("GET", animeUrl, nil)
-						req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+						req, err := newAnimepahePageRequest(animeUrl)
+						if err != nil {
+							Log(fmt.Sprintf("Failed to build animepahe detail request %s: %v", animeUrl, err))
+							continue
+						}
 
 						resp, err := sharedHTTPClient.Do(req)
-						if err == nil && resp.StatusCode == 200 {
-							body, _ := io.ReadAll(resp.Body)
-							resp.Body.Close()
+						if err != nil {
+							Log(fmt.Sprintf("Failed to fetch animepahe detail page %s: %v", animeUrl, err))
+							continue
+						}
+						body, readErr := io.ReadAll(resp.Body)
+						resp.Body.Close()
+						if readErr != nil {
+							Log(fmt.Sprintf("Failed to read animepahe detail page %s: %v", animeUrl, readErr))
+							continue
+						}
+						if resp.StatusCode == http.StatusOK {
 							bodyStr := string(body)
 
 							metaTag := fmt.Sprintf(`<meta name="anilist" content="%s">`, targetAnilistID)
@@ -1231,6 +1230,9 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			if anime.ProviderId == "" {
 				CurdOut("We didn't find any matches. Please select manually.")
 				selectedAllanimeAnime, err := DynamicSelect(animeList)
+				if err != nil {
+					ExitCurd(fmt.Errorf("No anime available"))
+				}
 
 				if selectedAllanimeAnime.Key == "-1" {
 					ExitCurd(nil)
@@ -1246,9 +1248,6 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 					continue
 				}
 
-				if err != nil {
-					ExitCurd(fmt.Errorf("No anime available"))
-				}
 				anime.ProviderId = selectedAllanimeAnime.Key
 			}
 		}
@@ -1264,7 +1263,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 
 			// If local history episode is ahead of AniList upstream, prompt user
-			anilistEpisode := selectedAnilistAnime.Progress + 1
+			anilistEpisode := nextEpisodeFromProgress(selectedAnilistAnime.Progress)
 			if animePointer.Ep.Number > anilistEpisode {
 				trackerLabel := RemoteTrackingDisplayName(userCurdConfig)
 				Log(fmt.Sprintf("Local history episode (%d) is ahead of %s episode (%d), prompting user", animePointer.Ep.Number, trackerLabel, anilistEpisode))
@@ -1289,7 +1288,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 					anime.Ep.Number = animePointer.Ep.Number
 					anime.Ep.Resume = true
 				} else if selectedOption.Key == "use_anilist" {
-					// Use remote episode number (already set from selectedAnilistAnime.Progress + 1)
+					// Use remote next-episode number (already set from selectedAnilistAnime.Progress + 1)
 					anime.Ep.Number = anilistEpisode
 					anime.Ep.Player.PlaybackTime = 0
 					anime.Ep.Resume = false
@@ -1371,8 +1370,9 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 
 		// If upstream is ahead, update the episode number
 		if temp_anime, err := FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anime.AnilistId)); err == nil {
-			if temp_anime.Progress > anime.Ep.Number {
-				anime.Ep.Number = temp_anime.Progress
+			upstreamNextEpisode := nextEpisodeFromProgress(temp_anime.Progress)
+			if upstreamNextEpisode > anime.Ep.Number {
+				anime.Ep.Number = upstreamNextEpisode
 				anime.Ep.Player.PlaybackTime = 0
 				anime.Ep.Resume = false
 			}
@@ -1392,7 +1392,18 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		}
 
 		if anime.TotalEpisodes == 0 { // If failed to get anime data
-			CurdOut("Failed to get anime data. Attempting to retrieve from anime list.")
+			CurdOut("AniList/MAL did not return total episodes. Attempting to retrieve from provider episode list.")
+			providerTotal, err := GetProviderTotalEpisodes(anime.ProviderId, userCurdConfig.SubOrDub)
+			if err != nil {
+				Log(fmt.Sprintf("Failed to retrieve total episodes from provider episode list: %v", err))
+			} else {
+				anime.TotalEpisodes = providerTotal
+				CurdOut(fmt.Sprintf("Retrieved total episodes from provider: %d", anime.TotalEpisodes))
+			}
+		}
+
+		if anime.TotalEpisodes == 0 { // If provider episode list did not have a usable total
+			CurdOut("Attempting to retrieve total episodes from anime search results.")
 			animeList, err := SearchAnime(string(userQuery), userCurdConfig.SubOrDub)
 			if err != nil {
 				CurdOut(fmt.Sprintf("Failed to retrieve anime list: %v", err))
@@ -1412,21 +1423,14 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			if anime.TotalEpisodes == 0 {
 				CurdOut("Still unable to determine total episodes.")
 				CurdOut(fmt.Sprintf("Your %s progress: %d", RemoteTrackingDisplayName(userCurdConfig), selectedAnilistAnime.Progress))
-				var episodeNumber int
-				if userCurdConfig.RofiSelection {
-					userInput, err := GetUserInputFromRofi("Enter the episode you want to start from")
-					if err != nil {
-						Log("Error getting user input: " + err.Error())
-						ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
-					}
-					episodeNumber, err = strconv.Atoi(userInput)
-				} else {
-					fmt.Print("Enter the episode you want to start from: ")
-					fmt.Scanln(&episodeNumber)
+				episodeNumber, err := promptPositiveEpisodeNumber(userCurdConfig, "Enter the episode you want to start from")
+				if err != nil {
+					Log("Invalid episode input: " + err.Error())
+					ExitCurd(fmt.Errorf("Invalid episode number"))
 				}
 				anime.Ep.Number = episodeNumber
 			} else {
-				anime.Ep.Number = selectedAnilistAnime.Progress + 1
+				anime.Ep.Number = nextEpisodeFromProgress(selectedAnilistAnime.Progress)
 			}
 		} else if anime.TotalEpisodes < anime.Ep.Number { // Handle weird cases
 			Log(fmt.Sprintf("Weird case: anime.TotalEpisodes < anime.Ep.Number: %v < %v", anime.TotalEpisodes, anime.Ep.Number))
@@ -1442,7 +1446,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				fmt.Printf("Would like to start the anime from beginning? (y/n)\n")
 				fmt.Scanln(&answer)
 			}
-			if answer == "y" {
+			if isAffirmativeAnswer(answer) {
 				anime.Ep.Number = 1
 			} else {
 				anime.Ep.Number = anime.TotalEpisodes
@@ -1596,17 +1600,14 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 				RestoreScreen()
 				os.Exit(1)
 			}
-			if userCurdConfig.RofiSelection {
-				userInput, err := GetUserInputFromRofi(fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
-				if err != nil {
-					Log("Error getting user input: " + err.Error())
-					ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
-				}
-				anime.Ep.Number, err = strconv.Atoi(userInput)
-			} else {
-				CurdOut(fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
-				fmt.Scanln(&anime.Ep.Number)
+			episodeNumber, err := promptPositiveEpisodeNumber(userCurdConfig, fmt.Sprintf("Enter the episode (%v episodes)", episodeList[len(episodeList)-1]))
+			if err != nil {
+				Log("Invalid episode input: " + err.Error())
+				CurdOut("Invalid episode number")
+				RestoreScreen()
+				os.Exit(1)
 			}
+			anime.Ep.Number = episodeNumber
 			link, _, err = GetEpisodeURLForPlayback(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
 			if err != nil {
 				CurdOut("Failed to get episode link")
@@ -1791,22 +1792,31 @@ func CheckAndDownloadFiles(storagePath string, filesToCheck []string) error {
 		}
 
 		// Download file if it doesn't exist
-		resp, err := http.Get(baseURL + fileName)
+		resp, err := sharedHTTPClient.Get(baseURL + fileName)
 		if err != nil {
 			return fmt.Errorf("failed to download %s: %v", fileName, err)
 		}
-		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return fmt.Errorf("failed to download %s: received status code %d", fileName, resp.StatusCode)
+		}
 
 		// Create the file
 		out, err := os.Create(filePath)
 		if err != nil {
+			resp.Body.Close()
 			return fmt.Errorf("failed to create file %s: %v", fileName, err)
 		}
-		defer out.Close()
 
 		// Write the content
 		if _, err := io.Copy(out, resp.Body); err != nil {
+			resp.Body.Close()
+			out.Close()
 			return fmt.Errorf("failed to write file %s: %v", fileName, err)
+		}
+		resp.Body.Close()
+		if err := out.Close(); err != nil {
+			return fmt.Errorf("failed to close file %s: %v", fileName, err)
 		}
 	}
 
@@ -1850,11 +1860,20 @@ func NextEpisodePromptCLI(userCurdConfig *CurdConfig) bool {
 
 	// Show the next episode number that will be started
 	nextEpisodeNum := anime.Ep.Number + 1
-	CurdOut(fmt.Sprintf("Start next episode (%d)?", nextEpisodeNum))
+	isLastKnownEpisode := anime.TotalEpisodes > 0 && anime.Ep.Number >= anime.TotalEpisodes
+	if isLastKnownEpisode {
+		CurdOut("Finish this series?")
+	} else {
+		CurdOut(fmt.Sprintf("Start next episode (%d)?", nextEpisodeNum))
+	}
 
 	// Create options for the selection - no "quit" option since it's built into selection menu
+	label := fmt.Sprintf("Yes, continue to episode %d", nextEpisodeNum)
+	if isLastKnownEpisode {
+		label = "Yes, finish series"
+	}
 	options := []SelectionOption{
-		{Key: "yes", Label: fmt.Sprintf("Yes, continue to episode %d", nextEpisodeNum)},
+		{Key: "yes", Label: label},
 	}
 
 	// Use DynamicSelect for CLI mode
@@ -1889,11 +1908,20 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 
 		// Show the next episode number that will be started
 		nextEpisodeNum := anime.Ep.Number + 1
-		CurdOut(fmt.Sprintf("Continue to next episode (%d) or quit?", nextEpisodeNum))
+		isLastKnownEpisode := anime.TotalEpisodes > 0 && anime.Ep.Number >= anime.TotalEpisodes
+		if isLastKnownEpisode {
+			CurdOut("Finish this series or quit?")
+		} else {
+			CurdOut(fmt.Sprintf("Continue to next episode (%d) or quit?", nextEpisodeNum))
+		}
 
 		// Create options for the selection - no "quit" option since it's built into selection menu
+		label := "Yes, start next episode now"
+		if isLastKnownEpisode {
+			label = "Yes, finish series"
+		}
 		options := []SelectionOption{
-			{Key: "yes", Label: "Yes, start next episode now"},
+			{Key: "yes", Label: label},
 		}
 
 		// Use DynamicSelect for CLI mode
@@ -1921,18 +1949,17 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 				}
 
 				// Update local database
-				err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime), GetProvider().Name())
-				if err != nil {
-					Log("Error updating local database on quit: " + err.Error())
+				if updateErr := LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime), GetProvider().Name()); updateErr != nil {
+					Log("Error updating local database on quit: " + updateErr.Error())
 				}
 
 				if !(anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && anime.Rewatching) {
-					go func() {
-						err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
-						if err != nil {
-							Log("Error updating Anilist progress on quit: " + err.Error())
+					completedEpisode := anime.Ep.Number
+					go func(progressEpisode int) {
+						if progressErr := UpdateAnimeProgress(userToken, anime.AnilistId, progressEpisode); progressErr != nil {
+							Log("Error updating Anilist progress on quit: " + progressErr.Error())
 						}
-					}()
+					}(completedEpisode)
 				}
 
 				CurdOut(fmt.Sprintf("Episode completed (%.1f%% watched). Exiting.", percentageWatched))
@@ -1948,40 +1975,12 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 		if selectedOption.Key == "yes" {
 			// User wants to start next episode immediately
 			anime.Ep.IsCompleted = true
-
-			// Update database with completed episode first
-			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, anime.Ep.Player.PlaybackTime, ConvertSecondsToMinutes(anime.Ep.Duration), GetAnimeName(*anime), GetProvider().Name())
-			if err != nil {
-				Log("Error updating local database with completed episode: " + err.Error())
+			socketPath := anime.Ep.Player.SocketPath
+			if anime.TotalEpisodes > 0 && anime.Ep.Number >= anime.TotalEpisodes {
+				ExitMPV(socketPath)
 			}
-
-			go func() {
-				err = UpdateAnimeProgress(userToken, anime.AnilistId, anime.Ep.Number)
-				if err != nil {
-					Log("Error updating Anilist progress: " + err.Error())
-				}
-			}()
-
-			// Increment to next episode and update database with next episode number and 0 playback time
-			anime.Ep.Number++
-
-			// Use prefetched links if available for the next episode
-			if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
-				anime.Ep.Links = anime.Ep.NextEpisode.Links
-				Log(fmt.Sprintf("Using prefetched links for episode %d", anime.Ep.Number))
-			} else {
-				// Clear links to force fetching new ones
-				anime.Ep.Links = []string{}
-				Log(fmt.Sprintf("No prefetched links available for episode %d, will fetch new ones", anime.Ep.Number))
-			}
-
-			err = LocalUpdateAnime(databaseFile, anime.AnilistId, anime.ProviderId, anime.Ep.Number, 0, 0, GetAnimeName(*anime), GetProvider().Name())
-			if err != nil {
-				Log("Error updating local database with next episode: " + err.Error())
-			}
-
-			CurdOut("Starting next episode now...")
-			ExitMPV(anime.Ep.Player.SocketPath)
+			StartNextEpisode(anime, userCurdConfig, databaseFile, userToken)
+			ExitMPV(socketPath)
 			return // Exit this function, let the main loop handle next episode
 		}
 	}
@@ -1993,10 +1992,15 @@ func NextEpisodePromptRofi(userCurdConfig *CurdConfig) bool {
 
 	// Show the next episode number that will be started
 	nextEpisodeNum := anime.Ep.Number + 1
+	isLastKnownEpisode := anime.TotalEpisodes > 0 && anime.Ep.Number >= anime.TotalEpisodes
 
 	// Create options for the selection
+	label := fmt.Sprintf("Yes, start episode %d", nextEpisodeNum)
+	if isLastKnownEpisode {
+		label = "Yes, finish series"
+	}
 	options := []SelectionOption{
-		{Key: "yes", Label: fmt.Sprintf("Yes, start episode %d", nextEpisodeNum)},
+		{Key: "yes", Label: label},
 	}
 
 	// Use DynamicSelect for Rofi mode
@@ -2069,9 +2073,8 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 	}
 
 	go func() {
-		err = UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
-		if err != nil {
-			Log("Error updating Anilist progress: " + err.Error())
+		if progressErr := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode); progressErr != nil {
+			Log("Error updating Anilist progress: " + progressErr.Error())
 		}
 	}()
 

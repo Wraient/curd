@@ -30,7 +30,7 @@ func GetAniSkipData(animeMalId int, episode int) (string, error) {
 	baseURL := "https://api.aniskip.com/v1/skip-times"
 	url := fmt.Sprintf("%s/%d/%d?types=op&types=ed", baseURL, animeMalId, episode)
 
-	resp, err := http.Get(url)
+	resp, err := sharedHTTPClient.Get(url)
 	if err != nil {
 		Log(fmt.Errorf("error fetching data from AniSkip API: %w", err))
 		return "", fmt.Errorf("error fetching data from AniSkip API: %w", err)

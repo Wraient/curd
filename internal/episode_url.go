@@ -224,6 +224,10 @@ func extractLinks(provider_id string) map[string]interface{} {
 		Log(fmt.Sprint("Error reading response:", err))
 		return videoData
 	}
+	if !httpStatusOK(resp.StatusCode) {
+		Log(httpStatusError("allanime source extractor", resp.StatusCode, body))
+		return videoData
+	}
 
 	// Parse the JSON response
 	err = json.Unmarshal(body, &videoData)
@@ -473,6 +477,9 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read persisted query response: %w", err)
 	}
+	if !httpStatusOK(resp.StatusCode) {
+		return nil, httpStatusError("allanime episode persisted query", resp.StatusCode, body)
+	}
 
 	var response allanimeResponse
 	if err := json.Unmarshal(body, &response); err != nil {
@@ -511,6 +518,9 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response body: %w", err)
+		}
+		if !httpStatusOK(resp.StatusCode) {
+			return nil, httpStatusError("allanime episode fallback query", resp.StatusCode, body)
 		}
 
 		if err := json.Unmarshal(body, &response); err != nil {
@@ -558,7 +568,7 @@ func getLinksFromSourceUrls(sourceUrls []allanimeSource) ([]string, error) {
 		}
 
 		decodedURL := decodeProviderID(sourceURL[2:])
-		if strings.Contains(decodedURL, LinkPriorities[0]) {
+		if len(LinkPriorities) > 0 && strings.Contains(decodedURL, LinkPriorities[0]) {
 			priority := url.Priority
 			if priority > highestPriority {
 				highestPriority = priority
@@ -591,7 +601,6 @@ func getLinksFromURLs(validURLs []string) ([]string, error) {
 
 	highPriorityLink := make(chan []string, 1)
 
-	remainingURLs := len(validURLs)
 	for i, sourceUrl := range validURLs {
 		go func(idx int, url string) {
 			decodedProviderID := decodeProviderID(url[2:])
@@ -634,8 +643,12 @@ func getLinksFromURLs(validURLs []string) ([]string, error) {
 			}
 
 			// Check if any of the extracted links are high priority
+			priorityDomains := LinkPriorities
+			if len(priorityDomains) > 3 {
+				priorityDomains = priorityDomains[:3]
+			}
 			for _, link := range links {
-				for _, domain := range LinkPriorities[:3] {
+				for _, domain := range priorityDomains {
 					if strings.Contains(link, domain) {
 						// Found high priority link, send it immediately
 						select {
@@ -663,8 +676,6 @@ func getLinksFromURLs(validURLs []string) ([]string, error) {
 	// First, try to get a high priority link
 	select {
 	case links := <-highPriorityLink:
-		// Continue extracting other links in background
-		go collectRemainingResults(results, orderedResults, &successCount, &collectedErrors, remainingURLs)
 		return links, nil
 	case <-time.After(2 * time.Second): // Wait only briefly for high priority link
 		// No high priority link found quickly, proceed with normal collection
@@ -672,9 +683,11 @@ func getLinksFromURLs(validURLs []string) ([]string, error) {
 
 	// Continue with existing result collection logic
 	// Collect results maintaining order
-	for successCount < len(validURLs) {
+	completedCount := 0
+	for completedCount < len(validURLs) {
 		select {
 		case res := <-results:
+			completedCount++
 			if res.err != nil {
 				Log(fmt.Sprintf("Error processing URL %d: %v", res.index+1, res.err))
 				collectedErrors = append(collectedErrors, fmt.Errorf("URL %d: %w", res.index+1, res.err))
@@ -705,25 +718,6 @@ func getLinksFromURLs(validURLs []string) ([]string, error) {
 	}
 
 	return allLinks, nil
-}
-
-// Helper function to collect remaining results in background
-func collectRemainingResults(results chan result, orderedResults [][]string, successCount *int, collectedErrors *[]error, remainingURLs int) {
-	for *successCount < remainingURLs {
-		select {
-		case res := <-results:
-			if res.err != nil {
-				Log(fmt.Sprintf("Error processing URL %d: %v", res.index+1, res.err))
-				*collectedErrors = append(*collectedErrors, fmt.Errorf("URL %d: %w", res.index+1, res.err))
-			} else {
-				orderedResults[res.index] = res.links
-				*successCount++
-				Log(fmt.Sprintf("Successfully processed URL %d/%d", res.index+1, remainingURLs))
-			}
-		case <-time.After(10 * time.Second):
-			return
-		}
-	}
 }
 
 // converts the ordered slice of link slices into a single slice

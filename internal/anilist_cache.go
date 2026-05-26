@@ -267,10 +267,7 @@ func buildCategorySelectionOptions(list AnimeList, category string) []SelectionO
 	options := make([]SelectionOption, 0)
 
 	for _, entry := range getEntriesByCategory(list, category) {
-		title := entry.Media.Title.English
-		if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-			title = entry.Media.Title.Romaji
-		}
+		title := mediaDisplayTitle(entry.Media, userCurdConfig)
 
 		options = append(options, SelectionOption{
 			Key:   strconv.Itoa(entry.Media.ID),
@@ -286,10 +283,7 @@ func buildCategoryPreviewOptions(list AnimeList, category string) map[string]Rof
 	options := make(map[string]RofiSelectPreview)
 
 	for _, entry := range getEntriesByCategory(list, category) {
-		title := entry.Media.Title.English
-		if title == "" || userCurdConfig.AnimeNameLanguage == "romaji" {
-			title = entry.Media.Title.Romaji
-		}
+		title := mediaDisplayTitle(entry.Media, userCurdConfig)
 
 		options[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
 			Title:      title,

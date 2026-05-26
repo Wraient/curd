@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // GetEpisodeData fetches episode data for a given anime ID and episode number
@@ -80,7 +81,10 @@ func makeGetRequest(url string, headers map[string]string) (map[string]interface
 		req.Header.Set(key, value)
 	}
 
-	client := &http.Client{}
+	client := sharedHTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send GET request: %w", err)

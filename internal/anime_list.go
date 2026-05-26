@@ -139,6 +139,11 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 	// Debug: Log the response status and first part of the body
 	Log(fmt.Sprintf("Response Status: %s", resp.Status))
 	Log(fmt.Sprintf("Response Body (first 500 chars): %s", string(body[:min(len(body), 500)])))
+	if !httpStatusOK(resp.StatusCode) {
+		err := httpStatusError("allanime search", resp.StatusCode, body)
+		Log(err)
+		return animeList, err
+	}
 
 	// Parse the JSON response
 	var response response

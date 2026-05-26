@@ -1,5 +1,11 @@
 package internal
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
 // Provider interface defines methods for an anime provider.
 type Provider interface {
 	Name() string
@@ -16,7 +22,7 @@ func GetProvider() Provider {
 		return CurrentProvider
 	}
 	config := GetGlobalConfig()
-	if config != nil && config.Provider == "animepahe" {
+	if config != nil && strings.EqualFold(strings.TrimSpace(config.Provider), "animepahe") {
 		CurrentProvider = &AnimepaheProvider{}
 	} else {
 		CurrentProvider = &AllanimeProvider{}
@@ -31,6 +37,79 @@ func SearchAnime(query, mode string) ([]SelectionOption, error) {
 
 func EpisodesList(showID, mode string) ([]string, error) {
 	return GetProvider().EpisodesList(showID, mode)
+}
+
+func GetProviderTotalEpisodes(showID, mode string) (int, error) {
+	return getProviderTotalEpisodes(GetProvider(), showID, mode)
+}
+
+func getProviderTotalEpisodes(provider Provider, showID, mode string) (int, error) {
+	if provider == nil {
+		return 0, fmt.Errorf("provider is not configured")
+	}
+	if strings.TrimSpace(showID) == "" {
+		return 0, fmt.Errorf("provider id is empty")
+	}
+
+	preferredMode := normalizeTranslationType(mode)
+	lookupModes := []string{preferredMode}
+	if !strings.EqualFold(provider.Name(), "animepahe") {
+		lookupModes = append(lookupModes, alternateTranslationType(preferredMode))
+	}
+
+	bestTotal := 0
+	var lookupErrors []string
+	for _, lookupMode := range lookupModes {
+		episodes, err := provider.EpisodesList(showID, lookupMode)
+		if err != nil {
+			lookupErrors = append(lookupErrors, fmt.Sprintf("%s: %v", lookupMode, err))
+			continue
+		}
+		if total := inferProviderTotalEpisodes(provider.Name(), episodes); total > bestTotal {
+			bestTotal = total
+		}
+	}
+
+	if bestTotal > 0 {
+		return bestTotal, nil
+	}
+	if len(lookupErrors) > 0 {
+		return 0, fmt.Errorf("provider episode list lookup failed: %s", strings.Join(lookupErrors, "; "))
+	}
+	return 0, fmt.Errorf("provider returned no usable episode numbers")
+}
+
+func inferProviderTotalEpisodes(providerName string, episodes []string) int {
+	if strings.EqualFold(providerName, "animepahe") {
+		return countUsableEpisodeEntries(episodes)
+	}
+	return inferTotalEpisodesFromEpisodeList(episodes)
+}
+
+func inferTotalEpisodesFromEpisodeList(episodes []string) int {
+	total := 0
+	for _, episode := range episodes {
+		episodeNumber, err := strconv.ParseFloat(strings.TrimSpace(episode), 64)
+		if err != nil || episodeNumber <= 0 {
+			continue
+		}
+		if wholeEpisode := int(episodeNumber); wholeEpisode > total {
+			total = wholeEpisode
+		}
+	}
+	return total
+}
+
+func countUsableEpisodeEntries(episodes []string) int {
+	total := 0
+	for _, episode := range episodes {
+		episodeNumber, err := strconv.ParseFloat(strings.TrimSpace(episode), 64)
+		if err != nil || episodeNumber <= 0 {
+			continue
+		}
+		total++
+	}
+	return total
 }
 
 func GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {

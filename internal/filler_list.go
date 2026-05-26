@@ -29,12 +29,13 @@ func FetchFillerEpisodes(malID int) ([]int, error) {
 	for {
 		<-rateLimiter.C // Wait for rate limit
 		url := fmt.Sprintf("%s?page=%d", baseURL, page)
-		resp, err := http.Get(url)
+		resp, err := sharedHTTPClient.Get(url)
 		if err != nil {
 			return nil, fmt.Errorf("error fetching episodes: %v", err)
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
 			// Wait for 2 seconds and retry
 			time.Sleep(2 * time.Second)
 			continue
