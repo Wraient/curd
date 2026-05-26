@@ -62,8 +62,11 @@ type Episode struct {
 }
 
 type NextEpisode struct {
-	Number int
-	Links  []string
+	Number       int
+	Links        []string
+	ProviderName string
+	ProviderId   string
+	Mode         string
 }
 
 type playingVideo struct {

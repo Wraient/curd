@@ -454,6 +454,10 @@ func (p *AnimepaheProvider) EpisodesList(showID, mode string) ([]string, error) 
 }
 
 func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
+	return p.GetEpisodeURLForMode(config, id, epNo, config.SubOrDub)
+}
+
+func (p *AnimepaheProvider) GetEpisodeURLForMode(config CurdConfig, id string, epNo int, mode string) ([]string, error) {
 	if err := p.ensureBypass(); err != nil {
 		return nil, err
 	}
@@ -602,8 +606,8 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	sortFunc(dubLinks)
 
 	var links []string
-	mode := normalizeTranslationType(config.SubOrDub)
-	if mode == "dub" {
+	requestedMode := normalizeTranslationType(mode)
+	if requestedMode == "dub" {
 		for _, l := range dubLinks {
 			links = append(links, l.url)
 		}
@@ -613,7 +617,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 		}
 	}
 	if len(links) == 0 {
-		return nil, fmt.Errorf("no %s streams found for episode %d", mode, epNo)
+		return nil, fmt.Errorf("no %s streams found for episode %d", requestedMode, epNo)
 	}
 
 	var finalLinks []string
@@ -625,7 +629,7 @@ func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 	}
 
 	if len(finalLinks) == 0 {
-		return nil, fmt.Errorf("failed to extract any %s stream links from kwik", mode)
+		return nil, fmt.Errorf("failed to extract any %s stream links from kwik", requestedMode)
 	}
 
 	return finalLinks, nil

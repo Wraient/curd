@@ -264,7 +264,7 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	shouldSetDefaultReferrer := isHTTPStreamLink(link) && !hasMPVReferrerArg(args)
 	if shouldSetDefaultReferrer {
 		referrer := defaultStreamReferrer
-		if GetProvider().Name() == "animepahe" {
+		if CurrentAnimeProviderName(anime) == "animepahe" {
 			referrer = "https://kwik.cx/"
 		}
 		args = append(args, fmt.Sprintf("--referrer=%s", referrer))
@@ -278,7 +278,7 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 
 		if shouldSetDefaultReferrer {
 			referrer := defaultStreamReferrer
-			if GetProvider().Name() == "animepahe" {
+			if CurrentAnimeProviderName(anime) == "animepahe" {
 				referrer = "https://kwik.cx/"
 			}
 			_, referrerErr := MPVSendCommand(mpvSocketPath, []interface{}{"set_property", "referrer", referrer})
