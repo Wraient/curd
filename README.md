@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/cbf799bc-9fdd-4402-ab61-b4e31f1e264d
 
 
 ## Features
-- Multiple Content Providers (AllAnime and Animepahe) with up to 1080p support
+- Multiple Content Providers (AllAnime and Animepahe) with ordered fallback and up to 1080p support
 - Built-in headless browser to bypass Cloudflare/DDoS-Guard protections
 - Stream anime online
 - Track anime locally, on AniList, or on MyAnimeList
@@ -392,7 +392,7 @@ If the browser reaches the localhost callback page but curd does not continue au
 | `SaveMpvSpeed`            | Boolean    | `true`, `false`                           | Retains the playback speed set in MPV for next episode.                                           |
 | `SkipFiller`              | Boolean    | `true`, `false`                           | Skips filler episodes when supported.                                                             |
 | `MenuOrder`               | String     | Comma-separated list                      | Controls which menu items appear and their order. Available options: `CURRENT`, `ALL`, `UNTRACKED`, `UPDATE`, `CONTINUE_LAST`, `PLANNING`, `COMPLETED`, `PAUSED`, `DROPPED`, `REWATCHING`, `TRACKER`, `PROVIDER`. Only listed items will be shown. Default: `CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,TRACKER,PROVIDER` |
-| `Provider`                | Enum       | `allanime`, `animepahe`                   | Sets the content provider for anime streams. `animepahe` requires chromium to bypass DDoS-Guard. Default: `allanime` |
+| `Provider`                | List       | `["allanime"]`, `["animepahe"]`, `["allanime","animepahe"]`, `["allanime","no-animepahe"]` | Sets the ordered content-provider fallback list. Curd tries providers from left to right for the requested stream. If AllAnime has no search results or the requested episode stream is unavailable and Animepahe is not configured, Curd asks before enabling Animepahe and warns that DDoS-Guard verification may require a ~500 MB chromium download. Declining stores `no-animepahe` so Curd does not ask again. Legacy single values like `allanime` are migrated to list form. Default: `["allanime"]` |
 | `TrackingLocal`           | Boolean    | `true`                                    | Legacy compatibility flag. Local playback history is always enabled.                              |
 | `TrackingRemote`          | Enum       | `none`, `anilist`, `myanimelist`, `anilist+myanimelist` | Selects which remote tracker curd syncs with.                                           |
 | `TrackingConfigured`      | Boolean    | `true`, `false`                           | Internal flag used to remember that the startup tracking prompt has already been completed.       |

@@ -425,7 +425,11 @@ func extractFilemoonLinks(videoData map[string]interface{}) []string {
 // - error: an error if the episode is not found or if there is an issue during the search.
 func getAllanimeEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
 	preferredMode := normalizeTranslationType(config.SubOrDub)
-	return getEpisodeURLForMode(id, preferredMode, epNo)
+	return getAllanimeEpisodeURLForMode(id, preferredMode, epNo)
+}
+
+func getAllanimeEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
+	return getEpisodeURLForMode(id, normalizeTranslationType(mode), epNo)
 }
 
 func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {

@@ -101,7 +101,7 @@ func defaultConfigMap() map[string]string {
 		"AlternateScreen":            "true",
 		"DiscordPresence":            "true",
 		"DiscordClientId":            "1287457464148820089",
-		"Provider":                   "allanime",
+		"Provider":                   "[\"allanime\"]",
 		"TrackingLocal":              "true",
 		"TrackingRemote":             "anilist",
 		"TrackingConfigured":         "false",
@@ -212,6 +212,14 @@ func LoadConfig(configPath string) (CurdConfig, error) {
 		configMap["TrackingRemote"] = TrackingRemoteAniList
 		configMap["TrackingConfigured"] = "true"
 		updated = true
+	}
+
+	if providerValue, exists := configMap["Provider"]; exists {
+		normalizedProviderValue := canonicalProviderConfigValue(providerValue)
+		if normalizedProviderValue != providerValue {
+			configMap["Provider"] = normalizedProviderValue
+			updated = true
+		}
 	}
 
 	// Write updated config back to file only if AddMissingOptions is true

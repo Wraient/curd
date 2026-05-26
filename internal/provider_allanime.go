@@ -15,5 +15,9 @@ func (p *AllanimeProvider) EpisodesList(showID, mode string) ([]string, error) {
 }
 
 func (p *AllanimeProvider) GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
-	return getAllanimeEpisodeURL(config, id, epNo)
+	return p.GetEpisodeURLForMode(config, id, epNo, config.SubOrDub)
+}
+
+func (p *AllanimeProvider) GetEpisodeURLForMode(config CurdConfig, id string, epNo int, mode string) ([]string, error) {
+	return getAllanimeEpisodeURLForMode(id, mode, epNo)
 }

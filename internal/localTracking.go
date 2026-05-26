@@ -42,6 +42,10 @@ func LocalAddAnime(databaseFile string, anilistID int, allanimeID string, watchi
 }
 
 func normalizeLocalProviderID(providerName, providerID, animeName string) string {
+	if _, rawProviderID, ok := ParseProviderQualifiedID(providerID); ok {
+		providerID = rawProviderID
+	}
+
 	if providerName != "animepahe" {
 		return providerID
 	}
@@ -405,6 +409,12 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 		}
 
 		anime.ProviderId = selectedAnime.Key
+		if providerName, rawProviderID, ok := ParseProviderQualifiedID(selectedAnime.Key); ok {
+			anime.ProviderName = providerName
+			anime.ProviderId = rawProviderID
+		} else {
+			anime.ProviderName = configuredProviderNames(userCurdConfig)[0]
+		}
 		if selectedAnime.Title != "" {
 			anime.Title.English = selectedAnime.Title
 			anime.Title.Romaji = selectedAnime.Title
@@ -426,11 +436,12 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 
 	for {
 		// Get episode link
-		link, _, err := GetEpisodeURLForPlayback(*userCurdConfig, anime.ProviderId, anime.Ep.Number)
+		resolvedLink, err := ResolveEpisodeURLForPlayback(*userCurdConfig, &anime, anime.Ep.Number)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to get episode link: %v", err))
 			ExitCurd(fmt.Errorf("Failed to get episode link"))
 		}
+		link := resolvedLink.Links
 
 		if len(link) == 0 {
 			ExitCurd(fmt.Errorf("No episode links found"))
