@@ -19,6 +19,16 @@ var logFile = "debug.log"
 // This is not generic but we have MpvArgs in CurdConfig to add custom ones
 const defaultStreamReferrer = "https://allanime.day/"
 
+func streamReferrerForLink(link, provider string) string {
+	if strings.Contains(strings.ToLower(link), "tools.fast4speed.rsvp") {
+		return "https://allanime.to"
+	}
+	if provider == "animepahe" {
+		return "https://kwik.cx/"
+	}
+	return defaultStreamReferrer
+}
+
 // We should really handle this by Provider but keeping simple string here for now
 
 func getBundledMPVPath() (string, error) {
@@ -192,6 +202,19 @@ func hasMPVReferrerArg(args []string) bool {
 	return false
 }
 
+func hasMPVSubtitleArg(args []string) bool {
+	for i, arg := range args {
+		lowerArg := strings.ToLower(strings.TrimSpace(arg))
+		if strings.HasPrefix(lowerArg, "--sub-file=") || lowerArg == "--sub-file" {
+			return true
+		}
+		if lowerArg == "--sub-files" && i+1 < len(args) {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeReferrerValue(referrer string) string {
 	referrer = strings.TrimSpace(referrer)
 	if referrer == "" {
@@ -262,12 +285,15 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	}
 
 	shouldSetDefaultReferrer := isHTTPStreamLink(link) && !hasMPVReferrerArg(args)
-	if shouldSetDefaultReferrer {
-		referrer := defaultStreamReferrer
-		if CurrentAnimeProviderName(anime) == "animepahe" {
-			referrer = "https://kwik.cx/"
-		}
+	referrer := strings.TrimSpace(anime.Ep.StreamReferrer)
+	if referrer == "" && shouldSetDefaultReferrer {
+		referrer = streamReferrerForLink(link, CurrentAnimeProviderName(anime))
+	}
+	if referrer != "" && shouldSetDefaultReferrer {
 		args = append(args, fmt.Sprintf("--referrer=%s", referrer))
+	}
+	if subtitleURL := strings.TrimSpace(anime.Ep.SubtitleURL); subtitleURL != "" && !hasMPVSubtitleArg(args) {
+		args = append(args, fmt.Sprintf("--sub-file=%s", subtitleURL))
 	}
 	args = normalizeReferrerArgs(args)
 
@@ -277,13 +303,15 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 		mpvSocketPath = anime.Ep.Player.SocketPath
 
 		if shouldSetDefaultReferrer {
-			referrer := defaultStreamReferrer
-			if CurrentAnimeProviderName(anime) == "animepahe" {
-				referrer = "https://kwik.cx/"
+			activeReferrer := strings.TrimSpace(anime.Ep.StreamReferrer)
+			if activeReferrer == "" {
+				activeReferrer = streamReferrerForLink(link, CurrentAnimeProviderName(anime))
 			}
-			_, referrerErr := MPVSendCommand(mpvSocketPath, []interface{}{"set_property", "referrer", referrer})
-			if referrerErr != nil {
-				Log(fmt.Sprintf("Failed to set referrer property: %v", referrerErr))
+			if activeReferrer != "" {
+				_, referrerErr := MPVSendCommand(mpvSocketPath, []interface{}{"set_property", "referrer", activeReferrer})
+				if referrerErr != nil {
+					Log(fmt.Sprintf("Failed to set referrer property: %v", referrerErr))
+				}
 			}
 		}
 

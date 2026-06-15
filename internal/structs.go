@@ -51,6 +51,8 @@ type Episode struct {
 	Started        bool         `json:"started"`
 	Duration       int          `json:"duration"`
 	Links          []string     `json:"links"`
+	StreamReferrer string       `json:"-"`
+	SubtitleURL    string       `json:"-"`
 	NextEpisode    NextEpisode  `json:"next_episode"`
 	IsFiller       bool         `json:"filler"`
 	IsRecap        bool         `json:"recap"`

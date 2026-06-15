@@ -1083,6 +1083,15 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				}
 			}
 
+			// 1b. Title/thumbnail scoring (AllAnime englishName vs AniList romaji query, etc.)
+			if !found {
+				if bestMatch, ok := confidentProviderSearchMatch(animeList, anime, userQuery); ok {
+					anime.ProviderId = bestMatch.Key
+					Log(fmt.Sprintf("Found confident provider title match! Setting ProviderId to: %s (%s)", anime.ProviderId, bestMatch.Label))
+					found = true
+				}
+			}
+
 			// 2. Jikan Metadata & Exact Anilist Meta Tag Matching (for animepahe)
 			if !found && ProviderStackContains(userCurdConfig, "animepahe") {
 				Log("Attempting deep metadata matching and exact AniList meta tag check for Animepahe...")
@@ -1591,6 +1600,8 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 
 	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
 		anime.Ep.Links = anime.Ep.NextEpisode.Links
+		anime.Ep.StreamReferrer = ""
+		anime.Ep.SubtitleURL = ""
 		if anime.Ep.NextEpisode.ProviderName != "" {
 			anime.ProviderName = anime.Ep.NextEpisode.ProviderName
 			anime.ProviderId = anime.Ep.NextEpisode.ProviderId
@@ -1611,6 +1622,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 				if err == nil {
 					Log(fmt.Sprintf("Successfully retrieved %s/%s episode link after provider reselect. Links count: %d", episodeResult.ProviderName, episodeResult.Mode, len(link)))
 					anime.Ep.Links = link
+					applyStreamPlaybackHints(anime, anime.Ep.Links, episodeResult.LinkHints)
 					goto episodeLinksReady
 				}
 				linkErr = err
@@ -1649,6 +1661,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 			Log(fmt.Sprintf("Successfully retrieved %s/%s episode link on first try. Links count: %d", episodeResult.ProviderName, episodeResult.Mode, len(link)))
 		}
 		anime.Ep.Links = link
+		applyStreamPlaybackHints(anime, anime.Ep.Links, episodeResult.LinkHints)
 	}
 
 episodeLinksReady:
@@ -2108,6 +2121,8 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 	// Use prefetched links if available for the next episode
 	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
 		anime.Ep.Links = anime.Ep.NextEpisode.Links
+		anime.Ep.StreamReferrer = ""
+		anime.Ep.SubtitleURL = ""
 		if anime.Ep.NextEpisode.ProviderName != "" {
 			anime.ProviderName = anime.Ep.NextEpisode.ProviderName
 			anime.ProviderId = anime.Ep.NextEpisode.ProviderId

@@ -4,6 +4,7 @@ import "strings"
 
 // LinkPriorities defines the order of priority for link domains
 var LinkPriorities = []string{
+	"video.wixstatic.com",
 	"sharepoint.com",
 	"wixmp.com",
 	"dropbox.com",
@@ -18,31 +19,26 @@ func PrioritizeLink(links []string) string {
 		return ""
 	}
 
-	// Create a map for quick lookup of priorities
-	priorityMap := make(map[string]int)
-	for i, p := range LinkPriorities {
-		priorityMap[p] = len(LinkPriorities) - i // Higher index means higher priority
-	}
-
-	highestPriority := -1
-	var bestLink string
-
-	for _, link := range links {
-		for domain, priority := range priorityMap {
-			if strings.Contains(link, domain) {
-				if priority > highestPriority {
-					highestPriority = priority
-					bestLink = link
-				}
-				break
-			}
+	bestLink := links[0]
+	bestScore := linkSelectionScore(bestLink)
+	for _, link := range links[1:] {
+		score := linkSelectionScore(link)
+		if score > bestScore {
+			bestScore = score
+			bestLink = link
 		}
 	}
-
-	// If no priority link found, return the first link
-	if bestLink == "" {
-		return links[0]
-	}
-
 	return bestLink
+}
+
+func linkSelectionScore(link string) int {
+	score := 0
+	for i, domain := range LinkPriorities {
+		if strings.Contains(link, domain) {
+			score += (len(LinkPriorities) - i) * 1000
+			break
+		}
+	}
+	score += wixmpQualityScore(link)
+	return score
 }

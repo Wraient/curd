@@ -19,5 +19,10 @@ func (p *AllanimeProvider) GetEpisodeURL(config CurdConfig, id string, epNo int)
 }
 
 func (p *AllanimeProvider) GetEpisodeURLForMode(config CurdConfig, id string, epNo int, mode string) ([]string, error) {
-	return getAllanimeEpisodeURLForMode(id, mode, epNo)
+	links, _, err := p.GetEpisodeURLForModeWithHints(config, id, epNo, mode)
+	return links, err
+}
+
+func (p *AllanimeProvider) GetEpisodeURLForModeWithHints(config CurdConfig, id string, epNo int, mode string) ([]string, map[string]StreamPlaybackHint, error) {
+	return getAllanimeEpisodeStreamsForMode(id, mode, epNo)
 }
