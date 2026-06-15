@@ -49,6 +49,7 @@ func (s *stackStubProvider) GetEpisodeURLForMode(config CurdConfig, id string, e
 
 func withProviderFactories(t *testing.T, providers ...*stackStubProvider) {
 	t.Helper()
+	withAllProvidersEnabledForTest(t)
 	previousAllanime := providerFactories["allanime"]
 	previousAnimepahe := providerFactories["animepahe"]
 	for _, provider := range providers {
@@ -62,6 +63,8 @@ func withProviderFactories(t *testing.T, providers ...*stackStubProvider) {
 }
 
 func TestConfiguredProviderNamesAcceptsOrderedLists(t *testing.T) {
+	withAllProvidersEnabledForTest(t)
+
 	cases := []struct {
 		name string
 		cfg  *CurdConfig

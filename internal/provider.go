@@ -74,7 +74,7 @@ func parseProviderConfig(rawProvider string) ([]string, bool) {
 
 	normalizedRaw := strings.ToLower(rawProvider)
 	if normalizedRaw == "stacked" || normalizedRaw == "stack" || normalizedRaw == "auto" || normalizedRaw == "all" {
-		return []string{"allanime", "animepahe"}, false
+		return defaultEnabledProviderStack(), false
 	}
 
 	buildConfig := func(parts []string) ([]string, bool) {
@@ -125,7 +125,7 @@ func configuredProviderNames(config *CurdConfig) []string {
 	}
 
 	providers, _ := parseProviderConfig(rawProvider)
-	return providers
+	return ensureEnabledProviderNames(providers)
 }
 
 func ConfiguredProviderNames(config *CurdConfig) []string {
@@ -171,6 +171,9 @@ func ProviderStackContains(config *CurdConfig, providerName string) bool {
 
 func ProviderByName(providerName string) (Provider, error) {
 	providerName = normalizeProviderName(providerName)
+	if reason := providerDisabledReason(providerName); reason != "" {
+		return nil, fmt.Errorf("provider %q is disabled: %s", providerName, reason)
+	}
 	factory, ok := providerFactories[providerName]
 	if !ok {
 		return nil, fmt.Errorf("unknown provider %q", providerName)
@@ -268,6 +271,9 @@ func providerNamesForAnime(config *CurdConfig, anime *Anime) []string {
 	if providerName == "animepahe" && !ProviderStackContains(config, "animepahe") {
 		providerName = ""
 	}
+	if providerName != "" && !ProviderEnabled(providerName) {
+		providerName = ""
+	}
 	if providerName != "" {
 		if _, exists := seen[providerName]; !exists {
 			result = append(result, providerName)
@@ -361,7 +367,7 @@ func searchAnimeWithProviders(providerNames []string, query, mode string) ([]Sel
 }
 
 func shouldOfferAnimepaheFallback(config *CurdConfig, providerNames []string) bool {
-	if config == nil || animepaheDeclinedInConfig(config) {
+	if config == nil || animepaheDeclinedInConfig(config) || !ProviderEnabled("animepahe") {
 		return false
 	}
 

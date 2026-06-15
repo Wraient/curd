@@ -1093,7 +1093,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			}
 
 			// 2. Jikan Metadata & Exact Anilist Meta Tag Matching (for animepahe)
-			if !found && ProviderStackContains(userCurdConfig, "animepahe") {
+			if !found && ProviderEnabled("animepahe") && ProviderStackContains(userCurdConfig, "animepahe") {
 				Log("Attempting deep metadata matching and exact AniList meta tag check for Animepahe...")
 
 				targetAnilistID := strconv.Itoa(anime.AnilistId)
@@ -1752,7 +1752,7 @@ func resolveRuntimeProviderID(userCurdConfig *CurdConfig, anime *Anime) error {
 	}
 
 	providerName, providerID := AnimeProviderID(anime)
-	if providerName != "animepahe" {
+	if providerName != "animepahe" || !ProviderEnabled("animepahe") {
 		return nil
 	}
 	if !ProviderStackContains(userCurdConfig, "animepahe") {
@@ -1791,7 +1791,7 @@ func resolveRuntimeProviderID(userCurdConfig *CurdConfig, anime *Anime) error {
 
 func reselectProviderAnime(userCurdConfig *CurdConfig, anime *Anime, reason error) bool {
 	providerName, _ := AnimeProviderID(anime)
-	if providerName != "animepahe" {
+	if providerName != "animepahe" || !ProviderEnabled("animepahe") {
 		return false
 	}
 
@@ -2387,11 +2387,10 @@ func promptSequelAction(userCurdConfig *CurdConfig, sequel *SequelInfo, userToke
 
 // ChangeProvider allows the user to switch the anime provider
 func ChangeProvider(userCurdConfig *CurdConfig) {
-	options := []SelectionOption{
-		{Key: "[\"allanime\"]", Label: "allanime"},
-		{Key: "[\"animepahe\"]", Label: "animepahe"},
-		{Key: "[\"allanime\",\"animepahe\"]", Label: "allanime, then animepahe"},
-		{Key: "[\"animepahe\",\"allanime\"]", Label: "animepahe, then allanime"},
+	options := providerSelectionOptions()
+	if len(options) == 0 {
+		CurdOut("\nNo providers are currently enabled.\n")
+		return
 	}
 
 	selected, err := DynamicSelect(options)
