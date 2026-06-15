@@ -17,7 +17,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type allanimeSource struct {
@@ -42,12 +41,6 @@ type allanimeTobeparsedPayload struct {
 	} `json:"episode"`
 }
 
-type result struct {
-	index int
-	links []string
-	err   error
-}
-
 type filemoonResponse struct {
 	IV       string   `json:"iv"`
 	Payload  string   `json:"payload"`
@@ -55,6 +48,24 @@ type filemoonResponse struct {
 }
 
 func decodeTobeparsed(blob string) ([]allanimeSource, error) {
+	plain, err := decryptTobeparsedPlain(blob)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload allanimeTobeparsedPayload
+	if err := json.Unmarshal(plain, &payload); err != nil {
+		return nil, fmt.Errorf("failed to parse decrypted tobeparsed payload: %w", err)
+	}
+
+	if len(payload.Episode.SourceUrls) == 0 {
+		return nil, fmt.Errorf("no source URLs found in decrypted tobeparsed payload")
+	}
+
+	return payload.Episode.SourceUrls, nil
+}
+
+func decryptTobeparsedPlain(blob string) ([]byte, error) {
 	key := []byte("Xot36i3lK3:v1")
 	hash := sha256.Sum256(key)
 
@@ -67,7 +78,6 @@ func decodeTobeparsed(blob string) ([]allanimeSource, error) {
 		return nil, fmt.Errorf("data too short to contain tobeparsed payload")
 	}
 
-	// The payload format is: 1-byte header, 12-byte IV, ciphertext, 16-byte trailer.
 	iv := data[1:13]
 	ctLen := len(data) - 13 - 16
 	if ctLen <= 0 {
@@ -87,17 +97,7 @@ func decodeTobeparsed(blob string) ([]allanimeSource, error) {
 	stream := cipher.NewCTR(block, ctrIV)
 	plain := make([]byte, len(ct))
 	stream.XORKeyStream(plain, ct)
-
-	var payload allanimeTobeparsedPayload
-	if err := json.Unmarshal(plain, &payload); err != nil {
-		return nil, fmt.Errorf("failed to parse decrypted tobeparsed payload: %w", err)
-	}
-
-	if len(payload.Episode.SourceUrls) == 0 {
-		return nil, fmt.Errorf("no source URLs found in decrypted tobeparsed payload")
-	}
-
-	return payload.Episode.SourceUrls, nil
+	return plain, nil
 }
 
 func decodeProviderID(encoded string) string {
@@ -143,19 +143,33 @@ func decodeProviderID(encoded string) string {
 	return result
 }
 
+var allanimeNamedProviders = []string{
+	"Default",
+	"Yt-mp4",
+	"S-mp4",
+	"Fm-mp4",
+	"Luf-Mp4",
+}
+
+const (
+	allanimePersistedQueryReferer = "https://youtu-chan.com"
+	allanimeGraphQLReferer        = "https://allanime.to"
+)
+
 func isDirectPlayableAllanimeSource(source allanimeSource) bool {
 	sourceURL := strings.TrimSpace(source.SourceUrl)
 	if sourceURL == "" {
 		return false
 	}
-
-	if strings.EqualFold(source.SourceName, "Yt-mp4") || strings.EqualFold(source.SourceName, "S-mp4") {
-		return true
+	if strings.HasPrefix(sourceURL, "--") {
+		return false
+	}
+	if !strings.HasPrefix(sourceURL, "http://") && !strings.HasPrefix(sourceURL, "https://") {
+		return false
 	}
 
-	lowerURL := strings.ToLower(sourceURL)
-	if strings.Contains(lowerURL, "tools.fast4speed.rsvp/") {
-		return true
+	if isUnreliableAllanimeDirectURL(sourceURL) {
+		return false
 	}
 
 	parsedURL, err := url.Parse(sourceURL)
@@ -164,7 +178,17 @@ func isDirectPlayableAllanimeSource(source allanimeSource) bool {
 	}
 
 	path := strings.ToLower(parsedURL.Path)
-	return strings.HasSuffix(path, ".mp4") || strings.HasSuffix(path, ".m3u8")
+	if strings.HasSuffix(path, ".mp4") || strings.HasSuffix(path, ".m3u8") {
+		return true
+	}
+
+	host := strings.ToLower(parsedURL.Host)
+	return strings.Contains(host, "sharepoint.com") || strings.Contains(host, "wixmp.com")
+}
+
+func isUnreliableAllanimeDirectURL(sourceURL string) bool {
+	lowerURL := strings.ToLower(strings.TrimSpace(sourceURL))
+	return strings.Contains(lowerURL, "tools.fast4speed.rsvp/")
 }
 
 func sortAllanimeSourcesByPriority(sourceUrls []allanimeSource) []allanimeSource {
@@ -178,77 +202,6 @@ func sortAllanimeSourcesByPriority(sourceUrls []allanimeSource) []allanimeSource
 	})
 
 	return sorted
-}
-
-func extractLinks(provider_id string) map[string]interface{} {
-	provider_id = normalizeAllanimeProviderPath(provider_id)
-
-	// Check if provider_id is already a full URL (external link)
-	if strings.HasPrefix(provider_id, "http://") || strings.HasPrefix(provider_id, "https://") {
-		// It's an external direct video link, preserve it exactly as provided.
-		Log(fmt.Sprintf("Direct external link detected: %s", provider_id))
-		return map[string]interface{}{
-			"links": []interface{}{
-				map[string]interface{}{
-					"link": provider_id,
-				},
-			},
-		}
-	}
-
-	// It's a relative path for allanime API
-	allanime_base := "https://allanime.day"
-	url := allanime_base + provider_id
-	req, err := http.NewRequest("GET", url, nil)
-	var videoData map[string]interface{}
-	if err != nil {
-		Log(fmt.Sprint("Error creating request:", err))
-		return videoData
-	}
-
-	// Add the headers
-	req.Header.Set("Referer", "https://allanime.to")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0")
-
-	// Send the request
-	resp, err := sharedHTTPClient.Do(req)
-	if err != nil {
-		Log(fmt.Sprint("Error sending request:", err))
-		return videoData
-	}
-	defer resp.Body.Close()
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		Log(fmt.Sprint("Error reading response:", err))
-		return videoData
-	}
-	if !httpStatusOK(resp.StatusCode) {
-		Log(httpStatusError("allanime source extractor", resp.StatusCode, body))
-		return videoData
-	}
-
-	// Parse the JSON response
-	err = json.Unmarshal(body, &videoData)
-	if err != nil {
-		Log(fmt.Sprint("Error parsing JSON:", err))
-		return videoData
-	}
-
-	// Filemoon extractor payload does not return a top-level "links" field.
-	if _, hasLinks := videoData["links"]; !hasLinks {
-		if filemoonLinks := extractFilemoonLinks(videoData); len(filemoonLinks) > 0 {
-			links := make([]interface{}, 0, len(filemoonLinks))
-			for _, link := range filemoonLinks {
-				links = append(links, map[string]interface{}{"link": link})
-			}
-			videoData["links"] = links
-		}
-	}
-
-	// Process the data as needed
-	return videoData
 }
 
 func normalizeAllanimeProviderPath(providerID string) string {
@@ -432,7 +385,11 @@ func getAllanimeEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 	return getEpisodeURLForMode(id, normalizeTranslationType(mode), epNo)
 }
 
-func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
+func fetchAllanimeEpisodeSources(id, mode string, epNo int) ([]allanimeSource, error) {
+	return fetchEpisodeSourcesForMode(id, normalizeTranslationType(mode), epNo)
+}
+
+func fetchEpisodeSourcesForMode(id, mode string, epNo int) ([]allanimeSource, error) {
 	const (
 		episodeQueryHash = "d405d0edd690624b66baba3068e0edc3ac90f1597d898a1ec8db4e5c43c00fec"
 	)
@@ -469,8 +426,8 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 		return nil, fmt.Errorf("failed to create persisted query request: %w", err)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0")
-	req.Header.Set("Referer", "https://allmanga.to")
-	req.Header.Set("Origin", "https://youtu-chan.com")
+	req.Header.Set("Referer", allanimePersistedQueryReferer)
+	req.Header.Set("Origin", allanimePersistedQueryReferer)
 
 	resp, err := sharedHTTPClient.Do(req)
 	if err != nil {
@@ -491,6 +448,9 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 	}
 
 	useFallback := response.Data.Tobeparsed == "" && len(response.Data.Episode.SourceUrls) == 0
+	if !useFallback && response.Data.Tobeparsed == "" && !strings.Contains(string(body), "tobeparsed") {
+		useFallback = true
+	}
 	if useFallback {
 		query := episodeEmbedGQL
 
@@ -509,9 +469,9 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "Mozilla/5.0")
-		req.Header.Set("Referer", "https://allmanga.to")
-		req.Header.Set("Origin", "https://allanime.to")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0")
+		req.Header.Set("Referer", allanimeGraphQLReferer)
+		req.Header.Set("Origin", allanimeGraphQLReferer)
 
 		resp, err := sharedHTTPClient.Do(req)
 		if err != nil {
@@ -541,199 +501,84 @@ func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
 		}
 
 		Log(fmt.Sprintf("Decoded %d Allanime source URLs from tobeparsed payload", len(decodedSources)))
-		return getLinksFromSourceUrls(decodedSources)
+		return decodedSources, nil
 	}
 
-	return getLinksFromSourceUrls(response.Data.Episode.SourceUrls)
+	return response.Data.Episode.SourceUrls, nil
 }
 
-func getLinksFromSourceUrls(sourceUrls []allanimeSource) ([]string, error) {
-	sourceUrls = sortAllanimeSourcesByPriority(sourceUrls)
-
-	directURLs := make([]string, 0)
-	validURLs := make([]string, 0)
-	highestPriority := -1.0
-	var highestPriorityURL string
-
-	for _, url := range sourceUrls {
-		sourceURL := strings.TrimSpace(url.SourceUrl)
-		if sourceURL == "" {
-			continue
-		}
-
-		if isDirectPlayableAllanimeSource(url) {
-			directURLs = append(directURLs, sourceURL)
-			continue
-		}
-
-		if !strings.HasPrefix(sourceURL, "--") || len(sourceURL) <= 2 {
-			Log(fmt.Sprintf("Skipping unsupported Allanime source %q (%s)", url.SourceName, sourceURL))
-			continue
-		}
-
-		decodedURL := decodeProviderID(sourceURL[2:])
-		if len(LinkPriorities) > 0 && strings.Contains(decodedURL, LinkPriorities[0]) {
-			priority := url.Priority
-			if priority > highestPriority {
-				highestPriority = priority
-				highestPriorityURL = sourceURL
-			}
-		} else {
-			validURLs = append(validURLs, sourceURL)
-		}
-	}
-
-	if len(directURLs) > 0 {
-		Log(fmt.Sprintf("Using %d direct Allanime source URL(s)", len(directURLs)))
-		return directURLs, nil
-	}
-
-	if highestPriorityURL != "" {
-		validURLs = []string{highestPriorityURL}
-	}
-
-	if len(validURLs) == 0 {
-		return nil, fmt.Errorf("no supported source URLs found in response")
-	}
-
-	return getLinksFromURLs(validURLs)
+func getEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
+	links, _, err := getAllanimeEpisodeStreamsForMode(id, mode, epNo)
+	return links, err
 }
 
-func getLinksFromURLs(validURLs []string) ([]string, error) {
-	results := make(chan result, len(validURLs))
-	orderedResults := make([][]string, len(validURLs))
+func findNamedAllanimeSource(sourceUrls []allanimeSource, providerName string) (allanimeSource, bool) {
+	for _, source := range sourceUrls {
+		if strings.EqualFold(strings.TrimSpace(source.SourceName), providerName) {
+			return source, true
+		}
+	}
+	return allanimeSource{}, false
+}
 
-	highPriorityLink := make(chan []string, 1)
+var wixstaticURLSetPattern = regexp.MustCompile(`^(https://video\.wixstatic\.com/video/[^/,]+/),([^/]*),/mp4/file\.mp4`)
 
-	for i, sourceUrl := range validURLs {
-		go func(idx int, url string) {
-			decodedProviderID := decodeProviderID(url[2:])
-			Log(fmt.Sprintf("Processing URL %d/%d with provider ID: %s", idx+1, len(validURLs), decodedProviderID))
-
-			extractedLinks := extractLinks(decodedProviderID)
-
-			if extractedLinks == nil {
-				results <- result{
-					index: idx,
-					err:   fmt.Errorf("failed to extract links for provider %s", decodedProviderID),
-				}
-				return
-			}
-
-			linksInterface, ok := extractedLinks["links"].([]interface{})
-			if !ok {
-				results <- result{
-					index: idx,
-					err:   fmt.Errorf("links field is not []interface{} for provider %s", decodedProviderID),
-				}
-				return
-			}
-
-			var links []string
-			for _, linkInterface := range linksInterface {
-				linkMap, ok := linkInterface.(map[string]interface{})
-				if !ok {
-					Log(fmt.Sprintf("Warning: invalid link format for provider %s", decodedProviderID))
-					continue
-				}
-
-				link, ok := linkMap["link"].(string)
-				if !ok {
-					Log(fmt.Sprintf("Warning: link field is not string for provider %s", decodedProviderID))
-					continue
-				}
-
-				links = append(links, link)
-			}
-
-			// Check if any of the extracted links are high priority
-			priorityDomains := LinkPriorities
-			if len(priorityDomains) > 3 {
-				priorityDomains = priorityDomains[:3]
-			}
-			for _, link := range links {
-				for _, domain := range priorityDomains {
-					if strings.Contains(link, domain) {
-						// Found high priority link, send it immediately
-						select {
-						case highPriorityLink <- []string{link}:
-						default:
-							// Channel already has a high priority link
-						}
-						break
-					}
-				}
-			}
-
-			results <- result{
-				index: idx,
-				links: links,
-			}
-		}(i, sourceUrl)
+func expandWixmpLinks(link string) []string {
+	normalized := strings.TrimSpace(link)
+	if normalized == "" {
+		return nil
 	}
 
-	// Collect results with timeout
-	timeout := time.After(10 * time.Second)
-	var collectedErrors []error
-	successCount := 0
-
-	// First, try to get a high priority link
-	select {
-	case links := <-highPriorityLink:
-		return links, nil
-	case <-time.After(2 * time.Second): // Wait only briefly for high priority link
-		// No high priority link found quickly, proceed with normal collection
-	}
-
-	// Continue with existing result collection logic
-	// Collect results maintaining order
-	completedCount := 0
-	for completedCount < len(validURLs) {
-		select {
-		case res := <-results:
-			completedCount++
-			if res.err != nil {
-				Log(fmt.Sprintf("Error processing URL %d: %v", res.index+1, res.err))
-				collectedErrors = append(collectedErrors, fmt.Errorf("URL %d: %w", res.index+1, res.err))
-			} else {
-				orderedResults[res.index] = res.links
-				successCount++
-				Log(fmt.Sprintf("Successfully processed URL %d/%d", res.index+1, len(validURLs)))
-			}
-		case <-timeout:
-			if successCount > 0 {
-				Log(fmt.Sprintf("Timeout reached with %d/%d successful results", successCount, len(validURLs)))
-				// Flatten available results
-				return flattenResults(orderedResults), nil
-			}
-			return nil, fmt.Errorf("timeout waiting for results after %d successful responses", successCount)
+	if strings.Contains(normalized, "repackager.wixmp.com") {
+		normalized = strings.TrimPrefix(normalized, "https://repackager.wixmp.com/")
+		normalized = strings.TrimPrefix(normalized, "http://repackager.wixmp.com/")
+		if !strings.HasPrefix(normalized, "http") {
+			normalized = "https://" + normalized
 		}
 	}
 
-	// If we have any errors but also some successes, log errors but continue
-	if len(collectedErrors) > 0 {
-		Log(fmt.Sprintf("Completed with %d errors: %v", len(collectedErrors), collectedErrors))
+	if idx := strings.Index(normalized, ".urlset"); idx != -1 {
+		normalized = normalized[:idx]
 	}
 
-	// Flatten and return results
-	allLinks := flattenResults(orderedResults)
-	if len(allLinks) == 0 {
-		return nil, fmt.Errorf("no valid links found from %d URLs: %v", len(validURLs), collectedErrors)
+	if match := wixstaticURLSetPattern.FindStringSubmatch(normalized); len(match) == 3 {
+		base := match[1]
+		qualities := strings.Split(match[2], ",")
+		expanded := make([]string, 0, len(qualities))
+		for _, quality := range qualities {
+			quality = strings.TrimSpace(quality)
+			if quality == "" {
+				continue
+			}
+			expanded = append(expanded, base+quality+"/mp4/file.mp4")
+		}
+		if len(expanded) > 0 {
+			sort.Slice(expanded, func(i, j int) bool {
+				return wixmpQualityScore(expanded[i]) > wixmpQualityScore(expanded[j])
+			})
+			return expanded
+		}
 	}
 
-	return allLinks, nil
+	return []string{link}
 }
 
-// converts the ordered slice of link slices into a single slice
-func flattenResults(results [][]string) []string {
-	var totalLen int
-	for _, r := range results {
-		totalLen += len(r)
+func wixmpQualityScore(link string) int {
+	for _, quality := range []string{"1080p", "720p", "480p", "360p", "240p"} {
+		if strings.Contains(link, quality) {
+			switch quality {
+			case "1080p":
+				return 1080
+			case "720p":
+				return 720
+			case "480p":
+				return 480
+			case "360p":
+				return 360
+			case "240p":
+				return 240
+			}
+		}
 	}
-
-	allLinks := make([]string, 0, totalLen)
-	for _, links := range results {
-		allLinks = append(allLinks, links...)
-	}
-	return allLinks
+	return 0
 }

@@ -20,6 +20,7 @@ type ProviderModeResolver interface {
 
 type ProviderEpisodeResult struct {
 	Links        []string
+	LinkHints    map[string]StreamPlaybackHint
 	ProviderName string
 	ProviderID   string
 	Mode         string
@@ -73,7 +74,7 @@ func parseProviderConfig(rawProvider string) ([]string, bool) {
 
 	normalizedRaw := strings.ToLower(rawProvider)
 	if normalizedRaw == "stacked" || normalizedRaw == "stack" || normalizedRaw == "auto" || normalizedRaw == "all" {
-		return []string{"allanime", "animepahe"}, false
+		return defaultEnabledProviderStack(), false
 	}
 
 	buildConfig := func(parts []string) ([]string, bool) {
@@ -124,7 +125,7 @@ func configuredProviderNames(config *CurdConfig) []string {
 	}
 
 	providers, _ := parseProviderConfig(rawProvider)
-	return providers
+	return ensureEnabledProviderNames(providers)
 }
 
 func ConfiguredProviderNames(config *CurdConfig) []string {
@@ -170,6 +171,9 @@ func ProviderStackContains(config *CurdConfig, providerName string) bool {
 
 func ProviderByName(providerName string) (Provider, error) {
 	providerName = normalizeProviderName(providerName)
+	if reason := providerDisabledReason(providerName); reason != "" {
+		return nil, fmt.Errorf("provider %q is disabled: %s", providerName, reason)
+	}
 	factory, ok := providerFactories[providerName]
 	if !ok {
 		return nil, fmt.Errorf("unknown provider %q", providerName)
@@ -267,6 +271,9 @@ func providerNamesForAnime(config *CurdConfig, anime *Anime) []string {
 	if providerName == "animepahe" && !ProviderStackContains(config, "animepahe") {
 		providerName = ""
 	}
+	if providerName != "" && !ProviderEnabled(providerName) {
+		providerName = ""
+	}
 	if providerName != "" {
 		if _, exists := seen[providerName]; !exists {
 			result = append(result, providerName)
@@ -360,7 +367,7 @@ func searchAnimeWithProviders(providerNames []string, query, mode string) ([]Sel
 }
 
 func shouldOfferAnimepaheFallback(config *CurdConfig, providerNames []string) bool {
-	if config == nil || animepaheDeclinedInConfig(config) {
+	if config == nil || animepaheDeclinedInConfig(config) || !ProviderEnabled("animepahe") {
 		return false
 	}
 
@@ -585,6 +592,23 @@ func GetEpisodeURLForPlayback(config CurdConfig, id string, epNo int) ([]string,
 	return fallbackLinks, fallbackMode, nil
 }
 
+func getProviderEpisodeURLForModeWithHints(provider Provider, config CurdConfig, id string, epNo int, mode string) ([]string, map[string]StreamPlaybackHint, error) {
+	mode = normalizeTranslationType(mode)
+	if withHints, ok := provider.(interface {
+		GetEpisodeURLForModeWithHints(CurdConfig, string, int, string) ([]string, map[string]StreamPlaybackHint, error)
+	}); ok {
+		return withHints.GetEpisodeURLForModeWithHints(config, id, epNo, mode)
+	}
+	if resolver, ok := provider.(ProviderModeResolver); ok {
+		links, err := resolver.GetEpisodeURLForMode(config, id, epNo, mode)
+		return links, nil, err
+	}
+	modeConfig := config
+	modeConfig.SubOrDub = mode
+	links, err := provider.GetEpisodeURL(modeConfig, id, epNo)
+	return links, nil, err
+}
+
 func getProviderEpisodeURLForMode(provider Provider, config CurdConfig, id string, epNo int, mode string) ([]string, error) {
 	mode = normalizeTranslationType(mode)
 	if resolver, ok := provider.(ProviderModeResolver); ok {
@@ -628,7 +652,7 @@ func episodeModeResultWithProviders(config CurdConfig, anime *Anime, epNo int, m
 			continue
 		}
 
-		links, err := getProviderEpisodeURLForMode(provider, config, providerID, epNo, mode)
+		links, linkHints, err := getProviderEpisodeURLForModeWithHints(provider, config, providerID, epNo, mode)
 		if err != nil || len(links) == 0 {
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("%s episode: %v", providerName, err))
@@ -642,6 +666,7 @@ func episodeModeResultWithProviders(config CurdConfig, anime *Anime, epNo int, m
 		anime.ProviderId = providerID
 		return ProviderEpisodeResult{
 			Links:        links,
+			LinkHints:    linkHints,
 			ProviderName: providerName,
 			ProviderID:   providerID,
 			Mode:         mode,
@@ -777,9 +802,10 @@ func normalizeSearchTitle(title string) string {
 	return strings.Join(strings.Fields(title), " ")
 }
 
-func selectBestProviderSearchResult(options []SelectionOption, anime *Anime, query string) (SelectionOption, bool) {
-	if len(options) == 0 {
-		return SelectionOption{}, false
+func scoreProviderSearchOption(option SelectionOption, anime *Anime, query string, index, total int) int {
+	optionTitle := normalizeSearchTitle(option.Title)
+	if optionTitle == "" {
+		optionTitle = normalizeSearchTitle(option.Label)
 	}
 
 	targetTitles := []string{
@@ -789,35 +815,38 @@ func selectBestProviderSearchResult(options []SelectionOption, anime *Anime, que
 		normalizeSearchTitle(anime.Title.Japanese),
 	}
 
+	score := total - index
+	for _, targetTitle := range targetTitles {
+		if targetTitle == "" {
+			continue
+		}
+		if optionTitle == targetTitle {
+			score += 100
+		} else if strings.Contains(optionTitle, targetTitle) || strings.Contains(targetTitle, optionTitle) {
+			score += 35
+		}
+	}
+	if anime.AnilistId != 0 && strings.Contains(option.Thumbnail, fmt.Sprintf("%d", anime.AnilistId)) {
+		score += 120
+	}
+	if anime.TotalEpisodes > 0 && strings.Contains(option.Label, fmt.Sprintf("(%d episodes)", anime.TotalEpisodes)) {
+		score += 20
+	}
+	if item, ok := option.ExtraData.(AnimepaheSearchItem); ok && anime.TotalEpisodes > 0 && item.Episodes == anime.TotalEpisodes {
+		score += 20
+	}
+	return score
+}
+
+func selectBestProviderSearchResult(options []SelectionOption, anime *Anime, query string) (SelectionOption, bool) {
+	if len(options) == 0 {
+		return SelectionOption{}, false
+	}
+
 	bestIndex := 0
 	bestScore := -1
 	for i, option := range options {
-		optionTitle := normalizeSearchTitle(option.Title)
-		if optionTitle == "" {
-			optionTitle = normalizeSearchTitle(option.Label)
-		}
-
-		score := len(options) - i
-		for _, targetTitle := range targetTitles {
-			if targetTitle == "" {
-				continue
-			}
-			if optionTitle == targetTitle {
-				score += 100
-			} else if strings.Contains(optionTitle, targetTitle) || strings.Contains(targetTitle, optionTitle) {
-				score += 35
-			}
-		}
-		if anime.AnilistId != 0 && strings.Contains(option.Thumbnail, fmt.Sprintf("%d", anime.AnilistId)) {
-			score += 120
-		}
-		if anime.TotalEpisodes > 0 && strings.Contains(option.Label, fmt.Sprintf("(%d episodes)", anime.TotalEpisodes)) {
-			score += 20
-		}
-		if item, ok := option.ExtraData.(AnimepaheSearchItem); ok && anime.TotalEpisodes > 0 && item.Episodes == anime.TotalEpisodes {
-			score += 20
-		}
-
+		score := scoreProviderSearchOption(option, anime, query, i, len(options))
 		if score > bestScore {
 			bestScore = score
 			bestIndex = i
@@ -825,6 +854,36 @@ func selectBestProviderSearchResult(options []SelectionOption, anime *Anime, que
 	}
 
 	return options[bestIndex], true
+}
+
+// confidentProviderSearchMatch auto-selects when title/thumbnail scoring clearly
+// identifies one provider result, e.g. AniList romaji query against AllAnime englishName.
+func confidentProviderSearchMatch(options []SelectionOption, anime *Anime, query string) (SelectionOption, bool) {
+	if len(options) == 0 {
+		return SelectionOption{}, false
+	}
+
+	bestIndex := 0
+	bestScore := -1
+	secondBestScore := -1
+	for i, option := range options {
+		score := scoreProviderSearchOption(option, anime, query, i, len(options))
+		if score > bestScore {
+			secondBestScore = bestScore
+			bestScore = score
+			bestIndex = i
+		} else if score > secondBestScore {
+			secondBestScore = score
+		}
+	}
+
+	if bestScore >= 120 {
+		return options[bestIndex], true
+	}
+	if bestScore >= 100 && (len(options) == 1 || bestScore-secondBestScore >= 30) {
+		return options[bestIndex], true
+	}
+	return SelectionOption{}, false
 }
 
 func findProviderIDForAnime(provider Provider, anime *Anime, mode string) (string, error) {

@@ -1083,8 +1083,17 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 				}
 			}
 
+			// 1b. Title/thumbnail scoring (AllAnime englishName vs AniList romaji query, etc.)
+			if !found {
+				if bestMatch, ok := confidentProviderSearchMatch(animeList, anime, userQuery); ok {
+					anime.ProviderId = bestMatch.Key
+					Log(fmt.Sprintf("Found confident provider title match! Setting ProviderId to: %s (%s)", anime.ProviderId, bestMatch.Label))
+					found = true
+				}
+			}
+
 			// 2. Jikan Metadata & Exact Anilist Meta Tag Matching (for animepahe)
-			if !found && ProviderStackContains(userCurdConfig, "animepahe") {
+			if !found && ProviderEnabled("animepahe") && ProviderStackContains(userCurdConfig, "animepahe") {
 				Log("Attempting deep metadata matching and exact AniList meta tag check for Animepahe...")
 
 				targetAnilistID := strconv.Itoa(anime.AnilistId)
@@ -1591,6 +1600,8 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 
 	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
 		anime.Ep.Links = anime.Ep.NextEpisode.Links
+		anime.Ep.StreamReferrer = ""
+		anime.Ep.SubtitleURL = ""
 		if anime.Ep.NextEpisode.ProviderName != "" {
 			anime.ProviderName = anime.Ep.NextEpisode.ProviderName
 			anime.ProviderId = anime.Ep.NextEpisode.ProviderId
@@ -1611,6 +1622,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 				if err == nil {
 					Log(fmt.Sprintf("Successfully retrieved %s/%s episode link after provider reselect. Links count: %d", episodeResult.ProviderName, episodeResult.Mode, len(link)))
 					anime.Ep.Links = link
+					applyStreamPlaybackHints(anime, anime.Ep.Links, episodeResult.LinkHints)
 					goto episodeLinksReady
 				}
 				linkErr = err
@@ -1649,6 +1661,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 			Log(fmt.Sprintf("Successfully retrieved %s/%s episode link on first try. Links count: %d", episodeResult.ProviderName, episodeResult.Mode, len(link)))
 		}
 		anime.Ep.Links = link
+		applyStreamPlaybackHints(anime, anime.Ep.Links, episodeResult.LinkHints)
 	}
 
 episodeLinksReady:
@@ -1739,7 +1752,7 @@ func resolveRuntimeProviderID(userCurdConfig *CurdConfig, anime *Anime) error {
 	}
 
 	providerName, providerID := AnimeProviderID(anime)
-	if providerName != "animepahe" {
+	if providerName != "animepahe" || !ProviderEnabled("animepahe") {
 		return nil
 	}
 	if !ProviderStackContains(userCurdConfig, "animepahe") {
@@ -1778,7 +1791,7 @@ func resolveRuntimeProviderID(userCurdConfig *CurdConfig, anime *Anime) error {
 
 func reselectProviderAnime(userCurdConfig *CurdConfig, anime *Anime, reason error) bool {
 	providerName, _ := AnimeProviderID(anime)
-	if providerName != "animepahe" {
+	if providerName != "animepahe" || !ProviderEnabled("animepahe") {
 		return false
 	}
 
@@ -2108,6 +2121,8 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 	// Use prefetched links if available for the next episode
 	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
 		anime.Ep.Links = anime.Ep.NextEpisode.Links
+		anime.Ep.StreamReferrer = ""
+		anime.Ep.SubtitleURL = ""
 		if anime.Ep.NextEpisode.ProviderName != "" {
 			anime.ProviderName = anime.Ep.NextEpisode.ProviderName
 			anime.ProviderId = anime.Ep.NextEpisode.ProviderId
@@ -2372,11 +2387,10 @@ func promptSequelAction(userCurdConfig *CurdConfig, sequel *SequelInfo, userToke
 
 // ChangeProvider allows the user to switch the anime provider
 func ChangeProvider(userCurdConfig *CurdConfig) {
-	options := []SelectionOption{
-		{Key: "[\"allanime\"]", Label: "allanime"},
-		{Key: "[\"animepahe\"]", Label: "animepahe"},
-		{Key: "[\"allanime\",\"animepahe\"]", Label: "allanime, then animepahe"},
-		{Key: "[\"animepahe\",\"allanime\"]", Label: "animepahe, then allanime"},
+	options := providerSelectionOptions()
+	if len(options) == 0 {
+		CurdOut("\nNo providers are currently enabled.\n")
+		return
 	}
 
 	selected, err := DynamicSelect(options)

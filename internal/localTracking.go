@@ -442,6 +442,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 			ExitCurd(fmt.Errorf("Failed to get episode link"))
 		}
 		link := resolvedLink.Links
+		applyStreamPlaybackHints(&anime, link, resolvedLink.LinkHints)
 
 		if len(link) == 0 {
 			ExitCurd(fmt.Errorf("No episode links found"))
