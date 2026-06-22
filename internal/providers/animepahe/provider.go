@@ -1,4 +1,4 @@
-package internal
+package animepahe
 
 import (
 	"encoding/json"
@@ -16,13 +16,16 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
+
+	"github.com/wraient/curd/internal/curdhost"
+	"github.com/wraient/curd/internal/providers"
 )
 
 var animepaheCookiesBypassed bool
 var solveAnimepaheBrowserChallenge = solveAnimepaheBrowserChallengeWithRod
 
 func getCookieFilePath() string {
-	return filepath.Join(GetStoragePath(), "animepahe_cookies.json")
+	return filepath.Join(curdhost.StoragePath(), "animepahe_cookies.json")
 }
 
 func saveCookies(cookies []*http.Cookie) {
@@ -57,6 +60,11 @@ func newAnimepaheAPIRequest(rawURL string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewPageRequest builds an HTTP request for animepahe HTML pages.
+func NewPageRequest(rawURL string) (*http.Request, error) {
+	return newAnimepahePageRequest(rawURL)
+}
+
 func newAnimepahePageRequest(rawURL string) (*http.Request, error) {
 	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
@@ -74,7 +82,7 @@ func checkCookiesValid() bool {
 		return false
 	}
 
-	resp, err := sharedHTTPClient.Do(req)
+	resp, err := curdhost.HTTPClient().Do(req)
 	if err != nil {
 		return false
 	}
@@ -112,7 +120,7 @@ func isAnimepaheChallengeBody(body []byte) bool {
 		strings.Contains(normalized, "checking your browser")
 }
 
-func (p *AnimepaheProvider) ensureBypass() (err error) {
+func (p *Provider) ensureBypass() (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("failed to solve Animepahe DDoS-Guard challenge: %v", recovered)
@@ -126,36 +134,36 @@ func (p *AnimepaheProvider) ensureBypass() (err error) {
 	cookies := loadCookies()
 	if len(cookies) > 0 {
 		u, _ := url.Parse("https://animepahe.pw")
-		SetCookiesForAnimepahe(u, cookies)
+		curdhost.SetCookiesForAnimepahe(u, cookies)
 
 		if checkCookiesValid() {
 			animepaheCookiesBypassed = true
-			Log("Successfully restored Animepahe session from cache.")
+			curdhost.Log("Successfully restored Animepahe session from cache.")
 			return nil
 		}
-		Log("Cached Animepahe session expired. Requesting new session...")
+		curdhost.Log("Cached Animepahe session expired. Requesting new session...")
 	}
 
 	return p.refreshBypass()
 }
 
-func (p *AnimepaheProvider) refreshBypass() error {
+func (p *Provider) refreshBypass() error {
 	u, _ := url.Parse("https://animepahe.pw")
 	animepaheCookiesBypassed = false
 	if err := os.Remove(getCookieFilePath()); err != nil && !os.IsNotExist(err) {
-		Log(fmt.Sprintf("Failed to remove cached Animepahe cookies: %v", err))
+		curdhost.Log(fmt.Sprintf("Failed to remove cached Animepahe cookies: %v", err))
 	}
 
-	CurdOut("Animepahe needs a browser challenge before Curd can search or play. Starting a temporary headless browser...")
+	curdhost.Out("Animepahe needs a browser challenge before Curd can search or play. Starting a temporary headless browser...")
 	httpCookies, err := solveAnimepaheBrowserChallenge()
 	if err != nil {
-		CurdOut("Animepahe browser challenge failed. Try again later or switch provider.")
+		curdhost.Out("Animepahe browser challenge failed. Try again later or switch provider.")
 		return fmt.Errorf("animepahe browser challenge failed: %w", err)
 	}
 	if len(httpCookies) == 0 {
 		return fmt.Errorf("animepahe browser challenge returned no cookies")
 	}
-	SetCookiesForAnimepahe(u, httpCookies)
+	curdhost.SetCookiesForAnimepahe(u, httpCookies)
 
 	if !checkCookiesValid() {
 		return fmt.Errorf("bypassed cookies are still invalid")
@@ -163,7 +171,7 @@ func (p *AnimepaheProvider) refreshBypass() error {
 
 	saveCookies(httpCookies)
 	animepaheCookiesBypassed = true
-	CurdOut("Successfully bypassed DDoS-Guard.")
+	curdhost.Out("Successfully bypassed DDoS-Guard.")
 	return nil
 }
 
@@ -201,13 +209,14 @@ func solveAnimepaheBrowserChallengeWithRod() (httpCookies []*http.Cookie, err er
 	return httpCookies, nil
 }
 
-type AnimepaheProvider struct{}
+type Provider struct{}
 
-func (p *AnimepaheProvider) Name() string {
+func (p *Provider) Name() string {
 	return "animepahe"
 }
 
-type AnimepaheSearchItem struct {
+// SearchItem is an animepahe API search result payload.
+type SearchItem struct {
 	ID       int     `json:"id"`
 	Title    string  `json:"title"`
 	Type     string  `json:"type"`
@@ -220,19 +229,19 @@ type AnimepaheSearchItem struct {
 	Session  string  `json:"session"`
 }
 
-type animepaheAnimeRef struct {
+type AnimeRef struct {
 	ReleaseID string
 	Session   string
 }
 
-func (r animepaheAnimeRef) apiID() string {
+func (r AnimeRef) apiID() string {
 	if r.Session != "" {
 		return r.Session
 	}
 	return r.ReleaseID
 }
 
-func formatAnimepaheProviderID(item AnimepaheSearchItem) string {
+func formatAnimepaheProviderID(item SearchItem) string {
 	if item.ID > 0 && item.Session != "" {
 		return fmt.Sprintf("%d:%s", item.ID, item.Session)
 	}
@@ -245,36 +254,38 @@ func formatAnimepaheProviderID(item AnimepaheSearchItem) string {
 	return ""
 }
 
-func parseAnimepaheProviderID(providerID string) animepaheAnimeRef {
+// ParseProviderID parses a stored animepahe show identifier.
+func ParseProviderID(providerID string) AnimeRef {
 	providerID = strings.TrimSpace(providerID)
 	if providerID == "" {
-		return animepaheAnimeRef{}
+		return AnimeRef{}
 	}
 
 	parts := strings.SplitN(providerID, ":", 2)
 	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
 		if _, err := strconv.Atoi(parts[0]); err == nil {
-			return animepaheAnimeRef{ReleaseID: parts[0], Session: parts[1]}
+			return AnimeRef{ReleaseID: parts[0], Session: parts[1]}
 		}
 	}
 
 	if _, err := strconv.Atoi(providerID); err == nil {
-		return animepaheAnimeRef{ReleaseID: providerID}
+		return AnimeRef{ReleaseID: providerID}
 	}
 
-	return animepaheAnimeRef{Session: providerID}
+	return AnimeRef{Session: providerID}
 }
 
-func stableAnimepaheProviderID(providerID string) string {
-	animeRef := parseAnimepaheProviderID(providerID)
+// StableProviderID returns the release id portion used for history matching.
+func StableProviderID(providerID string) string {
+	animeRef := ParseProviderID(providerID)
 	if animeRef.ReleaseID != "" {
 		return animeRef.ReleaseID
 	}
 	return providerID
 }
 
-func (p *AnimepaheProvider) ResolveProviderID(providerID, query string) (string, error) {
-	animeRef := parseAnimepaheProviderID(providerID)
+func (p *Provider) ResolveProviderID(providerID, query string) (string, error) {
+	animeRef := ParseProviderID(providerID)
 	query = strings.TrimSpace(query)
 	if query == "" {
 		if animeRef.Session != "" {
@@ -286,14 +297,14 @@ func (p *AnimepaheProvider) ResolveProviderID(providerID, query string) (string,
 	options, err := p.SearchAnime(query, "")
 	if err != nil {
 		if animeRef.Session != "" {
-			Log(fmt.Sprintf("Animepahe provider id refresh failed for %q, using existing session: %v", providerID, err))
+			curdhost.Log(fmt.Sprintf("Animepahe provider id refresh failed for %q, using existing session: %v", providerID, err))
 			return providerID, nil
 		}
 		return "", err
 	}
 
 	for _, option := range options {
-		item, ok := option.ExtraData.(AnimepaheSearchItem)
+		item, ok := option.ExtraData.(SearchItem)
 		if !ok {
 			continue
 		}
@@ -307,7 +318,7 @@ func (p *AnimepaheProvider) ResolveProviderID(providerID, query string) (string,
 	}
 
 	if animeRef.Session != "" {
-		Log(fmt.Sprintf("Animepahe provider id %q was not found in search results for %q, using existing session", providerID, query))
+		curdhost.Log(fmt.Sprintf("Animepahe provider id %q was not found in search results for %q, using existing session", providerID, query))
 		return providerID, nil
 	}
 
@@ -319,10 +330,10 @@ type animepaheSearchResponse struct {
 	PerPage     int                   `json:"per_page"`
 	CurrentPage int                   `json:"current_page"`
 	LastPage    int                   `json:"last_page"`
-	Data        []AnimepaheSearchItem `json:"data"`
+	Data        []SearchItem `json:"data"`
 }
 
-func (p *AnimepaheProvider) SearchAnime(query, mode string) ([]SelectionOption, error) {
+func (p *Provider) SearchAnime(query, mode string) ([]providers.SelectionOption, error) {
 	if err := p.ensureBypass(); err != nil {
 		return nil, err
 	}
@@ -334,7 +345,7 @@ func (p *AnimepaheProvider) SearchAnime(query, mode string) ([]SelectionOption, 
 		return nil, err
 	}
 
-	resp, err := sharedHTTPClient.Do(req)
+	resp, err := curdhost.HTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -344,8 +355,8 @@ func (p *AnimepaheProvider) SearchAnime(query, mode string) ([]SelectionOption, 
 	if err != nil {
 		return nil, err
 	}
-	if !httpStatusOK(resp.StatusCode) {
-		return nil, httpStatusError("animepahe search", resp.StatusCode, body)
+	if !curdhost.HTTPStatusOK(resp.StatusCode) {
+		return nil, curdhost.HTTPStatusError("animepahe search", resp.StatusCode, body)
 	}
 
 	var searchResp animepaheSearchResponse
@@ -354,10 +365,10 @@ func (p *AnimepaheProvider) SearchAnime(query, mode string) ([]SelectionOption, 
 		return nil, err
 	}
 
-	var result []SelectionOption
+	var result []providers.SelectionOption
 	for _, item := range searchResp.Data {
 		label := fmt.Sprintf("%s (%d episodes) [animepahe]", item.Title, item.Episodes)
-		result = append(result, SelectionOption{
+		result = append(result, providers.SelectionOption{
 			Title:     item.Title,
 			Label:     label,
 			Key:       formatAnimepaheProviderID(item),
@@ -382,11 +393,11 @@ type animepaheEpisodesResponse struct {
 	} `json:"data"`
 }
 
-func (p *AnimepaheProvider) EpisodesList(showID, mode string) ([]string, error) {
+func (p *Provider) EpisodesList(showID, mode string) ([]string, error) {
 	if err := p.ensureBypass(); err != nil {
 		return nil, err
 	}
-	animeRef := parseAnimepaheProviderID(showID)
+	animeRef := ParseProviderID(showID)
 	apiID := animeRef.apiID()
 	if apiID == "" {
 		return nil, fmt.Errorf("animepahe provider id %q is invalid; please reselect this anime", showID)
@@ -403,7 +414,7 @@ func (p *AnimepaheProvider) EpisodesList(showID, mode string) ([]string, error) 
 			return nil, err
 		}
 
-		resp, err := sharedHTTPClient.Do(req)
+		resp, err := curdhost.HTTPClient().Do(req)
 		if err != nil {
 			return nil, err
 		}
@@ -417,15 +428,15 @@ func (p *AnimepaheProvider) EpisodesList(showID, mode string) ([]string, error) 
 			if challengeRetried {
 				return nil, fmt.Errorf("animepahe episode list is still blocked by DDoS-Guard after refreshing browser session")
 			}
-			Log("Animepahe episode list returned DDoS-Guard challenge. Refreshing browser session...")
+			curdhost.Log("Animepahe episode list returned DDoS-Guard challenge. Refreshing browser session...")
 			if err := p.refreshBypass(); err != nil {
 				return nil, err
 			}
 			challengeRetried = true
 			continue
 		}
-		if !httpStatusOK(resp.StatusCode) {
-			return nil, httpStatusError("animepahe episode list", resp.StatusCode, body)
+		if !curdhost.HTTPStatusOK(resp.StatusCode) {
+			return nil, curdhost.HTTPStatusError("animepahe episode list", resp.StatusCode, body)
 		}
 
 		var epsResp animepaheEpisodesResponse
@@ -453,15 +464,15 @@ func (p *AnimepaheProvider) EpisodesList(showID, mode string) ([]string, error) 
 	return result, nil
 }
 
-func (p *AnimepaheProvider) GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
+func (p *Provider) GetEpisodeURL(config providers.PlaybackConfig, id string, epNo int) ([]string, error) {
 	return p.GetEpisodeURLForMode(config, id, epNo, config.SubOrDub)
 }
 
-func (p *AnimepaheProvider) GetEpisodeURLForMode(config CurdConfig, id string, epNo int, mode string) ([]string, error) {
+func (p *Provider) GetEpisodeURLForMode(config providers.PlaybackConfig, id string, epNo int, mode string) ([]string, error) {
 	if err := p.ensureBypass(); err != nil {
 		return nil, err
 	}
-	animeRef := parseAnimepaheProviderID(id)
+	animeRef := ParseProviderID(id)
 	if animeRef.Session == "" {
 		return nil, fmt.Errorf("animepahe provider id %q is missing session id; please reselect this anime", id)
 	}
@@ -492,7 +503,7 @@ func (p *AnimepaheProvider) GetEpisodeURLForMode(config CurdConfig, id string, e
 			return nil, err
 		}
 
-		resp, err := sharedHTTPClient.Do(req)
+		resp, err := curdhost.HTTPClient().Do(req)
 		if err != nil {
 			return nil, err
 		}
@@ -502,8 +513,8 @@ func (p *AnimepaheProvider) GetEpisodeURLForMode(config CurdConfig, id string, e
 		if err != nil {
 			return nil, err
 		}
-		if !httpStatusOK(resp.StatusCode) {
-			return nil, httpStatusError("animepahe episode lookup", resp.StatusCode, body)
+		if !curdhost.HTTPStatusOK(resp.StatusCode) {
+			return nil, curdhost.HTTPStatusError("animepahe episode lookup", resp.StatusCode, body)
 		}
 
 		var epsResp animepaheEpisodesResponse
@@ -537,7 +548,7 @@ func (p *AnimepaheProvider) GetEpisodeURLForMode(config CurdConfig, id string, e
 		return nil, err
 	}
 
-	resp, err := sharedHTTPClient.Do(req)
+	resp, err := curdhost.HTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -547,8 +558,8 @@ func (p *AnimepaheProvider) GetEpisodeURLForMode(config CurdConfig, id string, e
 	if err != nil {
 		return nil, err
 	}
-	if !httpStatusOK(resp.StatusCode) {
-		return nil, httpStatusError("animepahe player page", resp.StatusCode, body)
+	if !curdhost.HTTPStatusOK(resp.StatusCode) {
+		return nil, curdhost.HTTPStatusError("animepahe player page", resp.StatusCode, body)
 	}
 
 	bodyStr := string(body)
@@ -606,7 +617,7 @@ func (p *AnimepaheProvider) GetEpisodeURLForMode(config CurdConfig, id string, e
 	sortFunc(dubLinks)
 
 	var links []string
-	requestedMode := normalizeTranslationType(mode)
+	requestedMode := providers.NormalizeTranslationType(mode)
 	if requestedMode == "dub" {
 		for _, l := range dubLinks {
 			links = append(links, l.url)
@@ -635,13 +646,13 @@ func (p *AnimepaheProvider) GetEpisodeURLForMode(config CurdConfig, id string, e
 	return finalLinks, nil
 }
 
-func (p *AnimepaheProvider) extractKwikM3u8(kwikUrl string) (string, error) {
+func (p *Provider) extractKwikM3u8(kwikUrl string) (string, error) {
 	req, err := newAnimepahePageRequest(kwikUrl)
 	if err != nil {
 		return "", err
 	}
 
-	resp, err := sharedHTTPClient.Do(req)
+	resp, err := curdhost.HTTPClient().Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -651,8 +662,8 @@ func (p *AnimepaheProvider) extractKwikM3u8(kwikUrl string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !httpStatusOK(resp.StatusCode) {
-		return "", httpStatusError("kwik stream page", resp.StatusCode, body)
+	if !curdhost.HTTPStatusOK(resp.StatusCode) {
+		return "", curdhost.HTTPStatusError("kwik stream page", resp.StatusCode, body)
 	}
 	bodyStr := string(body)
 

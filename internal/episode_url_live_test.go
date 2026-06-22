@@ -10,9 +10,18 @@ func TestAllanimeMarchLionDubEp1Live(t *testing.T) {
 	if os.Getenv("CURD_LIVE_ALLANIME_TEST") != "1" {
 		t.Skip("set CURD_LIVE_ALLANIME_TEST=1")
 	}
+	withAllProvidersEnabledForTest(t)
 
 	showID := "NPpCgzb2MbnpiyxZ3"
-	links, err := getAllanimeEpisodeURLForMode(showID, "dub", 1)
+	provider, err := ProviderByName("allanime")
+	if err != nil {
+		t.Fatalf("allanime provider: %v", err)
+	}
+	resolver, ok := provider.(ProviderModeResolver)
+	if !ok {
+		t.Fatal("expected allanime provider to implement ProviderModeResolver")
+	}
+	links, err := resolver.GetEpisodeURLForMode(CurdConfig{SubOrDub: "dub"}, showID, 1, "dub")
 	if err == nil {
 		for _, link := range links {
 			if strings.Contains(link, "fast4speed.rsvp") {
@@ -27,9 +36,18 @@ func TestAllanimeMarchLionSubEp1Live(t *testing.T) {
 	if os.Getenv("CURD_LIVE_ALLANIME_TEST") != "1" {
 		t.Skip("set CURD_LIVE_ALLANIME_TEST=1")
 	}
+	withAllProvidersEnabledForTest(t)
 
 	showID := "NPpCgzb2MbnpiyxZ3"
-	links, err := getAllanimeEpisodeURLForMode(showID, "sub", 1)
+	provider, err := ProviderByName("allanime")
+	if err != nil {
+		t.Fatalf("allanime provider: %v", err)
+	}
+	resolver, ok := provider.(ProviderModeResolver)
+	if !ok {
+		t.Fatal("expected allanime provider to implement ProviderModeResolver")
+	}
+	links, err := resolver.GetEpisodeURLForMode(CurdConfig{SubOrDub: "sub"}, showID, 1, "sub")
 	if err != nil {
 		t.Fatalf("sub episode link lookup failed: %v", err)
 	}

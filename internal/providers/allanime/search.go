@@ -1,4 +1,4 @@
-package internal
+package allanime
 
 import (
 	"bytes"
@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
-	"strings"
+
+	"github.com/wraient/curd/internal/curdhost"
+	"github.com/wraient/curd/internal/providers"
 )
 
 type anime struct {
@@ -26,20 +27,6 @@ type response struct {
 	} `json:"data"`
 }
 
-func normalizeTranslationType(mode string) string {
-	if strings.EqualFold(strings.TrimSpace(mode), "dub") {
-		return "dub"
-	}
-	return "sub"
-}
-
-func alternateTranslationType(mode string) string {
-	if normalizeTranslationType(mode) == "dub" {
-		return "sub"
-	}
-	return "dub"
-}
-
 // func main() {
 // 	// Get environment variables
 // 	mode := "sub"
@@ -55,14 +42,12 @@ func alternateTranslationType(mode string) string {
 // 	fmt.Println(animeList)
 // }
 
-func searchAllAnime(query, mode string) ([]SelectionOption, error) {
-	preferredMode := normalizeTranslationType(mode)
+func searchAllAnime(query, mode string) ([]providers.SelectionOption, error) {
+	preferredMode := providers.NormalizeTranslationType(mode)
 	return searchAnimeByMode(query, preferredMode, preferredMode)
 }
 
-func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, error) {
-	userCurdConfig := GetGlobalConfig()
-	logFile = filepath.Join(GetStoragePath(), "debug.log")
+func searchAnimeByMode(query, mode, preferredMode string) ([]providers.SelectionOption, error) {
 	const (
 		agent        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
 		allanimeRef  = "https://allanime.to"
@@ -70,10 +55,10 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 		allanimeAPI  = "https://api." + allanimeBase + "/api"
 	)
 
-	mode = normalizeTranslationType(mode)
-	preferredMode = normalizeTranslationType(preferredMode)
+	mode = providers.NormalizeTranslationType(mode)
+	preferredMode = providers.NormalizeTranslationType(preferredMode)
 
-	animeList := make([]SelectionOption, 0)
+	animeList := make([]providers.SelectionOption, 0)
 
 	searchGql := `query($search: SearchInput, $limit: Int, $page: Int, $translationType: VaildTranslationTypeEnumType, $countryOrigin: VaildCountryOriginEnumType) {
 		shows(search: $search, limit: $limit, page: $page, translationType: $translationType, countryOrigin: $countryOrigin) {
@@ -107,14 +92,14 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 		"variables": variables,
 	})
 	if err != nil {
-		Log(fmt.Sprintf("Error encoding request body to JSON: %v", err))
+		curdhost.Log(fmt.Sprintf("Error encoding request body to JSON: %v", err))
 		return animeList, err
 	}
 
 	// Make the HTTP POST request
 	req, err := http.NewRequest("POST", allanimeAPI, bytes.NewBuffer(requestBody))
 	if err != nil {
-		Log(fmt.Sprintf("Error creating HTTP request: %v", err))
+		curdhost.Log(fmt.Sprintf("Error creating HTTP request: %v", err))
 		return animeList, err
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -122,9 +107,9 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 	req.Header.Set("Referer", allanimeRef)
 	req.Header.Set("Origin", allanimeRef)
 
-	resp, err := sharedHTTPClient.Do(req)
+	resp, err := curdhost.HTTPClient().Do(req)
 	if err != nil {
-		Log(fmt.Sprintf("Error making HTTP request: %v", err))
+		curdhost.Log(fmt.Sprintf("Error making HTTP request: %v", err))
 		return animeList, err
 	}
 	defer resp.Body.Close()
@@ -132,16 +117,16 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Log(fmt.Sprintf("Error reading response body: %v", err))
+		curdhost.Log(fmt.Sprintf("Error reading response body: %v", err))
 		return animeList, err
 	}
 
 	// Debug: Log the response status and first part of the body
-	Log(fmt.Sprintf("Response Status: %s", resp.Status))
-	Log(fmt.Sprintf("Response Body (first 500 chars): %s", string(body[:min(len(body), 500)])))
-	if !httpStatusOK(resp.StatusCode) {
-		err := httpStatusError("allanime search", resp.StatusCode, body)
-		Log(err)
+	curdhost.Log(fmt.Sprintf("Response Status: %s", resp.Status))
+	curdhost.Log(fmt.Sprintf("Response Body (first 500 chars): %s", string(body[:min(len(body), 500)])))
+	if !curdhost.HTTPStatusOK(resp.StatusCode) {
+		err := curdhost.HTTPStatusError("allanime search", resp.StatusCode, body)
+		curdhost.Log(err.Error())
 		return animeList, err
 	}
 
@@ -149,7 +134,7 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 	var response response
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		Log(fmt.Sprintf("Error parsing JSON for query '%s': %v\nBody: %s", query, err, string(body)))
+		curdhost.Log(fmt.Sprintf("Error parsing JSON for query '%s': %v\nBody: %s", query, err, string(body)))
 		return animeList, err
 	}
 
@@ -167,7 +152,7 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 
 		// Use English name if available and configured, otherwise use default name
 		displayName := anime.Name
-		if anime.EnglishName != "" && userCurdConfig != nil && userCurdConfig.AnimeNameLanguage == "english" {
+		if anime.EnglishName != "" && curdhost.AnimeNameLanguage != nil && curdhost.AnimeNameLanguage() == "english" {
 			displayName = anime.EnglishName
 		}
 
@@ -176,7 +161,7 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]SelectionOption, er
 			label = fmt.Sprintf("%s [%s]", label, mode)
 		}
 
-		animeList = append(animeList, SelectionOption{
+		animeList = append(animeList, providers.SelectionOption{
 			Title:     displayName,
 			Key:       anime.ID,
 			Label:     label,

@@ -141,6 +141,7 @@ func TestGetProviderTotalEpisodesReturnsLookupErrorsWhenNoEpisodesFound(t *testi
 }
 
 func TestGetAllAnimeEpisodesListUsesValidGraphQLVariableSyntax(t *testing.T) {
+	withAllProvidersEnabledForTest(t)
 	previousClient := sharedHTTPClient
 	t.Cleanup(func() {
 		sharedHTTPClient = previousClient
@@ -163,7 +164,13 @@ func TestGetAllAnimeEpisodesListUsesValidGraphQLVariableSyntax(t *testing.T) {
 		return testHTTPResponse(req, http.StatusOK, `{"data":{"show":{"_id":"show-id","availableEpisodesDetail":{"sub":[1,2,12]}}}}`), nil
 	})}
 
-	episodes, err := getAllAnimeEpisodesList("show-id", "sub")
+	episodes, err := func() ([]string, error) {
+		provider, err := ProviderByName("allanime")
+		if err != nil {
+			return nil, err
+		}
+		return provider.EpisodesList("show-id", "sub")
+	}()
 	if err != nil {
 		t.Fatalf("expected allanime episode list lookup to succeed: %v", err)
 	}

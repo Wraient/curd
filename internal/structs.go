@@ -71,6 +71,12 @@ type NextEpisode struct {
 	Mode         string
 }
 
+// StreamPlaybackHint carries MPV playback metadata for a resolved stream URL.
+type StreamPlaybackHint struct {
+	Referrer string
+	Subtitle string
+}
+
 type playingVideo struct {
 	Url          string
 	Speed        float64 `json:"speed"`
@@ -98,8 +104,9 @@ func GetGlobalUser() *User {
 
 // AniListAnime is the struct for the API response
 type AniListAnime struct {
-	ID    int `json:"id"`
-	Title struct {
+	ID       int `json:"id"`
+	Episodes int `json:"episodes"`
+	Title    struct {
 		Romaji  string `json:"romaji"`
 		English string `json:"english"`
 		Native  string `json:"native"`
@@ -122,6 +129,7 @@ type ResponseData struct {
 type Media struct {
 	Duration int        `json:"duration"`
 	Episodes int        `json:"episodes"`
+	Format   string     `json:"format"`
 	ID       int        `json:"id"`
 	MalID    int        `json:"mal_id"`
 	Title    AnimeTitle `json:"title"`

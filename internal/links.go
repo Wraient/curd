@@ -42,3 +42,23 @@ func linkSelectionScore(link string) int {
 	score += wixmpQualityScore(link)
 	return score
 }
+
+func wixmpQualityScore(link string) int {
+	for _, quality := range []string{"1080p", "720p", "480p", "360p", "240p"} {
+		if strings.Contains(link, quality) {
+			switch quality {
+			case "1080p":
+				return 1080
+			case "720p":
+				return 720
+			case "480p":
+				return 480
+			case "360p":
+				return 360
+			case "240p":
+				return 240
+			}
+		}
+	}
+	return 0
+}

@@ -1,15 +1,24 @@
-package internal
+package animepahe
 
 import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/wraient/curd/internal/curdhost"
 )
 
 const animepaheChallengeHTML = `<!doctype html><html><head><title>DDoS-Guard</title></head><body>Checking your browser</body></html>`
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func animepaheTestResponse(req *http.Request, statusCode int, body string, headers map[string]string) *http.Response {
 	resp := &http.Response{
@@ -27,21 +36,30 @@ func animepaheTestResponse(req *http.Request, statusCode int, body string, heade
 func withAnimepaheTestHooks(t *testing.T, client *http.Client, solver func() ([]*http.Cookie, error)) {
 	t.Helper()
 
-	previousClient := sharedHTTPClient
+	previousClient := curdhost.HTTPClient
+	previousLog := curdhost.Log
+	previousOut := curdhost.Out
+	previousCookies := curdhost.SetCookiesForAnimepahe
 	previousSolver := solveAnimepaheBrowserChallenge
 	previousBypassed := animepaheCookiesBypassed
-	previousConfig := GetGlobalConfig()
+	previousStoragePath := curdhost.StoragePath
 
 	t.Cleanup(func() {
-		sharedHTTPClient = previousClient
+		curdhost.HTTPClient = previousClient
+		curdhost.Log = previousLog
+		curdhost.Out = previousOut
+		curdhost.SetCookiesForAnimepahe = previousCookies
 		solveAnimepaheBrowserChallenge = previousSolver
 		animepaheCookiesBypassed = previousBypassed
-		SetGlobalConfig(previousConfig)
+		curdhost.StoragePath = previousStoragePath
 	})
 
-	sharedHTTPClient = client
+	curdhost.HTTPClient = func() *http.Client { return client }
+	curdhost.Log = func(string) {}
+	curdhost.Out = func(string) {}
+	curdhost.SetCookiesForAnimepahe = func(*url.URL, []*http.Cookie) {}
 	solveAnimepaheBrowserChallenge = solver
-	SetGlobalConfig(&CurdConfig{StoragePath: t.TempDir()})
+	curdhost.StoragePath = func() string { return t.TempDir() }
 }
 
 func TestAnimepaheEpisodesListRefreshesSessionWhenReleaseEndpointReturnsChallenge(t *testing.T) {
@@ -82,7 +100,7 @@ func TestAnimepaheEpisodesListRefreshesSessionWhenReleaseEndpointReturnsChalleng
 	})
 	animepaheCookiesBypassed = true
 
-	episodes, err := (&AnimepaheProvider{}).EpisodesList("4:session-id", "sub")
+	episodes, err := (&Provider{}).EpisodesList("4:session-id", "sub")
 	if err != nil {
 		t.Fatalf("expected episode list retry to succeed: %v", err)
 	}
@@ -129,7 +147,7 @@ func TestAnimepaheEpisodesListReportsPersistentChallengeAfterRefresh(t *testing.
 	})
 	animepaheCookiesBypassed = true
 
-	_, err = (&AnimepaheProvider{}).EpisodesList("4:session-id", "sub")
+	_, err = (&Provider{}).EpisodesList("4:session-id", "sub")
 	if err == nil {
 		t.Fatalf("expected persistent DDoS-Guard challenge to fail")
 	}
@@ -146,16 +164,16 @@ func TestAnimepaheEpisodesListLiveOnePiece(t *testing.T) {
 		t.Skip("set CURD_LIVE_ANIMEPAHE_TEST=1 to run live Animepahe episode-list verification")
 	}
 
-	previousConfig := GetGlobalConfig()
 	previousBypassed := animepaheCookiesBypassed
+	previousStoragePath := curdhost.StoragePath
 	t.Cleanup(func() {
-		SetGlobalConfig(previousConfig)
 		animepaheCookiesBypassed = previousBypassed
+		curdhost.StoragePath = previousStoragePath
 	})
-	SetGlobalConfig(&CurdConfig{StoragePath: t.TempDir()})
+	curdhost.StoragePath = func() string { return t.TempDir() }
 	animepaheCookiesBypassed = false
 
-	episodes, err := (&AnimepaheProvider{}).EpisodesList("4:15a36fc8-73b9-8c2e-ee5f-fb1bcd4fcdc6", "sub")
+	episodes, err := (&Provider{}).EpisodesList("4:15a36fc8-73b9-8c2e-ee5f-fb1bcd4fcdc6", "sub")
 	if err != nil {
 		t.Fatalf("live Animepahe One Piece episode list failed: %v", err)
 	}
