@@ -141,6 +141,28 @@ func min3(a, b, c int) int {
 }
 
 func doAniListSearchRequest(url string, requestBody []byte, token string) ([]byte, error) {
+	for authAttempt := 0; authAttempt < 2; authAttempt++ {
+		body, err := doAniListSearchRequestAttempt(url, requestBody, token)
+		if err == nil {
+			return body, nil
+		}
+		if authAttempt == 0 && isInvalidTokenError(err) {
+			newToken, renewed, renewErr := tryRenewAniListTokenForAPI(token, "invalid token")
+			if renewErr != nil {
+				return nil, renewErr
+			}
+			if renewed {
+				token = newToken
+				continue
+			}
+		}
+		return nil, err
+	}
+
+	return nil, fmt.Errorf("AniList search failed after token renewal")
+}
+
+func doAniListSearchRequestAttempt(url string, requestBody []byte, token string) ([]byte, error) {
 	client := sharedHTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
@@ -197,6 +219,7 @@ func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPrevie
 		Page(page: 1, perPage: 50) {
 			media(search: $search, type: ANIME) {
 				id
+				episodes
 				title {
 					romaji
 					english
@@ -233,10 +256,11 @@ func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPrevie
 	animeDict := make(map[string]RofiSelectPreview)
 
 	type scoredAnime struct {
-		id    string
-		title string
-		cover string
-		score int
+		id       string
+		title    string
+		cover    string
+		episodes int
+		score    int
 	}
 	var scored []scoredAnime
 	for _, anime := range animeList {
@@ -247,7 +271,7 @@ func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPrevie
 		}
 		cover := anime.CoverImage.Large
 		score := levenshtein(title, query)
-		scored = append(scored, scoredAnime{idStr, title, cover, score})
+		scored = append(scored, scoredAnime{idStr, title, cover, anime.Episodes, score})
 	}
 	sort.Slice(scored, func(i, j int) bool {
 		return scored[i].score < scored[j].score
@@ -257,7 +281,7 @@ func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPrevie
 			break
 		}
 		animeDict[s.id] = RofiSelectPreview{
-			Title:      s.title,
+			Title:      FormatAnimeSearchLabel(s.title, s.episodes),
 			CoverImage: s.cover,
 		}
 	}
@@ -273,6 +297,7 @@ func SearchAnimeAnilist(query, token string) ([]SelectionOption, error) {
 		Page(page: 1, perPage: 50) {
 			media(search: $search, type: ANIME) {
 				id
+				episodes
 				title {
 					romaji
 					english
@@ -306,9 +331,10 @@ func SearchAnimeAnilist(query, token string) ([]SelectionOption, error) {
 	var results []SelectionOption
 
 	type scoredAnime struct {
-		id    string
-		title string
-		score int
+		id       string
+		title    string
+		episodes int
+		score    int
 	}
 	var scored []scoredAnime
 	for _, anime := range animeList {
@@ -318,7 +344,7 @@ func SearchAnimeAnilist(query, token string) ([]SelectionOption, error) {
 			title = anime.Title.Romaji
 		}
 		score := levenshtein(title, query)
-		scored = append(scored, scoredAnime{idStr, title, score})
+		scored = append(scored, scoredAnime{idStr, title, anime.Episodes, score})
 	}
 	sort.Slice(scored, func(i, j int) bool {
 		return scored[i].score < scored[j].score
@@ -329,7 +355,8 @@ func SearchAnimeAnilist(query, token string) ([]SelectionOption, error) {
 		}
 		results = append(results, SelectionOption{
 			Key:   s.id,
-			Label: s.title,
+			Label: FormatAnimeSearchLabel(s.title, s.episodes),
+			Title: s.title,
 		})
 	}
 	return results, nil
@@ -497,6 +524,7 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 						idMal
 						episodes
 						duration
+						format
 						title {
 							romaji
 							english
@@ -554,6 +582,7 @@ func GetUserDataPreview(token string, userID int) (map[string]interface{}, error
 						idMal
 						episodes
 						duration
+						format
 						coverImage {
 							large
 						}
@@ -872,6 +901,39 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
+	token := ""
+	if headers != nil {
+		if authHeader := headers["Authorization"]; strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
+
+	for authAttempt := 0; authAttempt < 2; authAttempt++ {
+		response, err := makePostRequestAttempt(url, requestBody, headers)
+		if err == nil {
+			return response, nil
+		}
+		if authAttempt == 0 && isInvalidTokenError(err) && token != "" {
+			newToken, renewed, renewErr := tryRenewAniListTokenForAPI(token, "invalid token")
+			if renewErr != nil {
+				return nil, renewErr
+			}
+			if renewed {
+				token = newToken
+				if headers == nil {
+					headers = map[string]string{}
+				}
+				headers["Authorization"] = "Bearer " + newToken
+				continue
+			}
+		}
+		return nil, err
+	}
+
+	return nil, fmt.Errorf("AniList request failed after token renewal")
+}
+
+func makePostRequestAttempt(url string, requestBody []byte, headers map[string]string) (map[string]interface{}, error) {
 	client := sharedHTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
@@ -1016,6 +1078,7 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 				Media: Media{
 					Duration: toInt(media["duration"]),
 					Episodes: toInt(media["episodes"]),
+					Format:   safeString(media["format"]),
 					ID:       toInt(media["id"]),
 					MalID:    toInt(media["idMal"]),
 					Title: AnimeTitle{

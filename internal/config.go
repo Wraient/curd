@@ -42,6 +42,7 @@ type CurdConfig struct {
 	MpvArgs                    []string `config:"MpvArgs"`
 	SubsLanguage               string   `config:"SubsLanguage"`
 	SubOrDub                   string   `config:"SubOrDub"`
+	SubStyle                   string   `config:"SubStyle"`
 	StoragePath                string   `config:"StoragePath"`
 	AnimeNameLanguage          string   `config:"AnimeNameLanguage"`
 	MenuOrder                  string   `config:"MenuOrder"`
@@ -61,6 +62,8 @@ type CurdConfig struct {
 	DiscordPresence            bool     `config:"DiscordPresence"`
 	DiscordClientId            string   `config:"DiscordClientId"`
 	Provider                   string   `config:"Provider"`
+	DisabledProviders          string   `config:"DisabledProviders"`
+	ManualProviderSearch       bool     `config:"ManualProviderSearch"`
 	TrackingLocal              bool     `config:"TrackingLocal"`
 	TrackingRemote             string   `config:"TrackingRemote"`
 	TrackingConfigured         bool     `config:"TrackingConfigured"`
@@ -85,8 +88,9 @@ func defaultConfigMap() map[string]string {
 		"StoragePath":                "$HOME/.local/share/curd",
 		"AnimeNameLanguage":          "english",
 		"SubsLanguage":               "english",
-		"MenuOrder":                  "CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,TRACKER,PROVIDER",
+		"MenuOrder":                  "CURRENT,ALL,UNTRACKED,UPDATE,REMAP_PROVIDER,CONTINUE_LAST,TRACKER,PROVIDER",
 		"SubOrDub":                   "sub",
+		"SubStyle":                   "ask",
 		"PercentageToMarkComplete":   "85",
 		"NextEpisodePrompt":          "false",
 		"SkipOp":                     "true",
@@ -101,7 +105,9 @@ func defaultConfigMap() map[string]string {
 		"AlternateScreen":            "true",
 		"DiscordPresence":            "true",
 		"DiscordClientId":            "1287457464148820089",
-		"Provider":                   "[\"allanime\"]",
+		"Provider":                   "[\"anineko\"]",
+		"DisabledProviders":          "[]",
+		"ManualProviderSearch":     "false",
 		"TrackingLocal":              "true",
 		"TrackingRemote":             "anilist",
 		"TrackingConfigured":         "false",
@@ -163,6 +169,25 @@ func parseStringArray(value string) []string {
 }
 
 var GlobalConfigPath string
+
+func persistSubStylePreference(style string) error {
+	style = strings.ToLower(strings.TrimSpace(style))
+	if style != "soft" && style != "hard" {
+		return nil
+	}
+	if cfg := GetGlobalConfig(); cfg != nil {
+		cfg.SubStyle = style
+	}
+	if strings.TrimSpace(GlobalConfigPath) == "" {
+		return nil
+	}
+	configMap, err := LoadConfigFromFile(GlobalConfigPath)
+	if err != nil {
+		return err
+	}
+	configMap["SubStyle"] = style
+	return SaveConfigToFile(GlobalConfigPath, configMap)
+}
 
 // LoadConfig reads or creates the config file, adds missing fields, and returns the populated CurdConfig struct
 func LoadConfig(configPath string) (CurdConfig, error) {
@@ -687,13 +712,14 @@ func normalizeTrackingConfig(config *CurdConfig) {
 
 func getOrderedCategories(userCurdConfig *CurdConfig) []SelectionOption {
 	// Define the default categories and all available labels
-	defaultOrder := []string{"CURRENT", "ALL", "UNTRACKED", "UPDATE", "CONTINUE_LAST", "TRACKER", "PROVIDER"}
+	defaultOrder := []string{"CURRENT", "ALL", "UNTRACKED", "UPDATE", "REMAP_PROVIDER", "CONTINUE_LAST", "TRACKER", "PROVIDER"}
 	availableLabels := map[string]string{
-		"CURRENT":       "Currently Watching",
-		"ALL":           "Show All",
-		"UNTRACKED":     "Untracked Watching",
-		"UPDATE":        "Update (Episode, Status, Score)",
-		"CONTINUE_LAST": "Continue Last Session",
+		"CURRENT":        "Currently Watching",
+		"ALL":            "Show All",
+		"UNTRACKED":      "Untracked Watching",
+		"UPDATE":         "Update (Episode, Status, Score)",
+		"REMAP_PROVIDER": "Remap Provider",
+		"CONTINUE_LAST":  "Continue Last Session",
 		"PLANNING":      "Plan to Watch",
 		"COMPLETED":     "Completed",
 		"PAUSED":        "Paused",

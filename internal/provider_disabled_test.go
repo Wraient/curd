@@ -2,12 +2,18 @@ package internal
 
 import "testing"
 
-func TestProviderEnabledDisablesAnimepaheByDefault(t *testing.T) {
-	if ProviderEnabled("allanime") != true {
-		t.Fatal("expected allanime to stay enabled")
+func TestProviderEnabledDisablesAllanimeAndAnimepaheByDefault(t *testing.T) {
+	if ProviderEnabled("allanime") != false {
+		t.Fatal("expected allanime to be disabled by default")
 	}
 	if ProviderEnabled("animepahe") != false {
-		t.Fatal("expected animepahe to be disabled")
+		t.Fatal("expected animepahe to be disabled by default")
+	}
+	if ProviderEnabled("anineko") != true {
+		t.Fatal("expected anineko to stay enabled")
+	}
+	if reason := ProviderDisabledReason("allanime"); reason == "" {
+		t.Fatal("expected allanime disable reason")
 	}
 	if reason := ProviderDisabledReason("animepahe"); reason == "" {
 		t.Fatal("expected animepahe disable reason")
@@ -20,10 +26,11 @@ func TestConfiguredProviderNamesFiltersDisabledProviders(t *testing.T) {
 		cfg  *CurdConfig
 		want []string
 	}{
-		{name: "empty", cfg: &CurdConfig{}, want: []string{"allanime"}},
-		{name: "json list", cfg: &CurdConfig{Provider: `["allanime","animepahe"]`}, want: []string{"allanime"}},
-		{name: "animepahe only", cfg: &CurdConfig{Provider: `["animepahe"]`}, want: []string{"allanime"}},
-		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"allanime"}},
+		{name: "empty", cfg: &CurdConfig{}, want: []string{"anineko"}},
+		{name: "json list", cfg: &CurdConfig{Provider: `["allanime","animepahe"]`}, want: []string{"anineko"}},
+		{name: "animepahe only", cfg: &CurdConfig{Provider: `["animepahe"]`}, want: []string{"anineko"}},
+		{name: "allanime only", cfg: &CurdConfig{Provider: `["allanime"]`}, want: []string{"anineko"}},
+		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"anineko"}},
 	}
 
 	for _, tc := range cases {
@@ -50,19 +57,23 @@ func TestConfiguredProviderNamesHonorsEnabledProvidersWhenOverridden(t *testing.
 }
 
 func TestProviderByNameRejectsDisabledProvider(t *testing.T) {
-	if _, err := ProviderByName("animepahe"); err == nil {
-		t.Fatal("expected disabled provider error")
+	for _, name := range []string{"animepahe", "allanime"} {
+		if _, err := ProviderByName(name); err == nil {
+			t.Fatalf("expected disabled provider error for %s", name)
+		}
 	}
 }
 
 func TestProviderByNameAllowsDisabledProviderWhenOverridden(t *testing.T) {
 	withAllProvidersEnabledForTest(t)
 
-	provider, err := ProviderByName("animepahe")
-	if err != nil {
-		t.Fatalf("expected animepahe provider: %v", err)
-	}
-	if provider.Name() != "animepahe" {
-		t.Fatalf("got provider %q", provider.Name())
+	for _, name := range []string{"animepahe", "allanime"} {
+		provider, err := ProviderByName(name)
+		if err != nil {
+			t.Fatalf("expected %s provider: %v", name, err)
+		}
+		if provider.Name() != name {
+			t.Fatalf("got provider %q", provider.Name())
+		}
 	}
 }

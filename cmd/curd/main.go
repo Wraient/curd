@@ -82,6 +82,8 @@ func main() {
 	editConfig := flag.Bool("e", false, "Edit config")
 	subFlag := flag.Bool("sub", false, "Watch sub version")
 	dubFlag := flag.Bool("dub", false, "Watch dub version")
+	softSubFlag := flag.Bool("softsub", false, "Prefer soft subtitles when available (anineko)")
+	hardSubFlag := flag.Bool("hardsub", false, "Prefer hard subtitles when available (anineko)")
 	versionFlag := flag.Bool("v", false, "Print version information")
 
 	// Custom help/usage function
@@ -182,6 +184,11 @@ func main() {
 		userCurdConfig.SubOrDub = "sub"
 	} else if *dubFlag {
 		userCurdConfig.SubOrDub = "dub"
+	}
+	if *softSubFlag {
+		userCurdConfig.SubStyle = "soft"
+	} else if *hardSubFlag {
+		userCurdConfig.SubStyle = "hard"
 	}
 
 	// Get the token from the token file for the configured remote tracker.

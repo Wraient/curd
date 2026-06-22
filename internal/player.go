@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wraient/curd/internal/providers"
 )
 
 var logFile = "debug.log"
@@ -23,8 +25,8 @@ func streamReferrerForLink(link, provider string) string {
 	if strings.Contains(strings.ToLower(link), "tools.fast4speed.rsvp") {
 		return "https://allanime.to"
 	}
-	if provider == "animepahe" {
-		return "https://kwik.cx/"
+	if referrer := providers.Referrer(provider); referrer != "" {
+		return referrer
 	}
 	return defaultStreamReferrer
 }

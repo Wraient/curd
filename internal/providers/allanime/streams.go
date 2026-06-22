@@ -1,4 +1,4 @@
-package internal
+package allanime
 
 import (
 	"encoding/json"
@@ -12,15 +12,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wraient/curd/internal/curdhost"
+	"github.com/wraient/curd/internal/providers"
 )
 
 const allanimeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
-
-// StreamPlaybackHint carries MPV playback metadata extracted from AllAnime clock.json.
-type StreamPlaybackHint struct {
-	Referrer string
-	Subtitle string
-}
 
 type allanimeResolvedStream struct {
 	URL          string
@@ -36,7 +33,7 @@ var (
 	allanimeStreamBandwidthPattern  = regexp.MustCompile(`BANDWIDTH=(\d+)`)
 )
 
-func getAllanimeEpisodeStreamsForMode(id, mode string, epNo int) ([]string, map[string]StreamPlaybackHint, error) {
+func getAllanimeEpisodeStreamsForMode(id, mode string, epNo int) ([]string, map[string]providers.StreamPlaybackHint, error) {
 	sourceUrls, err := fetchEpisodeSourcesForMode(id, mode, epNo)
 	if err != nil {
 		return nil, nil, err
@@ -44,7 +41,7 @@ func getAllanimeEpisodeStreamsForMode(id, mode string, epNo int) ([]string, map[
 	return getLinksFromEncodedSourceUrls(sourceUrls)
 }
 
-func getLinksFromEncodedSourceUrls(sourceUrls []allanimeSource) ([]string, map[string]StreamPlaybackHint, error) {
+func getLinksFromEncodedSourceUrls(sourceUrls []allanimeSource) ([]string, map[string]providers.StreamPlaybackHint, error) {
 	type providerJob struct {
 		index int
 		name  string
@@ -84,7 +81,7 @@ func getLinksFromEncodedSourceUrls(sourceUrls []allanimeSource) ([]string, map[s
 		go func(idx int, providerName, encodedURL string) {
 			defer wg.Done()
 			decodedProviderID := decodeProviderID(encodedURL[2:])
-			Log(fmt.Sprintf("Fetching Allanime provider %s via %s", providerName, decodedProviderID))
+			curdhost.Log(fmt.Sprintf("Fetching Allanime provider %s via %s", providerName, decodedProviderID))
 			streams, err := resolveAllanimeClockProvider(providerName, decodedProviderID)
 			results <- streamResult{index: idx, streams: streams, err: err}
 		}(job.index, job.name, job.url)
@@ -108,14 +105,14 @@ func getLinksFromEncodedSourceUrls(sourceUrls []allanimeSource) ([]string, map[s
 			}
 			completedCount++
 			if res.err != nil {
-				Log(fmt.Sprintf("Allanime provider %s failed: %v", jobs[res.index].name, res.err))
+				curdhost.Log(fmt.Sprintf("Allanime provider %s failed: %v", jobs[res.index].name, res.err))
 				collectedErrors = append(collectedErrors, fmt.Errorf("%s: %w", jobs[res.index].name, res.err))
 				continue
 			}
 			if len(res.streams) > 0 {
 				orderedStreams[res.index] = res.streams
 				successCount++
-				Log(fmt.Sprintf("Allanime provider %s returned %d stream(s)", jobs[res.index].name, len(res.streams)))
+				curdhost.Log(fmt.Sprintf("Allanime provider %s returned %d stream(s)", jobs[res.index].name, len(res.streams)))
 			}
 		case <-timeout:
 			if successCount > 0 {
@@ -131,7 +128,7 @@ func getLinksFromEncodedSourceUrls(sourceUrls []allanimeSource) ([]string, map[s
 	return buildAllanimeLinkResult(orderedStreams)
 }
 
-func buildAllanimeLinkResult(orderedStreams [][]allanimeResolvedStream) ([]string, map[string]StreamPlaybackHint, error) {
+func buildAllanimeLinkResult(orderedStreams [][]allanimeResolvedStream) ([]string, map[string]providers.StreamPlaybackHint, error) {
 	allStreams := make([]allanimeResolvedStream, 0)
 	for _, streams := range orderedStreams {
 		allStreams = append(allStreams, streams...)
@@ -141,7 +138,7 @@ func buildAllanimeLinkResult(orderedStreams [][]allanimeResolvedStream) ([]strin
 	})
 
 	links := make([]string, 0, len(allStreams))
-	hints := make(map[string]StreamPlaybackHint)
+	hints := make(map[string]providers.StreamPlaybackHint)
 	seen := make(map[string]struct{})
 	for _, stream := range allStreams {
 		if stream.URL == "" || isUnreliableAllanimeDirectURL(stream.URL) {
@@ -156,7 +153,7 @@ func buildAllanimeLinkResult(orderedStreams [][]allanimeResolvedStream) ([]strin
 		if referrer == "" {
 			referrer = allanimeGraphQLReferer
 		}
-		hints[stream.URL] = StreamPlaybackHint{
+		hints[stream.URL] = providers.StreamPlaybackHint{
 			Referrer: referrer,
 			Subtitle: stream.SubtitleURL,
 		}
@@ -242,7 +239,7 @@ func fetchAllanimeClockResponse(providerPath string) ([]byte, map[string]interfa
 	req.Header.Set("Referer", allanimeGraphQLReferer)
 	req.Header.Set("User-Agent", allanimeUserAgent)
 
-	resp, err := sharedHTTPClient.Do(req)
+	resp, err := curdhost.HTTPClient().Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -252,8 +249,8 @@ func fetchAllanimeClockResponse(providerPath string) ([]byte, map[string]interfa
 	if err != nil {
 		return nil, nil, err
 	}
-	if !httpStatusOK(resp.StatusCode) {
-		return nil, nil, httpStatusError("allanime source extractor", resp.StatusCode, body)
+	if !curdhost.HTTPStatusOK(resp.StatusCode) {
+		return nil, nil, curdhost.HTTPStatusError("allanime source extractor", resp.StatusCode, body)
 	}
 
 	var videoData map[string]interface{}
@@ -303,7 +300,7 @@ func fetchAllanimeM3U8VariantStreams(masterURL, referrer, subtitleURL string) ([
 	req.Header.Set("Referer", referrer)
 	req.Header.Set("User-Agent", allanimeUserAgent)
 
-	resp, err := sharedHTTPClient.Do(req)
+	resp, err := curdhost.HTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -312,8 +309,8 @@ func fetchAllanimeM3U8VariantStreams(masterURL, referrer, subtitleURL string) ([
 	if err != nil {
 		return nil, err
 	}
-	if !httpStatusOK(resp.StatusCode) {
-		return nil, httpStatusError("allanime m3u8 master playlist", resp.StatusCode, body)
+	if !curdhost.HTTPStatusOK(resp.StatusCode) {
+		return nil, curdhost.HTTPStatusError("allanime m3u8 master playlist", resp.StatusCode, body)
 	}
 
 	playlist := string(body)
@@ -448,18 +445,4 @@ func streamsFromPlainURLs(urls []string, referrer, subtitleURL string, qualitySc
 		})
 	}
 	return streams
-}
-
-func applyStreamPlaybackHints(anime *Anime, links []string, hints map[string]StreamPlaybackHint) {
-	if anime == nil || len(links) == 0 {
-		return
-	}
-	selected := PrioritizeLink(links)
-	if hint, ok := hints[selected]; ok {
-		anime.Ep.StreamReferrer = hint.Referrer
-		anime.Ep.SubtitleURL = hint.Subtitle
-		return
-	}
-	anime.Ep.StreamReferrer = ""
-	anime.Ep.SubtitleURL = ""
 }

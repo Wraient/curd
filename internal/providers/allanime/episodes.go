@@ -1,4 +1,4 @@
-package internal
+package allanime
 
 import (
 	"bytes"
@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+
+	"github.com/wraient/curd/internal/curdhost"
+	"github.com/wraient/curd/internal/providers"
 )
 
 type episodesResponse struct {
@@ -33,7 +36,7 @@ type episodesResponse struct {
 
 // episodesList performs the API call and fetches the episodes list
 func getAllAnimeEpisodesList(showID, mode string) ([]string, error) {
-	preferredMode := normalizeTranslationType(mode)
+	preferredMode := providers.NormalizeTranslationType(mode)
 
 	episodesListGql := `query ($showId: String!) { show( _id: $showId ) { _id availableEpisodesDetail }}`
 
@@ -56,27 +59,27 @@ func getAllAnimeEpisodesList(showID, mode string) ([]string, error) {
 	req.Header.Set("Referer", "https://allanime.to")
 	req.Header.Set("Origin", "https://allanime.to")
 
-	resp, err := sharedHTTPClient.Do(req)
+	resp, err := curdhost.HTTPClient().Do(req)
 	if err != nil {
-		Log(fmt.Sprint("Error making HTTP request:", err))
+		curdhost.Log(fmt.Sprint("Error making HTTP request:", err))
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Log(fmt.Sprint("Error reading response body:", err))
+		curdhost.Log(fmt.Sprint("Error reading response body:", err))
 		return nil, err
 	}
-	if !httpStatusOK(resp.StatusCode) {
-		return nil, httpStatusError("allanime episode list", resp.StatusCode, body)
+	if !curdhost.HTTPStatusOK(resp.StatusCode) {
+		return nil, curdhost.HTTPStatusError("allanime episode list", resp.StatusCode, body)
 	}
 
 	// Parse the JSON response
 	var response episodesResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		Log(fmt.Sprint("Error parsing JSON:", err))
+		curdhost.Log(fmt.Sprint("Error parsing JSON:", err))
 		return nil, err
 	}
 

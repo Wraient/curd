@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/wraient/curd/internal/providers"
 )
 
 type stackStubProvider struct {
@@ -47,19 +49,42 @@ func (s *stackStubProvider) GetEpisodeURLForMode(config CurdConfig, id string, e
 	return nil, nil
 }
 
-func withProviderFactories(t *testing.T, providers ...*stackStubProvider) {
+func withProviderFactories(t *testing.T, stubs ...*stackStubProvider) {
 	t.Helper()
 	withAllProvidersEnabledForTest(t)
-	previousAllanime := providerFactories["allanime"]
-	previousAnimepahe := providerFactories["animepahe"]
-	for _, provider := range providers {
-		provider := provider
-		providerFactories[provider.name] = func() Provider { return provider }
+	restores := make([]func(), 0, len(stubs))
+	for _, stub := range stubs {
+		stub := stub
+		restores = append(restores, providers.SetFactoryForTest(stub.name, func() providers.Provider {
+			return &stackStubProviderBridge{stub}
+		}))
 	}
 	t.Cleanup(func() {
-		providerFactories["allanime"] = previousAllanime
-		providerFactories["animepahe"] = previousAnimepahe
+		for i := len(restores) - 1; i >= 0; i-- {
+			restores[i]()
+		}
 	})
+}
+
+type stackStubProviderBridge struct {
+	*stackStubProvider
+}
+
+func (s *stackStubProviderBridge) SearchAnime(query, mode string) ([]providers.SelectionOption, error) {
+	options, err := s.stackStubProvider.SearchAnime(query, mode)
+	return toProviderSelectionOptions(options), err
+}
+
+func (s *stackStubProviderBridge) EpisodesList(showID, mode string) ([]string, error) {
+	return s.stackStubProvider.EpisodesList(showID, mode)
+}
+
+func (s *stackStubProviderBridge) GetEpisodeURL(config providers.PlaybackConfig, id string, epNo int) ([]string, error) {
+	return s.stackStubProvider.GetEpisodeURL(CurdConfig{SubOrDub: config.SubOrDub}, id, epNo)
+}
+
+func (s *stackStubProviderBridge) GetEpisodeURLForMode(config providers.PlaybackConfig, id string, epNo int, mode string) ([]string, error) {
+	return s.stackStubProvider.GetEpisodeURLForMode(CurdConfig{SubOrDub: config.SubOrDub}, id, epNo, mode)
 }
 
 func TestConfiguredProviderNamesAcceptsOrderedLists(t *testing.T) {
@@ -74,7 +99,7 @@ func TestConfiguredProviderNamesAcceptsOrderedLists(t *testing.T) {
 		{name: "json list", cfg: &CurdConfig{Provider: `["allanime","animepahe"]`}, want: []string{"allanime", "animepahe"}},
 		{name: "comma list", cfg: &CurdConfig{Provider: "animepahe,allanime"}, want: []string{"animepahe", "allanime"}},
 		{name: "plus list", cfg: &CurdConfig{Provider: "allanime+animepahe"}, want: []string{"allanime", "animepahe"}},
-		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"allanime", "animepahe"}},
+		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"allanime", "animepahe", "anineko"}},
 	}
 
 	for _, tc := range cases {
@@ -100,7 +125,7 @@ func TestCanonicalProviderConfigValueMigratesLegacyValuesWithoutAddingAnimepahe(
 		{name: "legacy animepahe", raw: "animepahe", want: `["animepahe"]`},
 		{name: "ordered stack", raw: "animepahe,allanime", want: `["animepahe","allanime"]`},
 		{name: "animepahe opt out", raw: "allanime,no-animepahe", want: `["allanime","no-animepahe"]`},
-		{name: "empty default", raw: "", want: `["allanime"]`},
+		{name: "empty default", raw: "", want: `["anineko"]`},
 	}
 
 	for _, tc := range cases {

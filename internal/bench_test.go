@@ -69,23 +69,6 @@ func BenchmarkMergeAnimeLists(b *testing.B) {
 	}
 }
 
-func BenchmarkSortAllanimeSourcesByPriority(b *testing.B) {
-	sources := make([]allanimeSource, 0, 1000)
-	for i := 0; i < 1000; i++ {
-		sources = append(sources, allanimeSource{
-			SourceUrl:  fmt.Sprintf("https://example.com/%d.mp4", i),
-			SourceName: "Yt-mp4",
-			Priority:   float64((i * 37) % 100),
-		})
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = sortAllanimeSourcesByPriority(sources)
-	}
-}
-
 func BenchmarkLevenshteinAnimeTitles(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = levenshtein("Sousou no Frieren Beyond Journey's End", "Frieren Beyond Journey's End")

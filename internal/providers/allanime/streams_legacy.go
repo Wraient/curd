@@ -1,4 +1,4 @@
-package internal
+package allanime
 
 import (
 	"bytes"
@@ -17,6 +17,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/wraient/curd/internal/curdhost"
+	"github.com/wraient/curd/internal/providers"
 )
 
 type allanimeSource struct {
@@ -231,13 +234,13 @@ func decodeBase64URLRaw(input string) ([]byte, error) {
 func extractFilemoonLinks(videoData map[string]interface{}) []string {
 	raw, err := json.Marshal(videoData)
 	if err != nil {
-		Log(fmt.Sprintf("Error marshaling filemoon payload: %v", err))
+		curdhost.Log(fmt.Sprintf("Error marshaling filemoon payload: %v", err))
 		return nil
 	}
 
 	var payload filemoonResponse
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		Log(fmt.Sprintf("Error parsing filemoon payload: %v", err))
+		curdhost.Log(fmt.Sprintf("Error parsing filemoon payload: %v", err))
 		return nil
 	}
 
@@ -247,30 +250,30 @@ func extractFilemoonLinks(videoData map[string]interface{}) []string {
 
 	keyPart1, err := decodeBase64URLRaw(payload.KeyParts[0])
 	if err != nil {
-		Log(fmt.Sprintf("Error decoding filemoon key part 1: %v", err))
+		curdhost.Log(fmt.Sprintf("Error decoding filemoon key part 1: %v", err))
 		return nil
 	}
 
 	keyPart2, err := decodeBase64URLRaw(payload.KeyParts[1])
 	if err != nil {
-		Log(fmt.Sprintf("Error decoding filemoon key part 2: %v", err))
+		curdhost.Log(fmt.Sprintf("Error decoding filemoon key part 2: %v", err))
 		return nil
 	}
 
 	iv, err := decodeBase64URLRaw(payload.IV)
 	if err != nil {
-		Log(fmt.Sprintf("Error decoding filemoon IV: %v", err))
+		curdhost.Log(fmt.Sprintf("Error decoding filemoon IV: %v", err))
 		return nil
 	}
 
 	ciphertext, err := decodeBase64URLRaw(payload.Payload)
 	if err != nil {
-		Log(fmt.Sprintf("Error decoding filemoon ciphertext: %v", err))
+		curdhost.Log(fmt.Sprintf("Error decoding filemoon ciphertext: %v", err))
 		return nil
 	}
 
 	if len(ciphertext) <= 16 {
-		Log("Filemoon ciphertext is too short")
+		curdhost.Log("Filemoon ciphertext is too short")
 		return nil
 	}
 
@@ -280,25 +283,25 @@ func extractFilemoonLinks(videoData map[string]interface{}) []string {
 	keyHex := hex.EncodeToString(append(keyPart1, keyPart2...))
 	key, err := hex.DecodeString(keyHex)
 	if err != nil {
-		Log(fmt.Sprintf("Error decoding filemoon key hex: %v", err))
+		curdhost.Log(fmt.Sprintf("Error decoding filemoon key hex: %v", err))
 		return nil
 	}
 
 	ctrIVHex := hex.EncodeToString(iv) + "00000002"
 	ctrIV, err := hex.DecodeString(ctrIVHex)
 	if err != nil {
-		Log(fmt.Sprintf("Error decoding filemoon CTR IV: %v", err))
+		curdhost.Log(fmt.Sprintf("Error decoding filemoon CTR IV: %v", err))
 		return nil
 	}
 
 	if len(ctrIV) != aes.BlockSize {
-		Log(fmt.Sprintf("Invalid filemoon CTR IV size: %d", len(ctrIV)))
+		curdhost.Log(fmt.Sprintf("Invalid filemoon CTR IV size: %d", len(ctrIV)))
 		return nil
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		Log(fmt.Sprintf("Error creating filemoon cipher: %v", err))
+		curdhost.Log(fmt.Sprintf("Error creating filemoon cipher: %v", err))
 		return nil
 	}
 
@@ -359,7 +362,7 @@ func extractFilemoonLinks(videoData map[string]interface{}) []string {
 	}
 
 	if len(links) > 0 {
-		Log("Filemoon links fetched")
+		curdhost.Log("Filemoon links fetched")
 	}
 
 	return links
@@ -376,17 +379,17 @@ func extractFilemoonLinks(videoData map[string]interface{}) []string {
 // Returns:
 // - []string: a list of links for specified episode.
 // - error: an error if the episode is not found or if there is an issue during the search.
-func getAllanimeEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {
-	preferredMode := normalizeTranslationType(config.SubOrDub)
+func getAllanimeEpisodeURL(config providers.PlaybackConfig, id string, epNo int) ([]string, error) {
+	preferredMode := providers.NormalizeTranslationType(config.SubOrDub)
 	return getAllanimeEpisodeURLForMode(id, preferredMode, epNo)
 }
 
 func getAllanimeEpisodeURLForMode(id, mode string, epNo int) ([]string, error) {
-	return getEpisodeURLForMode(id, normalizeTranslationType(mode), epNo)
+	return getEpisodeURLForMode(id, providers.NormalizeTranslationType(mode), epNo)
 }
 
 func fetchAllanimeEpisodeSources(id, mode string, epNo int) ([]allanimeSource, error) {
-	return fetchEpisodeSourcesForMode(id, normalizeTranslationType(mode), epNo)
+	return fetchEpisodeSourcesForMode(id, providers.NormalizeTranslationType(mode), epNo)
 }
 
 func fetchEpisodeSourcesForMode(id, mode string, epNo int) ([]allanimeSource, error) {
@@ -398,7 +401,7 @@ func fetchEpisodeSourcesForMode(id, mode string, epNo int) ([]allanimeSource, er
 
 	variables := map[string]interface{}{
 		"showId":          id,
-		"translationType": normalizeTranslationType(mode),
+		"translationType": providers.NormalizeTranslationType(mode),
 		"episodeString":   fmt.Sprintf("%d", epNo),
 	}
 
@@ -429,7 +432,7 @@ func fetchEpisodeSourcesForMode(id, mode string, epNo int) ([]allanimeSource, er
 	req.Header.Set("Referer", allanimePersistedQueryReferer)
 	req.Header.Set("Origin", allanimePersistedQueryReferer)
 
-	resp, err := sharedHTTPClient.Do(req)
+	resp, err := curdhost.HTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send persisted query request: %w", err)
 	}
@@ -438,13 +441,13 @@ func fetchEpisodeSourcesForMode(id, mode string, epNo int) ([]allanimeSource, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to read persisted query response: %w", err)
 	}
-	if !httpStatusOK(resp.StatusCode) {
-		return nil, httpStatusError("allanime episode persisted query", resp.StatusCode, body)
+	if !curdhost.HTTPStatusOK(resp.StatusCode) {
+		return nil, curdhost.HTTPStatusError("allanime episode persisted query", resp.StatusCode, body)
 	}
 
 	var response allanimeResponse
 	if err := json.Unmarshal(body, &response); err != nil {
-		Log(fmt.Sprint("Error parsing persisted query JSON: ", err))
+		curdhost.Log(fmt.Sprint("Error parsing persisted query JSON: ", err))
 	}
 
 	useFallback := response.Data.Tobeparsed == "" && len(response.Data.Episode.SourceUrls) == 0
@@ -473,7 +476,7 @@ func fetchEpisodeSourcesForMode(id, mode string, epNo int) ([]allanimeSource, er
 		req.Header.Set("Referer", allanimeGraphQLReferer)
 		req.Header.Set("Origin", allanimeGraphQLReferer)
 
-		resp, err := sharedHTTPClient.Do(req)
+		resp, err := curdhost.HTTPClient().Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to send request: %w", err)
 		}
@@ -483,24 +486,24 @@ func fetchEpisodeSourcesForMode(id, mode string, epNo int) ([]allanimeSource, er
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response body: %w", err)
 		}
-		if !httpStatusOK(resp.StatusCode) {
-			return nil, httpStatusError("allanime episode fallback query", resp.StatusCode, body)
+		if !curdhost.HTTPStatusOK(resp.StatusCode) {
+			return nil, curdhost.HTTPStatusError("allanime episode fallback query", resp.StatusCode, body)
 		}
 
 		if err := json.Unmarshal(body, &response); err != nil {
-			Log(fmt.Sprint("Error parsing fallback JSON: ", err))
+			curdhost.Log(fmt.Sprint("Error parsing fallback JSON: ", err))
 			return nil, err
 		}
 	}
 
 	if response.Data.Tobeparsed != "" {
-		Log("Found tobeparsed field, decoding source URLs")
+		curdhost.Log("Found tobeparsed field, decoding source URLs")
 		decodedSources, err := decodeTobeparsed(response.Data.Tobeparsed)
 		if err != nil {
 			return nil, err
 		}
 
-		Log(fmt.Sprintf("Decoded %d Allanime source URLs from tobeparsed payload", len(decodedSources)))
+		curdhost.Log(fmt.Sprintf("Decoded %d Allanime source URLs from tobeparsed payload", len(decodedSources)))
 		return decodedSources, nil
 	}
 

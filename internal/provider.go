@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/wraient/curd/internal/providers"
+	"github.com/wraient/curd/internal/providers/animepahe"
 )
 
 // Provider interface defines methods for an anime provider.
@@ -27,26 +30,12 @@ type ProviderEpisodeResult struct {
 }
 
 const providerIDSeparator = "::"
-const animepaheOptOutProvider = "no-animepahe"
 
 // Global variable to keep the current provider
 var CurrentProvider Provider
 
-var providerFactories = map[string]func() Provider{
-	"allanime":  func() Provider { return &AllanimeProvider{} },
-	"animepahe": func() Provider { return &AnimepaheProvider{} },
-}
-
 func normalizeProviderName(providerName string) string {
-	providerName = strings.Trim(strings.TrimSpace(providerName), "\"'[]")
-	switch strings.ToLower(strings.TrimSpace(providerName)) {
-	case "allanime", "all-anime", "all anime":
-		return "allanime"
-	case "animepahe", "pahe":
-		return "animepahe"
-	default:
-		return ""
-	}
+	return providers.NormalizeName(providerName)
 }
 
 func normalizeProviderConfigToken(token string) string {
@@ -69,7 +58,7 @@ func parseProviderConfigParts(rawProvider string) []string {
 func parseProviderConfig(rawProvider string) ([]string, bool) {
 	rawProvider = strings.TrimSpace(rawProvider)
 	if rawProvider == "" {
-		rawProvider = "allanime"
+		rawProvider = firstEnabledProviderName()
 	}
 
 	normalizedRaw := strings.ToLower(rawProvider)
@@ -83,7 +72,7 @@ func parseProviderConfig(rawProvider string) ([]string, bool) {
 		animepaheDeclined := false
 
 		for _, part := range parts {
-			if normalizeProviderConfigToken(part) == animepaheOptOutProvider {
+			if isProviderOptOutToken(part) {
 				animepaheDeclined = true
 				continue
 			}
@@ -112,14 +101,14 @@ func parseProviderConfig(rawProvider string) ([]string, bool) {
 	}
 
 	if len(providers) == 0 {
-		providers = []string{"allanime"}
+		providers = []string{firstEnabledProviderName()}
 	}
 
 	return providers, animepaheDeclined
 }
 
 func configuredProviderNames(config *CurdConfig) []string {
-	rawProvider := "allanime"
+	rawProvider := firstEnabledProviderName()
 	if config != nil && strings.TrimSpace(config.Provider) != "" {
 		rawProvider = config.Provider
 	}
@@ -143,9 +132,36 @@ func formatProviderConfigValue(names []string, animepaheDeclined bool) string {
 		quotedNames = append(quotedNames, fmt.Sprintf("%q", name))
 	}
 	if animepaheDeclined {
-		quotedNames = append(quotedNames, fmt.Sprintf("%q", animepaheOptOutProvider))
+		if token := providerOptOutTokenForName("animepahe"); token != "" {
+			quotedNames = append(quotedNames, fmt.Sprintf("%q", token))
+		}
 	}
 	return "[" + strings.Join(quotedNames, ",") + "]"
+}
+
+func isProviderOptOutToken(token string) bool {
+	token = normalizeProviderConfigToken(token)
+	if token == "" {
+		return false
+	}
+	for _, name := range providers.RegisteredNames() {
+		meta, ok := providers.MetaFor(name)
+		if !ok || meta.OptOutToken == "" {
+			continue
+		}
+		if token == normalizeProviderConfigToken(meta.OptOutToken) {
+			return true
+		}
+	}
+	return false
+}
+
+func providerOptOutTokenForName(providerName string) string {
+	meta, ok := providers.MetaFor(providerName)
+	if !ok {
+		return ""
+	}
+	return meta.OptOutToken
 }
 
 func animepaheDeclinedInConfig(config *CurdConfig) bool {
@@ -174,11 +190,11 @@ func ProviderByName(providerName string) (Provider, error) {
 	if reason := providerDisabledReason(providerName); reason != "" {
 		return nil, fmt.Errorf("provider %q is disabled: %s", providerName, reason)
 	}
-	factory, ok := providerFactories[providerName]
-	if !ok {
-		return nil, fmt.Errorf("unknown provider %q", providerName)
+	provider, err := providers.New(providerName)
+	if err != nil {
+		return nil, err
 	}
-	return factory(), nil
+	return wrapProvider(provider), nil
 }
 
 func GetProvider() Provider {
@@ -190,8 +206,11 @@ func GetProvider() Provider {
 	primaryProviderName := providerNames[0]
 	provider, err := ProviderByName(primaryProviderName)
 	if err != nil {
-		CurrentProvider = &AllanimeProvider{}
-		return CurrentProvider
+		if fallback, fallbackErr := ProviderByName(firstEnabledProviderName()); fallbackErr == nil {
+			CurrentProvider = fallback
+			return CurrentProvider
+		}
+		return provider
 	}
 	CurrentProvider = provider
 	return CurrentProvider
@@ -280,7 +299,7 @@ func providerNamesForAnime(config *CurdConfig, anime *Anime) []string {
 		}
 	}
 	if len(result) == 0 {
-		return []string{"allanime"}
+		return []string{firstEnabledProviderName()}
 	}
 	return result
 }
@@ -425,7 +444,7 @@ func appendProviderName(providerNames []string, providerName string) []string {
 		}
 	}
 	if len(result) == 0 {
-		return []string{"allanime"}
+		return []string{firstEnabledProviderName()}
 	}
 	return result
 }
@@ -635,7 +654,7 @@ func episodeModeResult(config CurdConfig, anime *Anime, epNo int, mode string) (
 func episodeModeResultWithProviders(config CurdConfig, anime *Anime, epNo int, mode string, providerNames []string) (ProviderEpisodeResult, error) {
 	mode = normalizeTranslationType(mode)
 	if len(providerNames) == 0 {
-		providerNames = []string{"allanime"}
+		providerNames = []string{firstEnabledProviderName()}
 	}
 
 	var errors []string
@@ -832,7 +851,7 @@ func scoreProviderSearchOption(option SelectionOption, anime *Anime, query strin
 	if anime.TotalEpisodes > 0 && strings.Contains(option.Label, fmt.Sprintf("(%d episodes)", anime.TotalEpisodes)) {
 		score += 20
 	}
-	if item, ok := option.ExtraData.(AnimepaheSearchItem); ok && anime.TotalEpisodes > 0 && item.Episodes == anime.TotalEpisodes {
+	if item, ok := option.ExtraData.(animepahe.SearchItem); ok && anime.TotalEpisodes > 0 && item.Episodes == anime.TotalEpisodes {
 		score += 20
 	}
 	return score
