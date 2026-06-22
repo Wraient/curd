@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/cbf799bc-9fdd-4402-ab61-b4e31f1e264d
 
 
 ## Features
-- Multiple Content Providers (AllAnime and Animepahe) with ordered fallback and up to 1080p support
+- Multiple Content Providers (AllAnime, AniNeko, and Animepahe) with ordered fallback and up to 1080p support
 - Built-in headless browser to bypass Cloudflare/DDoS-Guard protections
 - Stream anime online
 - Track anime locally, on AniList, or on MyAnimeList
@@ -299,6 +299,8 @@ curd [options]
 | `-change-token`           | Change your authentication token                                       | -             |
 | `-dub`                    | Watch the dubbed version of the anime                                  | -             |
 | `-sub`                    | Watch the subbed version of the anime                                  | -             |
+| `-softsub`                | Prefer soft subtitles when available (AniNeko)                         | -             |
+| `-hardsub`                | Prefer hard subtitles when available (AniNeko)                         | -             |
 | `-new`                    | Add a new anime to your list                                           | -             |
 | `-e`                      | Edit the configuration file                                            | -             |
 | `-skip-op`                | Automatically skip the opening section of each episode                 | `true`        |
@@ -381,6 +383,7 @@ If the browser reaches the localhost callback page but curd does not continue au
 | `PercentageToMarkComplete`| Integer    | `0` to `100`                              | Sets the percentage of an episode watched to consider it as completed.                            |
 | `StoragePath`             | String     | Any valid path (Environment variables accepted)  | Specifies the directory where Curd stores its data.                                        |
 | `SubOrDub`                | Enum       | `sub`, `dub`                              | Sets the preferred format for anime audio.                                                        |
+| `SubStyle`                | Enum       | `ask`, `soft`, `hard`                     | For AniNeko sub streams: `ask` prompts once when both soft-sub and hard-sub servers exist, then saves your choice here; `soft` uses external `.vtt` subtitles via mpv; `hard` uses burned-in subs. Default: `ask` |
 | `NextEpisodePrompt`       | Boolean    | `true`, `false`                           | Prompts the user before automatically playing the next episode.                                   |
 | `SubsLanguage`            | String     | `english` (redundant rn)                  | Sets the preferred subtitle language.                                                             |
 | `ScoreOnCompletion`       | Boolean    | `true`, `false`                           | Automatically prompts the user to rate the anime upon completion.                                 |
@@ -391,8 +394,9 @@ If the browser reaches the localhost callback page but curd does not continue au
 | `Player`                  | String     | any mpv-compatible binary (e.g. `mpv`, `iina`) | Player binary used for playback. If not found, Curd falls back to `mpv`.                          |
 | `SaveMpvSpeed`            | Boolean    | `true`, `false`                           | Retains the playback speed set in MPV for next episode.                                           |
 | `SkipFiller`              | Boolean    | `true`, `false`                           | Skips filler episodes when supported.                                                             |
-| `MenuOrder`               | String     | Comma-separated list                      | Controls which menu items appear and their order. Available options: `CURRENT`, `ALL`, `UNTRACKED`, `UPDATE`, `CONTINUE_LAST`, `PLANNING`, `COMPLETED`, `PAUSED`, `DROPPED`, `REWATCHING`, `TRACKER`, `PROVIDER`. Only listed items will be shown. Default: `CURRENT,ALL,UNTRACKED,UPDATE,CONTINUE_LAST,TRACKER,PROVIDER` |
-| `Provider`                | List       | `["allanime"]`, `["animepahe"]`, `["allanime","animepahe"]`, `["allanime","no-animepahe"]` | Sets the ordered content-provider fallback list. Curd tries providers from left to right for the requested stream. If AllAnime has no search results or the requested episode stream is unavailable and Animepahe is not configured, Curd asks before enabling Animepahe and warns that DDoS-Guard verification may require a ~500 MB chromium download. Declining stores `no-animepahe` so Curd does not ask again. Legacy single values like `allanime` are migrated to list form. Default: `["allanime"]` |
+| `MenuOrder`               | String     | Comma-separated list                      | Controls which menu items appear and their order. Available options: `CURRENT`, `ALL`, `UNTRACKED`, `UPDATE`, `REMAP_PROVIDER`, `CONTINUE_LAST`, `PLANNING`, `COMPLETED`, `PAUSED`, `DROPPED`, `REWATCHING`, `TRACKER`, `PROVIDER`. Only listed items will be shown. Default: `CURRENT,ALL,UNTRACKED,UPDATE,REMAP_PROVIDER,CONTINUE_LAST,TRACKER,PROVIDER` |
+| `Provider`                | List       | `["anineko"]`, `["allanime"]`, `["animepahe"]`, `["anineko","allanime"]`, `["allanime","animepahe"]`, `["allanime","no-animepahe"]`, `stacked` | Sets the ordered content-provider fallback list. Curd tries providers from left to right for the requested stream. `stacked` / `all` uses every enabled provider. AllAnime and Animepahe are disabled by default; include them in `Provider` to enable. If the primary provider has no search results or stream and Animepahe is not configured, Curd may ask before enabling Animepahe. Default: `["anineko"]` |
+| `ManualProviderSearch`    | Boolean    | `true`, `false`                           | Skip automatic provider matching and always show provider search results for manual selection. Displays a hint with the tracker title, format (TV/Movie/etc.), episode count, and sub/dub mode. Default: `false` |
 | `TrackingLocal`           | Boolean    | `true`                                    | Legacy compatibility flag. Local playback history is always enabled.                              |
 | `TrackingRemote`          | Enum       | `none`, `anilist`, `myanimelist`, `anilist+myanimelist` | Selects which remote tracker curd syncs with.                                           |
 | `TrackingConfigured`      | Boolean    | `true`, `false`                           | Internal flag used to remember that the startup tracking prompt has already been completed.       |
@@ -416,6 +420,7 @@ If the browser reaches the localhost callback page but curd does not continue au
 - [MyAnimeList API](https://myanimelist.net/apiconfig/references/api/v2) - MyAnimeList OAuth and tracking sync
 - [AniSkip API](https://api.aniskip.com/api-docs) - Get anime intro and outro timings
 - [AllAnime Content](https://allanime.to/) - Fetch anime url
+- [AniNeko Content](https://anineko.to/) - Alternative provider with soft/hard sub stream selection
 - [Animepahe Content](https://animepahe.pw/) - Alternative provider for 1080p streams
 - [Jikan](https://jikan.moe/) - Get filler episode number
 

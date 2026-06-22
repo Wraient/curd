@@ -454,6 +454,10 @@ func renewMyAnimeListAccessToken(config *CurdConfig, tokenPath string, token *OA
 		Log(fmt.Sprintf("Failed to refresh MyAnimeList token after %s: %v", reason, refreshErr))
 	}
 
+	CurdOut("MyAnimeList sign-in required. Opening browser...")
+	Log(fmt.Sprintf("Starting MyAnimeList browser authentication after %s", reason))
+	clearStoredTokenFile(tokenPath)
+
 	accessToken, authErr := authenticateMyAnimeList(config, tokenPath)
 	if authErr != nil {
 		return "", authErr
@@ -547,24 +551,26 @@ func myAnimeListRequest(config *CurdConfig, method, requestURL string, form url.
 			return readErr
 		}
 
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
-			tokenPath := myAnimeListTokenPath(config)
-			storedToken, tokenErr := loadToken(tokenPath)
-			if tokenErr != nil {
-				Log(fmt.Sprintf("Failed to load MyAnimeList token after unauthorized response, starting login: %v", tokenErr))
-				accessToken, authErr := renewMyAnimeListAccessToken(config, tokenPath, nil, "unauthorized API response")
-				if authErr != nil {
-					return authErr
+		if resp.StatusCode == http.StatusUnauthorized || isInvalidTokenResponse(resp.StatusCode, body) {
+			if attempt == 0 {
+				tokenPath := myAnimeListTokenPath(config)
+				storedToken, tokenErr := loadToken(tokenPath)
+				if tokenErr != nil {
+					Log(fmt.Sprintf("Failed to load MyAnimeList token after unauthorized response, starting login: %v", tokenErr))
+					accessToken, authErr := renewMyAnimeListAccessToken(config, tokenPath, nil, "unauthorized API response")
+					if authErr != nil {
+						return authErr
+					}
+					token = accessToken
+					continue
+				}
+				accessToken, renewErr := renewMyAnimeListAccessToken(config, tokenPath, storedToken, "unauthorized API response")
+				if renewErr != nil {
+					return renewErr
 				}
 				token = accessToken
 				continue
 			}
-			accessToken, renewErr := renewMyAnimeListAccessToken(config, tokenPath, storedToken, "unauthorized API response")
-			if renewErr != nil {
-				return renewErr
-			}
-			token = accessToken
-			continue
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -724,6 +730,7 @@ func lookupAniListMediaByMalID(malID int) (Media, string, error) {
 			episodes
 			duration
 			status
+			format
 			title {
 				romaji
 				english
@@ -760,6 +767,7 @@ func lookupAniListMediaByMalID(malID int) (Media, string, error) {
 		Episodes: 0,
 		Duration: 0,
 		Status:   safeAniListString(mediaData["status"]),
+		Format:   safeAniListString(mediaData["format"]),
 		Title: AnimeTitle{
 			Romaji:   safeAniListTitle(mediaData, "romaji"),
 			English:  safeAniListTitle(mediaData, "english"),
@@ -833,7 +841,7 @@ func lookupAniListMediaByMalIDs(malIDs []int) (map[int]aniListMediaLookupResult,
 	var query strings.Builder
 	query.WriteString("query {")
 	for idx, malID := range malIDs {
-		fmt.Fprintf(&query, " m%d: Media(idMal: %d, type: ANIME) { id idMal episodes duration status title { romaji english native } coverImage { large } }", idx, malID)
+		fmt.Fprintf(&query, " m%d: Media(idMal: %d, type: ANIME) { id idMal episodes duration status format title { romaji english native } coverImage { large } }", idx, malID)
 	}
 	query.WriteString(" }")
 
@@ -876,6 +884,7 @@ func lookupAniListMediaByMalIDs(malIDs []int) (map[int]aniListMediaLookupResult,
 			Episodes: 0,
 			Duration: 0,
 			Status:   safeAniListString(rawMedia["status"]),
+			Format:   safeAniListString(rawMedia["format"]),
 			Title: AnimeTitle{
 				Romaji:   safeAniListTitle(rawMedia, "romaji"),
 				English:  safeAniListTitle(rawMedia, "english"),

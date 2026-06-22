@@ -70,7 +70,7 @@ func UsesDualRemoteTracking(config *CurdConfig) bool {
 
 func trackingCategoryEnabled(config *CurdConfig, key string) bool {
 	switch key {
-	case "CURRENT", "ALL", "UNTRACKED", "CONTINUE_LAST", "PROVIDER":
+	case "CURRENT", "ALL", "UNTRACKED", "CONTINUE_LAST", "REMAP_PROVIDER", "PROVIDER":
 		return true
 	case "UPDATE", "PLANNING", "COMPLETED", "PAUSED", "DROPPED", "REWATCHING":
 		return UsesRemoteTracking(config)

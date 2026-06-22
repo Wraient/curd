@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wraient/curd/internal/providers/animepahe"
 )
 
 // Function to add an anime entry
@@ -54,7 +56,7 @@ func normalizeLocalProviderID(providerName, providerID, animeName string) string
 		return ""
 	}
 
-	stableID := stableAnimepaheProviderID(providerID)
+	stableID := animepahe.StableProviderID(providerID)
 	if stableID != "" {
 		return stableID
 	}
@@ -343,9 +345,82 @@ func LocalFindAnime(animeList []Anime, anilistID int, allanimeID string) *Anime 
 	return bestMatch
 }
 
+func LocalRemapAnimeProvider(databaseFile string, anilistID int, providerName, providerID, animeName string, watchingEpisode, playbackTime, animeDuration int) error {
+	providerID = normalizeLocalProviderID(providerName, providerID, animeName)
+	animeList := LocalGetAllAnime(databaseFile)
+
+	target := LocalFindAnime(animeList, anilistID, "")
+	if target == nil {
+		newAnime := Anime{
+			AnilistId:  anilistID,
+			ProviderId: providerID,
+			ProviderName: providerName,
+			Ep: Episode{
+				Number: watchingEpisode,
+				Player: playingVideo{PlaybackTime: playbackTime},
+				Duration: animeDuration,
+			},
+			Title: AnimeTitle{
+				English: animeName,
+				Romaji:  animeName,
+			},
+		}
+		animeList = append(animeList, newAnime)
+	} else {
+		oldProviderID := normalizeLocalProviderID(target.ProviderName, target.ProviderId, GetAnimeName(*target))
+		updated := false
+		for i := range animeList {
+			entry := &animeList[i]
+			if entry.AnilistId != anilistID {
+				continue
+			}
+			entryProviderID := normalizeLocalProviderID(entry.ProviderName, entry.ProviderId, GetAnimeName(*entry))
+			if entryProviderID != oldProviderID {
+				continue
+			}
+			entry.ProviderId = providerID
+			entry.ProviderName = providerName
+			entry.Ep.Number = watchingEpisode
+			entry.Ep.Player.PlaybackTime = playbackTime
+			entry.Ep.Duration = animeDuration
+			if animeName != "" {
+				entry.Title.English = animeName
+				entry.Title.Romaji = animeName
+			}
+			updated = true
+		}
+		if !updated {
+			return fmt.Errorf("failed to update local history for AniList ID %d", anilistID)
+		}
+	}
+
+	file, err := os.Create(databaseFile)
+	if err != nil {
+		return fmt.Errorf("create local history file: %w", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	for _, anime := range animeList {
+		record := []string{
+			strconv.Itoa(anime.AnilistId),
+			normalizeLocalProviderID(anime.ProviderName, anime.ProviderId, GetAnimeName(anime)),
+			strconv.Itoa(anime.Ep.Number),
+			strconv.Itoa(anime.Ep.Player.PlaybackTime),
+			strconv.Itoa(anime.Ep.Duration),
+			anime.ProviderName,
+			GetAnimeName(anime),
+		}
+		if err := writer.Write(record); err != nil {
+			return fmt.Errorf("write local history: %w", err)
+		}
+	}
+	writer.Flush()
+	return writer.Error()
+}
+
 func WatchUntracked(userCurdConfig *CurdConfig) {
 	var query string
-	var animeList []SelectionOption
 	var err error
 	var anime Anime
 
@@ -358,70 +433,22 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 			ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
 		}
 
-		// Search for the anime
-		animeList, err = SearchAnime(query, userCurdConfig.SubOrDub)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to search anime: %v", err))
+		providerID, providerName, back, searchErr := ResolveUntrackedProviderSearch(userCurdConfig, query)
+		if searchErr != nil {
+			Log(fmt.Sprintf("Failed to search anime: %v", searchErr))
 			ExitCurd(fmt.Errorf("Failed to search anime"))
 		}
-
-		if len(animeList) == 0 {
-			// Prompt user for manual query
-			for {
-				var manualQuery string
-				manualQuery, err = promptText(userCurdConfig, fmt.Sprintf("No results found for '%s'. Press Enter to search with the original name, or enter a custom name to search on AllAnime.", query), true)
-				if err != nil {
-					Log("Error getting user input: " + err.Error())
-					ExitCurd(fmt.Errorf("Error getting user input: " + err.Error()))
-				}
-
-				// If empty, use original query name
-				if manualQuery == "" {
-					manualQuery = query
-				}
-
-				animeList, err = SearchAnime(manualQuery, userCurdConfig.SubOrDub)
-				if err != nil {
-					Log(fmt.Sprintf("Failed to search anime with query '%s': %v", manualQuery, err))
-					ExitCurd(fmt.Errorf("Failed to search anime"))
-				}
-
-				if len(animeList) > 0 {
-					break
-				}
-			}
+		if back {
+			return
 		}
-
-		// Select anime from search results
-		selectedAnime, err := DynamicSelect(animeList)
-		if err != nil {
-			Log(fmt.Sprintf("Failed to select anime: %v", err))
-			ExitCurd(fmt.Errorf("Failed to select anime"))
-		}
-
-		if selectedAnime.Key == "-1" {
+		if providerID == "" {
 			ExitCurd(nil)
 		}
 
-		// Back goes to home menu
-		if selectedAnime.Key == "-2" {
-			return // Return to caller (home menu)
-		}
-
-		anime.ProviderId = selectedAnime.Key
-		if providerName, rawProviderID, ok := ParseProviderQualifiedID(selectedAnime.Key); ok {
-			anime.ProviderName = providerName
-			anime.ProviderId = rawProviderID
-		} else {
-			anime.ProviderName = configuredProviderNames(userCurdConfig)[0]
-		}
-		if selectedAnime.Title != "" {
-			anime.Title.English = selectedAnime.Title
-			anime.Title.Romaji = selectedAnime.Title
-		} else {
-			anime.Title.English = selectedAnime.Label
-			anime.Title.Romaji = selectedAnime.Label
-		}
+		anime.ProviderId = providerID
+		anime.ProviderName = providerName
+		anime.Title.English = query
+		anime.Title.Romaji = query
 		break
 	}
 
@@ -439,7 +466,24 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 		resolvedLink, err := ResolveEpisodeURLForPlayback(*userCurdConfig, &anime, anime.Ep.Number)
 		if err != nil {
 			Log(fmt.Sprintf("Failed to get episode link: %v", err))
-			ExitCurd(fmt.Errorf("Failed to get episode link"))
+			switch promptEpisodeLinkFailureRecovery(userCurdConfig) {
+			case "remap":
+				if RemapAnimeProviderOnEpisodeFailure(userCurdConfig, &anime, nil) {
+					continue
+				}
+			case "episode":
+				episodeNumber, promptErr := promptPositiveEpisodeNumber(userCurdConfig, "Enter the episode number")
+				if promptErr != nil {
+					Log(fmt.Sprintf("Invalid episode number: %v", promptErr))
+					CurdOut("Invalid episode number")
+					continue
+				}
+				anime.Ep.Number = episodeNumber
+				continue
+			default:
+				ExitCurd(nil)
+			}
+			continue
 		}
 		link := resolvedLink.Links
 		applyStreamPlaybackHints(&anime, link, resolvedLink.LinkHints)
