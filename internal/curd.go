@@ -157,12 +157,12 @@ func ExitCurd(err error) {
 			fmt.Println("Press Enter to exit")
 			var wait string
 			fmt.Scanln(&wait)
-			os.Exit(1)
+			exitWithRestore(1)
 		} else {
-			os.Exit(1)
+			exitWithRestore(1)
 		}
 	}
-	os.Exit(0)
+	exitWithRestore(0)
 }
 
 func CurdOut(data interface{}) {
@@ -983,9 +983,9 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 		needsProviderSearch := false
 		if animePointer == nil {
 			needsProviderSearch = true
-		} else if animePointer.ProviderName != "" && !ProviderStackContains(userCurdConfig, animePointer.ProviderName) {
+		} else if animePointer.ProviderId == "" {
 			needsProviderSearch = true
-		} else if animePointer.ProviderName == "" && !ProviderStackContains(userCurdConfig, "allanime") {
+		} else if animePointer.ProviderName != "" && !ProviderStackContains(userCurdConfig, animePointer.ProviderName) {
 			needsProviderSearch = true
 		}
 
@@ -1296,17 +1296,17 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 	if err := resolveRuntimeProviderID(userCurdConfig, anime); err != nil {
 		Log(fmt.Sprintf("Failed to resolve provider id: %v", err))
 		CurdOut("Failed to resolve anime provider id: " + err.Error())
-		os.Exit(1)
+		exitWithRestore(1)
 	}
 
 	// Validate inputs
 	if anime.ProviderId == "" {
 		CurdOut("Error: No anime ID found")
-		os.Exit(1)
+		exitWithRestore(1)
 	}
 	if anime.Ep.Number <= 0 {
 		CurdOut("Error: Invalid episode number")
-		os.Exit(1)
+		exitWithRestore(1)
 	}
 
 	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
@@ -1477,7 +1477,7 @@ episodeLinksReady:
 
 	if err != nil {
 		Log("Failed to start mpv")
-		os.Exit(1)
+		exitWithRestore(1)
 	}
 
 	return mpvSocketPath
@@ -2148,6 +2148,6 @@ func ChangeProvider(userCurdConfig *CurdConfig) {
 		SaveConfigToFile(configPath, configMap)
 	}
 
-	CurdOut(fmt.Sprintf("\nProvider successfully changed to %s.\n", selected.Label))
+	CurdOut(fmt.Sprintf("\nProvider successfully changed to %s.\n", providerConfigDisplayLabel(userCurdConfig.Provider)))
 	time.Sleep(1 * time.Second)
 }

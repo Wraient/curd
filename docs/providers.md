@@ -327,6 +327,9 @@ Document the decision in a short ADR before building. The compile-time registry 
 
 | Provider | Package | Notes |
 |----------|---------|-------|
+| Senshi | `internal/providers/senshi` | REST search/episodes, direct HLS from `/episode-embeds`, MAL id keys and `/posters/{mal_id}.webp` thumbnails |
+| AniPub | `internal/providers/anipub` | JSON search/info/details APIs, MegaPlay embed resolution via `/stream/getSources`, MAL id in `ExtraData` for tracker matching |
+| AniNeko | `internal/providers/anineko` | AJAX search, HTML scrape, bibiemb/vibeplayer embed resolution, `SubStyle` / `HintResolver` |
 | AllAnime | `internal/providers/allanime` | GraphQL search/episodes, parallel stream resolution, `HintResolver` |
 | Animepahe | `internal/providers/animepahe` | DDoS-Guard + rod browser, `IDResolver`, `DefaultDisabled`, `OptOutToken` |
 

@@ -58,7 +58,7 @@ func parseProviderConfigParts(rawProvider string) []string {
 func parseProviderConfig(rawProvider string) ([]string, bool) {
 	rawProvider = strings.TrimSpace(rawProvider)
 	if rawProvider == "" {
-		rawProvider = firstEnabledProviderName()
+		return defaultEnabledProviderStack(), false
 	}
 
 	normalizedRaw := strings.ToLower(rawProvider)
@@ -108,7 +108,7 @@ func parseProviderConfig(rawProvider string) ([]string, bool) {
 }
 
 func configuredProviderNames(config *CurdConfig) []string {
-	rawProvider := firstEnabledProviderName()
+	rawProvider := stackedProviderConfigValue
 	if config != nil && strings.TrimSpace(config.Provider) != "" {
 		rawProvider = config.Provider
 	}
@@ -122,7 +122,15 @@ func ConfiguredProviderNames(config *CurdConfig) []string {
 }
 
 func canonicalProviderConfigValue(rawProvider string) string {
+	rawProvider = strings.TrimSpace(rawProvider)
+	if isStackedProviderConfig(rawProvider) {
+		return stackedProviderConfigValue
+	}
+
 	names, animepaheDeclined := parseProviderConfig(rawProvider)
+	if !animepaheDeclined && providerListsEqual(names, defaultEnabledProviderStack()) {
+		return stackedProviderConfigValue
+	}
 	return formatProviderConfigValue(names, animepaheDeclined)
 }
 

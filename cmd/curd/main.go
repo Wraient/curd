@@ -48,6 +48,13 @@ func main() {
 		fmt.Println("Error loading config:", err)
 		return
 	}
+	internal.SetCurdVersion(resolvedVersion())
+	if updated, migrateErr := internal.MigrateOnVersionUpgrade(configFilePath, &userCurdConfig, resolvedVersion()); migrateErr != nil {
+		fmt.Println("Error applying storage migration:", migrateErr)
+		return
+	} else if updated {
+		fmt.Println("Updated provider settings to the current default fallback stack.")
+	}
 	internal.SetGlobalConfig(&userCurdConfig)
 
 	logFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "debug.log")
@@ -177,6 +184,7 @@ func main() {
 
 	// Setup screen for interactive mode (only if not changing token)
 	internal.ClearScreen()
+	internal.InstallTerminalInterruptHandler()
 	defer internal.RestoreScreen()
 
 	// Set SubOrDub based on the flags

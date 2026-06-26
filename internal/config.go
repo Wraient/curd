@@ -105,7 +105,7 @@ func defaultConfigMap() map[string]string {
 		"AlternateScreen":            "true",
 		"DiscordPresence":            "true",
 		"DiscordClientId":            "1287457464148820089",
-		"Provider":                   "[\"anineko\"]",
+		"Provider":                   "stacked",
 		"DisabledProviders":          "[]",
 		"ManualProviderSearch":     "false",
 		"TrackingLocal":              "true",

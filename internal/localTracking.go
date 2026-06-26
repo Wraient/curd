@@ -498,7 +498,7 @@ func WatchUntracked(userCurdConfig *CurdConfig) {
 		mpvSocketPath, err := StartVideo(PrioritizeLink(link), []string{}, fmt.Sprintf("%s - Episode %d", GetAnimeName(anime), anime.Ep.Number), &anime)
 		if err != nil {
 			Log("Failed to start mpv")
-			os.Exit(1)
+			exitWithRestore(1)
 		}
 
 		anime.Ep.Player.SocketPath = mpvSocketPath

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/wraient/curd/internal/providers/animepahe"
+	"github.com/wraient/curd/internal/providers/anipub"
+	"github.com/wraient/curd/internal/providers/senshi"
 )
 
 var selectionEpisodeCountRE = regexp.MustCompile(`\((\d+)\s+episodes?\)`)
@@ -48,6 +50,12 @@ func episodeCountFromSelectionOption(option SelectionOption) (int, bool) {
 
 	if option.ExtraData != nil {
 		if item, ok := option.ExtraData.(animepahe.SearchItem); ok && item.Episodes > 0 {
+			return item.Episodes, true
+		}
+		if item, ok := option.ExtraData.(senshi.SearchItem); ok && item.Episodes > 0 {
+			return item.Episodes, true
+		}
+		if item, ok := option.ExtraData.(anipub.SearchItem); ok && item.Episodes > 0 {
 			return item.Episodes, true
 		}
 	}

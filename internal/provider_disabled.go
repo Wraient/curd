@@ -100,31 +100,51 @@ func filterEnabledProviders(names []string) []string {
 	return enabled
 }
 
+var preferredProviderOrder = []string{"senshi", "anipub", "anineko", "allanime", "animepahe"}
+
 func defaultEnabledProviderStack() []string {
-	names := providers.RegisteredNames()
-	return filterEnabledProviders(names)
+	registered := providers.RegisteredNames()
+	registeredSet := make(map[string]struct{}, len(registered))
+	for _, name := range registered {
+		registeredSet[name] = struct{}{}
+	}
+
+	ordered := make([]string, 0, len(registered))
+	for _, name := range preferredProviderOrder {
+		if _, ok := registeredSet[name]; ok {
+			ordered = append(ordered, name)
+		}
+	}
+	for _, name := range registered {
+		found := false
+		for _, preferred := range preferredProviderOrder {
+			if name == preferred {
+				found = true
+				break
+			}
+		}
+		if !found {
+			ordered = append(ordered, name)
+		}
+	}
+	return filterEnabledProviders(ordered)
 }
 
 func providerSelectionOptions() []SelectionOption {
 	enabled := defaultEnabledProviderStack()
-	options := make([]SelectionOption, 0, len(enabled)*len(enabled))
+	options := make([]SelectionOption, 0, len(enabled)+1)
+
+	stackLabel := providerConfigDisplayLabel(stackedProviderConfigValue)
+	options = append(options, SelectionOption{
+		Key:   stackedProviderConfigValue,
+		Label: stackLabel,
+	})
+
 	for _, name := range enabled {
 		options = append(options, SelectionOption{
 			Key:   formatProviderConfigValue([]string{name}, false),
 			Label: name,
 		})
-	}
-	for _, primary := range enabled {
-		for _, secondary := range enabled {
-			if primary == secondary {
-				continue
-			}
-			names := []string{primary, secondary}
-			options = append(options, SelectionOption{
-				Key:   formatProviderConfigValue(names, false),
-				Label: primary + ", then " + secondary,
-			})
-		}
 	}
 	return options
 }
@@ -134,7 +154,7 @@ func firstEnabledProviderName() string {
 	if len(enabled) > 0 {
 		return enabled[0]
 	}
-	return "anineko"
+	return "senshi"
 }
 
 func ensureEnabledProviderNames(names []string) []string {

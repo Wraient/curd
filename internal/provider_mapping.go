@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/wraient/curd/internal/providers/animepahe"
+	"github.com/wraient/curd/internal/providers/anipub"
 )
 
 type ProviderMappingOutcome int
@@ -49,11 +50,14 @@ func (s *providerMappingSearchState) currentProviderLabel() string {
 }
 
 func (s *providerMappingSearchState) nextProviderLabel() string {
-	if !s.sequential {
-		if len(s.allProviders) > 0 {
-			return s.allProviders[0]
-		}
+	if len(s.allProviders) == 0 {
 		return ""
+	}
+	if !s.sequential {
+		if len(s.allProviders) <= 1 {
+			return ""
+		}
+		return s.allProviders[0]
 	}
 	next := s.providerIndex + 1
 	if next < len(s.allProviders) {
@@ -63,10 +67,16 @@ func (s *providerMappingSearchState) nextProviderLabel() string {
 }
 
 func (s *providerMappingSearchState) advanceToNextProvider() bool {
+	if len(s.allProviders) == 0 {
+		return false
+	}
 	if !s.sequential {
+		if len(s.allProviders) <= 1 {
+			return false
+		}
 		s.sequential = true
 		s.providerIndex = 0
-		return len(s.allProviders) > 0
+		return true
 	}
 	s.providerIndex++
 	return s.providerIndex < len(s.allProviders)
@@ -116,9 +126,31 @@ func autoMatchProviderListing(config *CurdConfig, anime *Anime, animeList []Sele
 
 	anilistRegex := regexp.MustCompile(`anilistcdn/media/anime/cover/(?:large|medium)/(?:bx)?(\d+)`)
 	malRegex := regexp.MustCompile(`myanimelist\.net/images/anime/[^/]+/([^/]+\.jpg)`)
+	senshiPosterRE := regexp.MustCompile(`/posters/(\d+)(?:\.webp)?`)
+
+	if anime.MalId == 0 {
+		anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
+	}
+	if anime.MalId != 0 {
+		malIDStr := strconv.Itoa(anime.MalId)
+		for i, option := range animeList {
+			if option.Key == malIDStr {
+				Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s', Thumbnail='%s'", i, option.Key, option.Label, option.Thumbnail))
+				anime.ProviderId = option.Key
+				Log(fmt.Sprintf("Found MAL ID provider key match! Setting ProviderId to: %s", anime.ProviderId))
+				return true
+			}
+		}
+	}
 
 	for i, option := range animeList {
 		Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s', Thumbnail='%s'", i, option.Key, option.Label, option.Thumbnail))
+
+		if malID := malIDFromProviderExtraData(option.ExtraData); malID != 0 && anime.MalId != 0 && malID == anime.MalId {
+			anime.ProviderId = option.Key
+			Log(fmt.Sprintf("Found provider MAL ID extra-data match! Setting ProviderId to: %s", anime.ProviderId))
+			return true
+		}
 
 		if strings.Contains(option.Thumbnail, "anilist.co") {
 			matches := anilistRegex.FindStringSubmatch(option.Thumbnail)
@@ -154,6 +186,13 @@ func autoMatchProviderListing(config *CurdConfig, anime *Anime, animeList []Sele
 						return true
 					}
 				}
+			}
+		} else if strings.Contains(option.Thumbnail, "/posters/") {
+			matches := senshiPosterRE.FindStringSubmatch(option.Thumbnail)
+			if len(matches) > 1 && anime.MalId != 0 && matches[1] == strconv.Itoa(anime.MalId) {
+				anime.ProviderId = option.Key
+				Log(fmt.Sprintf("Found Senshi MAL poster match! Setting ProviderId to: %s", anime.ProviderId))
+				return true
 			}
 		}
 	}
@@ -373,14 +412,57 @@ func promptProviderMatchRecovery(config *CurdConfig, state *providerMappingSearc
 	return selected.Key, nil
 }
 
-func applySelectedProviderMapping(config *CurdConfig, anime *Anime, selected SelectionOption) {
+func activeProviderName(config *CurdConfig, state *providerMappingSearchState) string {
+	if state != nil && state.sequential {
+		if name := state.currentProviderLabel(); name != "" {
+			return name
+		}
+	}
+	names := configuredProviderNames(config)
+	if len(names) > 0 {
+		return names[0]
+	}
+	return firstEnabledProviderName()
+}
+
+func providerNameFromSelectionLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if idx := strings.LastIndex(label, " ["); idx > 0 && strings.HasSuffix(label, "]") {
+		name := strings.TrimSpace(label[idx+2 : len(label)-1])
+		if normalized := normalizeProviderName(name); normalized != "" {
+			return normalized
+		}
+	}
+	return ""
+}
+
+func providerNameFromSelection(config *CurdConfig, state *providerMappingSearchState, selected SelectionOption) string {
+	if providerName, _, ok := ParseProviderQualifiedID(selected.Key); ok {
+		return providerName
+	}
+	if name := providerNameFromSelectionLabel(selected.Label); name != "" {
+		return name
+	}
+	return activeProviderName(config, state)
+}
+
+func applyMatchedProviderMapping(config *CurdConfig, state *providerMappingSearchState, anime *Anime) {
+	if providerName, rawProviderID, ok := ParseProviderQualifiedID(anime.ProviderId); ok {
+		anime.ProviderName = providerName
+		anime.ProviderId = rawProviderID
+		return
+	}
+	anime.ProviderName = activeProviderName(config, state)
+}
+
+func applySelectedProviderMapping(config *CurdConfig, state *providerMappingSearchState, anime *Anime, selected SelectionOption) {
 	anime.ProviderId = selected.Key
 	if providerName, rawProviderID, ok := ParseProviderQualifiedID(anime.ProviderId); ok {
 		anime.ProviderName = providerName
 		anime.ProviderId = rawProviderID
-	} else {
-		anime.ProviderName = configuredProviderNames(config)[0]
+		return
 	}
+	anime.ProviderName = providerNameFromSelection(config, state, selected)
 }
 
 func promptCustomProviderSearchQuery(config *CurdConfig, currentQuery, hint string) (string, bool, bool, error) {
@@ -441,12 +523,7 @@ func resolveAnimeProviderMapping(config *CurdConfig, anime *Anime, query string,
 
 		anime.ProviderId = ""
 		if !manualOnly && autoMatchProviderListing(config, anime, animeList, state.query, anilistEntry) {
-			if providerName, rawProviderID, ok := ParseProviderQualifiedID(anime.ProviderId); ok {
-				anime.ProviderName = providerName
-				anime.ProviderId = rawProviderID
-			} else {
-				anime.ProviderName = configuredProviderNames(config)[0]
-			}
+			applyMatchedProviderMapping(config, state, anime)
 			return ProviderMappingOK, nil
 		}
 
@@ -463,7 +540,7 @@ func resolveAnimeProviderMapping(config *CurdConfig, anime *Anime, query string,
 					case "-2":
 						return ProviderMappingBack, nil
 					default:
-						applySelectedProviderMapping(config, anime, selected)
+						applySelectedProviderMapping(config, state, anime, selected)
 						return ProviderMappingOK, nil
 					}
 				}
@@ -516,7 +593,7 @@ func resolveAnimeProviderMapping(config *CurdConfig, anime *Anime, query string,
 				case "-2":
 					return ProviderMappingBack, nil
 				default:
-					applySelectedProviderMapping(config, anime, selected)
+					applySelectedProviderMapping(config, state, anime, selected)
 					return ProviderMappingOK, nil
 				}
 			case "custom", "next_provider":
@@ -831,7 +908,16 @@ func ResolveUntrackedProviderSearch(config *CurdConfig, initialQuery string) (pr
 			if name, rawID, ok := ParseProviderQualifiedID(selected.Key); ok {
 				return rawID, name, false, nil
 			}
-			return selected.Key, configuredProviderNames(config)[0], false, nil
+			return selected.Key, providerNameFromSelection(config, state, selected), false, nil
 		}
+	}
+}
+
+func malIDFromProviderExtraData(extra any) int {
+	switch item := extra.(type) {
+	case anipub.SearchItem:
+		return item.MalID
+	default:
+		return 0
 	}
 }

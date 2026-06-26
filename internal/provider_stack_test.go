@@ -95,11 +95,11 @@ func TestConfiguredProviderNamesAcceptsOrderedLists(t *testing.T) {
 		cfg  *CurdConfig
 		want []string
 	}{
-		{name: "empty", cfg: &CurdConfig{}, want: []string{"allanime"}},
+		{name: "empty", cfg: &CurdConfig{}, want: []string{"senshi", "anipub", "anineko", "allanime", "animepahe"}},
 		{name: "json list", cfg: &CurdConfig{Provider: `["allanime","animepahe"]`}, want: []string{"allanime", "animepahe"}},
 		{name: "comma list", cfg: &CurdConfig{Provider: "animepahe,allanime"}, want: []string{"animepahe", "allanime"}},
 		{name: "plus list", cfg: &CurdConfig{Provider: "allanime+animepahe"}, want: []string{"allanime", "animepahe"}},
-		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"allanime", "animepahe", "anineko"}},
+		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"senshi", "anipub", "anineko", "allanime", "animepahe"}},
 	}
 
 	for _, tc := range cases {
@@ -125,7 +125,7 @@ func TestCanonicalProviderConfigValueMigratesLegacyValuesWithoutAddingAnimepahe(
 		{name: "legacy animepahe", raw: "animepahe", want: `["animepahe"]`},
 		{name: "ordered stack", raw: "animepahe,allanime", want: `["animepahe","allanime"]`},
 		{name: "animepahe opt out", raw: "allanime,no-animepahe", want: `["allanime","no-animepahe"]`},
-		{name: "empty default", raw: "", want: `["anineko"]`},
+		{name: "empty default", raw: "", want: "stacked"},
 	}
 
 	for _, tc := range cases {

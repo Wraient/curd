@@ -716,12 +716,14 @@ func dynamicSelectInternal(options []SelectionOption, refreshConfig *SelectionRe
 
 	finalModel, err := p.Run()
 	close(stopRefresh)
-	if err != nil {
-		return SelectionOption{}, err
-	}
 
+	// Bubbletea may leave the terminal in raw mode; always reset cursor state.
 	fmt.Print("\033[?25h")
 	fmt.Print("\033[?7h")
+	if err != nil {
+		RestoreScreen()
+		return SelectionOption{}, err
+	}
 
 	finalSelectionModel, ok := finalModel.(*Model)
 	if !ok {
