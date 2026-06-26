@@ -17,7 +17,7 @@ var version string // Will be set by ldflags during build
 
 func resolvedVersion() string {
 	if version == "" {
-		return "2.0.0"
+		return "2.0.1"
 	}
 
 	return version
