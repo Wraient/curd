@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"github.com/wraient/curd/internal/providers"
-	"github.com/wraient/curd/internal/providers/animepahe"
+	"github.com/wraient/curd/internal/providers/anipub"
+	"github.com/wraient/curd/internal/providers/senshi"
 )
 
 // Provider interface defines methods for an anime provider.
@@ -829,6 +830,47 @@ func normalizeSearchTitle(title string) string {
 	return strings.Join(strings.Fields(title), " ")
 }
 
+// sequelMarkerTokens lists words/numerals that, when they're the *only* extra
+// tokens distinguishing two otherwise-identical titles, mark a different
+// season/entry in the same franchise (e.g. "Sword Art Online" vs "Sword Art
+// Online II", which is a separate 24-episode show, not a looser-formatted
+// title for the same 25-episode one).
+var sequelMarkerTokens = map[string]bool{
+	"ii": true, "iii": true, "iv": true, "v": true, "vi": true, "vii": true, "viii": true, "ix": true, "x": true,
+	"2": true, "3": true, "4": true, "5": true, "6": true, "7": true, "8": true, "9": true,
+	"2nd": true, "3rd": true, "4th": true, "5th": true, "6th": true,
+	"first": true, "second": true, "third": true, "fourth": true, "fifth": true,
+	"season": true, "cour": true, "part": true, "final": true,
+	"movie": true, "ova": true, "ona": true, "special": true, "recap": true,
+}
+
+// isLikelyDifferentSeason reports whether the longer of two normalized titles
+// is exactly the shorter title plus a trailing run of season/sequel tokens.
+// Plain substring containment (e.g. "Attack on Titan" vs "Attack on Titan:
+// Final Season") would otherwise score these as a fuzzy match on the same
+// show, when they're actually different entries with their own episode
+// numbering — the classic source of "picked season 2's stream for season 1"
+// mismatches.
+func isLikelyDifferentSeason(a, b string) bool {
+	shorter, longer := a, b
+	if len(a) > len(b) {
+		shorter, longer = b, a
+	}
+	if shorter == "" || !strings.HasPrefix(longer, shorter) {
+		return false
+	}
+	remainder := strings.TrimSpace(strings.TrimPrefix(longer, shorter))
+	if remainder == "" {
+		return false
+	}
+	for _, tok := range strings.Fields(remainder) {
+		if !sequelMarkerTokens[tok] {
+			return false
+		}
+	}
+	return true
+}
+
 func scoreProviderSearchOption(option SelectionOption, anime *Anime, query string, index, total int) int {
 	optionTitle := normalizeSearchTitle(option.Title)
 	if optionTitle == "" {
@@ -849,6 +891,8 @@ func scoreProviderSearchOption(option SelectionOption, anime *Anime, query strin
 		}
 		if optionTitle == targetTitle {
 			score += 100
+		} else if isLikelyDifferentSeason(optionTitle, targetTitle) {
+			score -= 50
 		} else if strings.Contains(optionTitle, targetTitle) || strings.Contains(targetTitle, optionTitle) {
 			score += 35
 		}
@@ -856,13 +900,100 @@ func scoreProviderSearchOption(option SelectionOption, anime *Anime, query strin
 	if anime.AnilistId != 0 && strings.Contains(option.Thumbnail, fmt.Sprintf("%d", anime.AnilistId)) {
 		score += 120
 	}
-	if anime.TotalEpisodes > 0 && strings.Contains(option.Label, fmt.Sprintf("(%d episodes)", anime.TotalEpisodes)) {
-		score += 20
+	if anime.MalId != 0 && providerOptionMalID(option) == anime.MalId {
+		score += 140
 	}
-	if item, ok := option.ExtraData.(animepahe.SearchItem); ok && anime.TotalEpisodes > 0 && item.Episodes == anime.TotalEpisodes {
-		score += 20
+	if count, ok := episodeCountFromSelectionOption(option); ok && anime.TotalEpisodes > 0 && count == anime.TotalEpisodes {
+		score += 30
 	}
 	return score
+}
+
+func providerOptionMalID(option SelectionOption) int {
+	switch item := option.ExtraData.(type) {
+	case anipub.SearchItem:
+		return item.MalID
+	case senshi.SearchItem:
+		return item.MalID
+	default:
+		return 0
+	}
+}
+
+func rawProviderOptionKey(providerName string, option SelectionOption) (string, bool) {
+	if option.Key == "" {
+		return "", false
+	}
+	if optionProviderName, rawProviderID, ok := ParseProviderQualifiedID(option.Key); ok {
+		return rawProviderID, optionProviderName == normalizeProviderName(providerName)
+	}
+	return option.Key, true
+}
+
+func providerOptionKeyMatches(providerName string, option SelectionOption, providerID string) bool {
+	rawKey, ok := rawProviderOptionKey(providerName, option)
+	return ok && rawKey == providerID
+}
+
+func providerSearchScore(option SelectionOption, anime *Anime, query string, index, total int) int {
+	return scoreProviderSearchOption(option, anime, query, index, total)
+}
+
+func verifiedSavedProviderID(provider Provider, anime *Anime, mode, providerID string) (string, bool) {
+	query := animeSearchTitle(anime)
+	if query == "" {
+		return providerID, true
+	}
+
+	options, err := provider.SearchAnime(query, mode)
+	if err != nil {
+		Log(fmt.Sprintf("Could not verify saved %s provider id %q for %q: %v; using saved id", provider.Name(), providerID, query, err))
+		return providerID, true
+	}
+	if len(options) == 0 {
+		Log(fmt.Sprintf("Could not verify saved %s provider id %q for %q: no search results; using saved id", provider.Name(), providerID, query))
+		return providerID, true
+	}
+
+	bestIndex := -1
+	bestScore := -1
+	savedIndex := -1
+	savedScore := -1
+	for i, option := range options {
+		score := providerSearchScore(option, anime, query, i, len(options))
+		if score > bestScore {
+			bestScore = score
+			bestIndex = i
+		}
+		if providerOptionKeyMatches(provider.Name(), option, providerID) {
+			savedIndex = i
+			savedScore = score
+		}
+	}
+
+	if savedIndex == -1 {
+		if bestIndex >= 0 && bestScore >= 100 {
+			best := options[bestIndex]
+			bestID, _ := rawProviderOptionKey(provider.Name(), best)
+			Log(fmt.Sprintf("Saved %s provider id %q for %q was not in search results; replacing with stronger match %q (%s, score %d)", provider.Name(), providerID, query, bestID, best.Label, bestScore))
+			return bestID, false
+		}
+		Log(fmt.Sprintf("Saved %s provider id %q for %q was not in search results and no confident replacement exists; using saved id", provider.Name(), providerID, query))
+		return providerID, true
+	}
+
+	if savedScore >= 100 && bestScore-savedScore < 30 {
+		return providerID, true
+	}
+
+	if bestIndex >= 0 && bestIndex != savedIndex && bestScore >= 100 {
+		best := options[bestIndex]
+		bestID, _ := rawProviderOptionKey(provider.Name(), best)
+		Log(fmt.Sprintf("Saved %s provider id %q for %q is weak (%s, score %d); replacing with %q (%s, score %d)", provider.Name(), providerID, query, options[savedIndex].Label, savedScore, bestID, best.Label, bestScore))
+		return bestID, false
+	}
+
+	return providerID, true
 }
 
 func selectBestProviderSearchResult(options []SelectionOption, anime *Anime, query string) (SelectionOption, bool) {
@@ -916,7 +1047,11 @@ func confidentProviderSearchMatch(options []SelectionOption, anime *Anime, query
 func findProviderIDForAnime(provider Provider, anime *Anime, mode string) (string, error) {
 	currentProviderName, currentProviderID := providerIDForAnime(anime)
 	if currentProviderName == provider.Name() && currentProviderID != "" {
-		return currentProviderID, nil
+		providerID, verified := verifiedSavedProviderID(provider, anime, mode, currentProviderID)
+		if verified {
+			return providerID, nil
+		}
+		return providerID, nil
 	}
 
 	query := animeSearchTitle(anime)

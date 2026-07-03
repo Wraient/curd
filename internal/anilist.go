@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // FindKeyByValue searches for a key associated with a given value in a map[string]string
@@ -140,6 +141,39 @@ func min3(a, b, c int) int {
 	return c
 }
 
+// tokenize splits a title/query into lowercase alphanumeric words, for
+// order-independent relevance scoring.
+func tokenize(s string) []string {
+	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+// wordOverlapScore reports how many of the query's words appear anywhere in
+// the title, as a fraction of the query's word count. Levenshtein distance
+// alone ranks titles by character-for-character closeness to the query IN
+// THE SAME ORDER, so a query combining words from two related titles (e.g.
+// "bunny girl senpai rascal does not dream", mixing a TV series' and its
+// movie sequel's titles) scores terribly against either real title even
+// though every word matches one of them — word overlap doesn't care about
+// order or which title contributed which word, only whether the word is
+// present, so it survives query reordering/combination that Levenshtein
+// treats as a near-total mismatch.
+func wordOverlapScore(title, query string) float64 {
+	queryWords := tokenize(query)
+	if len(queryWords) == 0 {
+		return 0
+	}
+	titleLower := strings.ToLower(title)
+	matched := 0
+	for _, w := range queryWords {
+		if strings.Contains(titleLower, w) {
+			matched++
+		}
+	}
+	return float64(matched) / float64(len(queryWords))
+}
+
 func doAniListSearchRequest(url string, requestBody []byte, token string) ([]byte, error) {
 	for authAttempt := 0; authAttempt < 2; authAttempt++ {
 		body, err := doAniListSearchRequestAttempt(url, requestBody, token)
@@ -260,6 +294,7 @@ func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPrevie
 		title    string
 		cover    string
 		episodes int
+		overlap  float64
 		score    int
 	}
 	var scored []scoredAnime
@@ -270,10 +305,17 @@ func SearchAnimeAnilistPreview(query, token string) (map[string]RofiSelectPrevie
 			title = anime.Title.Romaji
 		}
 		cover := anime.CoverImage.Large
+		overlap := wordOverlapScore(title, query)
 		score := levenshtein(title, query)
-		scored = append(scored, scoredAnime{idStr, title, cover, anime.Episodes, score})
+		scored = append(scored, scoredAnime{idStr, title, cover, anime.Episodes, overlap, score})
 	}
 	sort.Slice(scored, func(i, j int) bool {
+		// Word overlap first (does the title actually contain the query's
+		// words, in any order?), Levenshtein only as a tiebreaker between
+		// equally-relevant titles.
+		if scored[i].overlap != scored[j].overlap {
+			return scored[i].overlap > scored[j].overlap
+		}
 		return scored[i].score < scored[j].score
 	})
 	for i, s := range scored {
@@ -334,6 +376,7 @@ func SearchAnimeAnilist(query, token string) ([]SelectionOption, error) {
 		id       string
 		title    string
 		episodes int
+		overlap  float64
 		score    int
 	}
 	var scored []scoredAnime
@@ -343,10 +386,17 @@ func SearchAnimeAnilist(query, token string) ([]SelectionOption, error) {
 		if title == "" {
 			title = anime.Title.Romaji
 		}
+		overlap := wordOverlapScore(title, query)
 		score := levenshtein(title, query)
-		scored = append(scored, scoredAnime{idStr, title, anime.Episodes, score})
+		scored = append(scored, scoredAnime{idStr, title, anime.Episodes, overlap, score})
 	}
 	sort.Slice(scored, func(i, j int) bool {
+		// Word overlap first (does the title actually contain the query's
+		// words, in any order?), Levenshtein only as a tiebreaker between
+		// equally-relevant titles.
+		if scored[i].overlap != scored[j].overlap {
+			return scored[i].overlap > scored[j].overlap
+		}
 		return scored[i].score < scored[j].score
 	})
 	for i, s := range scored {

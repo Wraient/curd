@@ -12,6 +12,7 @@ import (
 
 	"github.com/wraient/curd/internal/providers/animepahe"
 	"github.com/wraient/curd/internal/providers/anipub"
+	"github.com/wraient/curd/internal/providers/senshi"
 )
 
 type ProviderMappingOutcome int
@@ -696,6 +697,116 @@ func RemapProviderAnime(userCurdConfig *CurdConfig, user *User, databaseAnimes *
 	}
 }
 
+// SwitchProviderStream is what curd-web's "switch source" button actually
+// needs: a directly playable stream on one specific provider, right now.
+type SwitchProviderStream struct {
+	ProviderName string `json:"providerName"`
+	ProviderID   string `json:"providerId"`
+	Link         string `json:"link"`
+	Referrer     string `json:"referrer"`
+	Subtitle     string `json:"subtitle"`
+}
+
+// SwitchToSingleProviderStream re-resolves the provider mapping for a single
+// anime against exactly one named provider, non-interactively, persists it to
+// local history (best-effort — a future session's own stack-order search may
+// still land elsewhere; see providerNamesForAnime, which deliberately always
+// prefers config stack order over any saved provider), and resolves a
+// directly playable stream on that provider for the given episode.
+//
+// This exists instead of just persisting the remap and telling curd to
+// replay the episode because curd's own provider resolution
+// (episodeModeResultWithProviders) always walks the configured provider
+// stack in its fixed order and only falls back to a saved/remapped provider
+// if every earlier provider in the stack fails outright — so a remap to a
+// provider that isn't first in the stack could otherwise silently never take
+// effect, even seconds after the user explicitly chose it. Resolving the
+// stream here and having curd-web hand mpv the URL directly sidesteps that
+// entirely for this one immediate "watch it on this source now" action.
+//
+// Unlike RemapProviderAnime (which walks the user through anime selection
+// and, on a weak match, an interactive pick/search-again prompt), this only
+// succeeds when autoMatchProviderListing finds a confident match on the
+// requested provider — it never blocks on stdin. Intended for a fire-and-
+// forget CLI invocation.
+func SwitchToSingleProviderStream(userCurdConfig *CurdConfig, user *User, databaseAnimes *[]Anime, anilistID, episode int, providerName string) (*SwitchProviderStream, error) {
+	if userCurdConfig == nil || user == nil {
+		return nil, fmt.Errorf("missing config or user")
+	}
+	providerName = normalizeProviderName(providerName)
+	if providerName == "" {
+		return nil, fmt.Errorf("unknown provider name")
+	}
+	if episode <= 0 {
+		return nil, fmt.Errorf("invalid episode number %d", episode)
+	}
+
+	anilistEntry, err := FindAnimeByAnilistID(user.AnimeList, strconv.Itoa(anilistID))
+	if err != nil || anilistEntry == nil {
+		return nil, fmt.Errorf("anime %d not found in anilist list: %w", anilistID, err)
+	}
+
+	query := mediaDisplayTitle(anilistEntry.Media, userCurdConfig)
+	anime := Anime{
+		AnilistId:     anilistEntry.Media.ID,
+		MalId:         anilistEntry.Media.MalID,
+		Title:         anilistEntry.Media.Title,
+		TotalEpisodes: anilistEntry.Media.Episodes,
+		CoverImage:    anilistEntry.CoverImage,
+	}
+
+	state := &providerMappingSearchState{
+		query:         query,
+		allProviders:  []string{providerName},
+		sequential:    true,
+		providerIndex: 0,
+	}
+
+	animeList, err := searchAnimeForMapping(userCurdConfig, state, userCurdConfig.SubOrDub)
+	if err != nil {
+		return nil, fmt.Errorf("provider search failed: %w", err)
+	}
+	if len(animeList) == 0 {
+		return nil, fmt.Errorf("no results from provider %s", providerName)
+	}
+
+	anime.ProviderId = ""
+	if !autoMatchProviderListing(userCurdConfig, &anime, animeList, query, anilistEntry) {
+		return nil, fmt.Errorf("no confident match on provider %s", providerName)
+	}
+	applyMatchedProviderMapping(userCurdConfig, state, &anime)
+
+	provider, err := ProviderByName(providerName)
+	if err != nil {
+		return nil, fmt.Errorf("provider %s unavailable: %w", providerName, err)
+	}
+	links, hints, err := getProviderEpisodeURLForModeWithHints(provider, *userCurdConfig, anime.ProviderId, episode, userCurdConfig.SubOrDub)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch episode %d from %s: %w", episode, providerName, err)
+	}
+	if len(links) == 0 {
+		return nil, fmt.Errorf("no episode %d links found on %s", episode, providerName)
+	}
+	applyStreamPlaybackHints(&anime, links, hints)
+	referrer := anime.Ep.StreamReferrer
+	if referrer == "" && isHTTPStreamLink(links[0]) {
+		referrer = streamReferrerForLink(links[0], providerName)
+	}
+
+	historyPath := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
+	if err := persistRemappedProvider(historyPath, databaseAnimes, anilistEntry, &anime, query); err != nil {
+		return nil, fmt.Errorf("failed to save remapped provider: %w", err)
+	}
+
+	return &SwitchProviderStream{
+		ProviderName: providerName,
+		ProviderID:   anime.ProviderId,
+		Link:         links[0],
+		Referrer:     referrer,
+		Subtitle:     anime.Ep.SubtitleURL,
+	}, nil
+}
+
 func persistRemappedProvider(historyPath string, databaseAnimes *[]Anime, anilistEntry *Entry, anime *Anime, animeName string) error {
 	if anime == nil || anilistEntry == nil {
 		return fmt.Errorf("missing anime data")
@@ -916,6 +1027,8 @@ func ResolveUntrackedProviderSearch(config *CurdConfig, initialQuery string) (pr
 func malIDFromProviderExtraData(extra any) int {
 	switch item := extra.(type) {
 	case anipub.SearchItem:
+		return item.MalID
+	case senshi.SearchItem:
 		return item.MalID
 	default:
 		return 0

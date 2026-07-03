@@ -687,35 +687,55 @@ func dynamicSelectInternal(options []SelectionOption, refreshConfig *SelectionRe
 	}
 	model.filterOptions()
 
-	p := tea.NewProgram(model)
-	stopRefresh := make(chan struct{})
+	// bubbletea's terminal-detection (term.IsTerminal on os.Stdin in
+	// initInput) can transiently report "not a terminal" immediately after a
+	// *previous* bubbletea Program on the same pty has just exited, which
+	// sends it down a fallback path that opens /dev/tty directly — observed
+	// live under curd-web's node-pty-backed terminal as "could not open a
+	// new TTY: open /dev/tty: device not configured" on back-to-back
+	// DynamicSelect calls (e.g. picking a search result immediately followed
+	// by picking a category to add it to). A fresh Program a moment later
+	// reliably succeeds, so retry this specific, transient input-setup error
+	// instead of surfacing it as an unrecoverable failure and killing curd.
+	var finalModel tea.Model
+	var err error
+	for attempt := 0; attempt < 4; attempt++ {
+		p := tea.NewProgram(model)
+		stopRefresh := make(chan struct{})
 
-	if refreshConfig != nil && refreshConfig.Updates != nil {
-		go func(lastOptions []SelectionOption) {
-			currentOptions := lastOptions
-			for {
-				select {
-				case <-stopRefresh:
-					return
-				case updatedList, ok := <-refreshConfig.Updates:
-					if !ok {
+		if refreshConfig != nil && refreshConfig.Updates != nil {
+			go func(lastOptions []SelectionOption) {
+				currentOptions := lastOptions
+				for {
+					select {
+					case <-stopRefresh:
 						return
-					}
+					case updatedList, ok := <-refreshConfig.Updates:
+						if !ok {
+							return
+						}
 
-					updatedOptions := refreshConfig.BuildOptions(updatedList)
-					if reflect.DeepEqual(currentOptions, updatedOptions) {
-						continue
-					}
+						updatedOptions := refreshConfig.BuildOptions(updatedList)
+						if reflect.DeepEqual(currentOptions, updatedOptions) {
+							continue
+						}
 
-					currentOptions = updatedOptions
-					p.Send(optionsRefreshedMsg{options: updatedOptions})
+						currentOptions = updatedOptions
+						p.Send(optionsRefreshedMsg{options: updatedOptions})
+					}
 				}
-			}
-		}(append([]SelectionOption(nil), options...))
-	}
+			}(append([]SelectionOption(nil), options...))
+		}
 
-	finalModel, err := p.Run()
-	close(stopRefresh)
+		finalModel, err = p.Run()
+		close(stopRefresh)
+
+		if err == nil || !strings.Contains(err.Error(), "could not open a new TTY") {
+			break
+		}
+		Log(fmt.Sprintf("bubbletea input race on attempt %d, retrying: %v", attempt+1, err))
+		time.Sleep(75 * time.Millisecond)
+	}
 
 	// Bubbletea may leave the terminal in raw mode; always reset cursor state.
 	fmt.Print("\033[?25h")

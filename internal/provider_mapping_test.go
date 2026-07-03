@@ -92,6 +92,41 @@ func TestProviderNameFromSelectionUsesQualifiedKey(t *testing.T) {
 	}
 }
 
+func TestSwitchToSingleProviderStreamValidatesInput(t *testing.T) {
+	withAllProvidersEnabledForTest(t)
+	config := &CurdConfig{Provider: `["senshi","anineko"]`}
+	user := &User{
+		AnimeList: AnimeList{
+			Watching: []Entry{{Media: Media{ID: 11757, Title: AnimeTitle{Romaji: "Sword Art Online"}}}},
+		},
+	}
+	var databaseAnimes []Anime
+
+	t.Run("empty provider name is rejected before any search", func(t *testing.T) {
+		if _, err := SwitchToSingleProviderStream(config, user, &databaseAnimes, 11757, 3, ""); err == nil {
+			t.Fatal("expected error for empty provider name")
+		}
+	})
+
+	t.Run("invalid episode number is rejected before any search", func(t *testing.T) {
+		if _, err := SwitchToSingleProviderStream(config, user, &databaseAnimes, 11757, 0, "anipub"); err == nil {
+			t.Fatal("expected error for episode <= 0")
+		}
+	})
+
+	t.Run("unknown anilist id is rejected before any search", func(t *testing.T) {
+		if _, err := SwitchToSingleProviderStream(config, user, &databaseAnimes, 999999, 3, "anipub"); err == nil {
+			t.Fatal("expected error for anime not present in the user's list")
+		}
+	})
+
+	t.Run("nil user is rejected", func(t *testing.T) {
+		if _, err := SwitchToSingleProviderStream(config, nil, &databaseAnimes, 11757, 3, "anipub"); err == nil {
+			t.Fatal("expected error for nil user")
+		}
+	})
+}
+
 func TestApplyMatchedProviderMappingUsesSequentialProvider(t *testing.T) {
 	withAllProvidersEnabledForTest(t)
 	config := &CurdConfig{Provider: `["senshi","anineko"]`}
