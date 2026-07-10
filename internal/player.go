@@ -285,6 +285,7 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	if userConfig.MpvArgs != nil {
 		args = append(args, userConfig.MpvArgs...)
 	}
+	callerHasSubtitleArg := hasMPVSubtitleArg(args)
 
 	shouldSetDefaultReferrer := isHTTPStreamLink(link) && !hasMPVReferrerArg(args)
 	referrer := strings.TrimSpace(anime.Ep.StreamReferrer)
@@ -294,7 +295,8 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	if referrer != "" && shouldSetDefaultReferrer {
 		args = append(args, fmt.Sprintf("--referrer=%s", referrer))
 	}
-	if subtitleURL := strings.TrimSpace(anime.Ep.SubtitleURL); subtitleURL != "" && !hasMPVSubtitleArg(args) {
+	subtitleURL := strings.TrimSpace(anime.Ep.SubtitleURL)
+	if subtitleURL != "" && !callerHasSubtitleArg {
 		args = append(args, fmt.Sprintf("--sub-file=%s", subtitleURL))
 	}
 	args = normalizeReferrerArgs(args)
@@ -324,10 +326,10 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 			return "", fmt.Errorf("failed to load file in existing MPV instance: %w", err)
 		}
 
-		// Wait a brief moment for the file to load
-		time.Sleep(100 * time.Millisecond)
-
-		if subtitleURL := strings.TrimSpace(anime.Ep.SubtitleURL); subtitleURL != "" && !hasMPVSubtitleArg(args) {
+		if subtitleURL != "" && !callerHasSubtitleArg {
+			if readyErr := waitForMPVFileReady(mpvSocketPath, link, 12*time.Second); readyErr != nil {
+				Log(fmt.Sprintf("Timed out waiting to attach subtitle track: %v", readyErr))
+			}
 			_, subErr := MPVSendCommand(mpvSocketPath, []interface{}{"sub-add", subtitleURL, "select"})
 			if subErr != nil {
 				Log(fmt.Sprintf("Failed to load subtitle track: %v", subErr))
@@ -570,6 +572,62 @@ func mpvResponseData(response map[string]interface{}) (interface{}, error) {
 func SeekMPV(ipcSocketPath string, time int) (interface{}, error) {
 	command := []interface{}{"seek", time, "absolute"}
 	return MPVSendCommand(ipcSocketPath, command)
+}
+
+type mpvCommandSender func(string, []interface{}) (interface{}, error)
+
+func waitForMPVFileReady(ipcSocketPath, expectedPath string, timeout time.Duration) error {
+	return waitForMPVFileReadyWith(MPVSendCommand, ipcSocketPath, expectedPath, timeout, 100*time.Millisecond)
+}
+
+func waitForMPVFileReadyWith(send mpvCommandSender, ipcSocketPath, expectedPath string, timeout, pollInterval time.Duration) error {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	if pollInterval <= 0 {
+		pollInterval = 100 * time.Millisecond
+	}
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		pathValue, pathErr := send(ipcSocketPath, []interface{}{"get_property", "path"})
+		path, _ := pathValue.(string)
+		pathReady := pathErr == nil && strings.TrimSpace(path) != ""
+		if pathReady && expectedPath != "" {
+			pathReady = path == expectedPath
+		}
+		if pathReady {
+			if duration, durationErr := send(ipcSocketPath, []interface{}{"get_property", "duration"}); durationErr == nil && mpvNumber(duration) > 0 {
+				return nil
+			}
+			if position, positionErr := send(ipcSocketPath, []interface{}{"get_property", "time-pos"}); positionErr == nil && mpvNumber(position) >= 0 {
+				return nil
+			}
+		}
+		if pathErr != nil {
+			lastErr = pathErr
+		}
+		time.Sleep(pollInterval)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("MPV file did not become ready: %w", lastErr)
+	}
+	return fmt.Errorf("MPV file did not become ready before timeout")
+}
+
+func mpvNumber(value interface{}) float64 {
+	switch number := value.(type) {
+	case float64:
+		return number
+	case float32:
+		return float64(number)
+	case int:
+		return float64(number)
+	case int64:
+		return float64(number)
+	default:
+		return -1
+	}
 }
 
 func GetMPVPausedStatus(ipcSocketPath string) (bool, error) {

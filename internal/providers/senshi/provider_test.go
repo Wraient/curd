@@ -145,7 +145,6 @@ func TestGetEpisodeStreamsForModeSelectsHardSub(t *testing.T) {
 }
 
 func TestGetEpisodeStreamsForModeLoadsSoftSubtitles(t *testing.T) {
-	const subtitleURL = "https://cdn.example/sub_2_eng.vtt"
 	const manifestPath = "/sub_filemoon.json"
 
 	var server *httptest.Server
@@ -162,7 +161,7 @@ func TestGetEpisodeStreamsForModeLoadsSoftSubtitles(t *testing.T) {
 			}})
 		case r.URL.Path == manifestPath:
 			_ = json.NewEncoder(w).Encode([]senshiSubtitleTrack{{
-				Src:     subtitleURL,
+				Src:     server.URL + "/sub_2_eng.vtt",
 				Label:   "ENG",
 				Default: true,
 			}})
@@ -184,13 +183,12 @@ func TestGetEpisodeStreamsForModeLoadsSoftSubtitles(t *testing.T) {
 	if len(links) != 1 || links[0] != "https://cdn.example/soft.m3u8" {
 		t.Fatalf("unexpected links %#v", links)
 	}
-	if hints[links[0]].Subtitle != subtitleURL {
+	if hints[links[0]].Subtitle != server.URL+"/sub_2_eng.vtt" {
 		t.Fatalf("unexpected subtitle %q", hints[links[0]].Subtitle)
 	}
 }
 
 func TestGetEpisodeStreamsForModeHardStillInjectsSenshiSubs(t *testing.T) {
-	const subtitleURL = "https://cdn.example/sub_2_eng.vtt"
 	const manifestPath = "/sub_filemoon.json"
 
 	var server *httptest.Server
@@ -207,7 +205,7 @@ func TestGetEpisodeStreamsForModeHardStillInjectsSenshiSubs(t *testing.T) {
 			}})
 		case r.URL.Path == manifestPath:
 			_ = json.NewEncoder(w).Encode([]senshiSubtitleTrack{{
-				Src:     subtitleURL,
+				Src:     server.URL + "/sub_2_eng.vtt",
 				Label:   "ENG",
 				Default: true,
 			}})
@@ -229,7 +227,7 @@ func TestGetEpisodeStreamsForModeHardStillInjectsSenshiSubs(t *testing.T) {
 	if len(links) != 1 {
 		t.Fatalf("unexpected links %#v", links)
 	}
-	if hints[links[0]].Subtitle != subtitleURL {
+	if hints[links[0]].Subtitle != server.URL+"/sub_2_eng.vtt" {
 		t.Fatalf("expected senshi external subs even with hard preference, got %q", hints[links[0]].Subtitle)
 	}
 }
