@@ -24,6 +24,27 @@ func TestPickSenshiSubtitleTrackPrefersEnglishDefault(t *testing.T) {
 	}
 }
 
+func TestPickSenshiSubtitleTrackSkipsForcedTrackBeforeDefaultDialogue(t *testing.T) {
+	tracks := []senshiSubtitleTrack{
+		{Src: "https://cdn.example/sub_3_eng.vtt", Label: "Forced (ENG)"},
+		{Src: "https://cdn.example/sub_4_eng.vtt", Label: "ENG", Default: true},
+		{Src: "https://cdn.example/sub_5_eng.vtt", Label: "SDH (ENG)"},
+	}
+	if got := pickSenshiSubtitleTrack(tracks); got != "https://cdn.example/sub_4_eng.vtt" {
+		t.Fatalf("picked %q instead of the full dialogue track", got)
+	}
+}
+
+func TestPickSenshiSubtitleTrackAvoidsForcedEnglishFallback(t *testing.T) {
+	tracks := []senshiSubtitleTrack{
+		{Src: "https://cdn.example/forced.vtt", Label: "Signs & Songs (ENG)"},
+		{Src: "https://cdn.example/dialogue.vtt", Label: "English"},
+	}
+	if got := pickSenshiSubtitleTrack(tracks); got != "https://cdn.example/dialogue.vtt" {
+		t.Fatalf("picked %q instead of the full dialogue track", got)
+	}
+}
+
 func TestSenshiSubtitleManifestURLUsesServerFM(t *testing.T) {
 	serverFM := "https://embed.example/e/abc/?sub.info=https://ninstream.com/manifest.json"
 	item := embedItem{ServerFM: &serverFM}

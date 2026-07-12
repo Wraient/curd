@@ -63,21 +63,47 @@ func fetchSenshiSubtitle(manifestURL string) (string, error) {
 }
 
 func pickSenshiSubtitleTrack(tracks []senshiSubtitleTrack) string {
-	var fallback string
+	// Senshi can put a forced/signs-only English track before the full dialogue
+	// track. Prefer a non-forced default before considering label fallbacks.
 	for _, track := range tracks {
 		file := strings.TrimSpace(track.Src)
-		if file == "" {
-			continue
-		}
-		label := strings.ToLower(strings.TrimSpace(track.Label))
-		if track.Default || strings.Contains(label, "eng") {
+		if file != "" && track.Default && !isSenshiForcedSubtitleLabel(track.Label) {
 			return file
 		}
-		if fallback == "" {
-			fallback = file
+	}
+	for _, track := range tracks {
+		file := strings.TrimSpace(track.Src)
+		label := strings.ToLower(strings.TrimSpace(track.Label))
+		if file != "" && strings.Contains(label, "eng") && !isSenshiForcedSubtitleLabel(label) {
+			return file
 		}
 	}
-	return fallback
+	for _, track := range tracks {
+		file := strings.TrimSpace(track.Src)
+		if file != "" && track.Default {
+			return file
+		}
+	}
+	for _, track := range tracks {
+		file := strings.TrimSpace(track.Src)
+		label := strings.ToLower(strings.TrimSpace(track.Label))
+		if file != "" && strings.Contains(label, "eng") {
+			return file
+		}
+	}
+	for _, track := range tracks {
+		if file := strings.TrimSpace(track.Src); file != "" {
+			return file
+		}
+	}
+	return ""
+}
+
+func isSenshiForcedSubtitleLabel(label string) bool {
+	label = strings.ToLower(strings.TrimSpace(label))
+	return strings.Contains(label, "forced") ||
+		strings.Contains(label, "sign") ||
+		strings.Contains(label, "song")
 }
 
 func resolveSenshiSubtitle(item embedItem) string {
