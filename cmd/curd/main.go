@@ -103,6 +103,24 @@ func main() {
 
 	flag.Parse()
 
+	// TODO: check version here?
+	go func() {
+		latest, err := internal.GetLatestVersion("wraient/curd")
+		if err != nil {
+			fmt.Println("Update check failed: " + err.Error())
+			return
+		}
+
+		latestVersion := latest[1:]
+
+		fmt.Println(latestVersion)
+		fmt.Println(version)
+
+		if latestVersion != resolvedVersion() {
+			fmt.Println("New version available: " + latest)
+		}
+	}()
+
 	// Validate PercentageToMarkComplete range (0-100) from CLI flag
 	if userCurdConfig.PercentageToMarkComplete < 0 {
 		userCurdConfig.PercentageToMarkComplete = 0
