@@ -3,6 +3,7 @@ package anipub
 import (
 	"fmt"
 
+	"github.com/wraient/curd/internal/curdhost"
 	"github.com/wraient/curd/internal/providers"
 	"github.com/wraient/curd/internal/providers/substyle"
 )
@@ -34,6 +35,13 @@ func getEpisodeStreamsForMode(showID string, config providers.PlaybackConfig, ep
 	}
 	streamURL, subtitle, err := resolveMegaplayStream(videoLink, mode)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	// Reject ad-injected decoy playlists served by the megaplay CDN so the
+	// caller can fall back to another provider instead of opening an idle mpv.
+	if err := validateResolvedStream(streamURL); err != nil {
+		curdhost.Log(fmt.Sprintf("anipub stream %q rejected: %v", streamURL, err))
 		return nil, nil, err
 	}
 
