@@ -78,6 +78,11 @@ var (
 
 	quitHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFD700")) // Gold
+
+	newEpisodeItemStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#4CAF50")) // Green
+
+	rofiNewEpisodeColor = "#4CAF50"
 )
 
 // Init initializes the model
@@ -318,10 +323,18 @@ func (m Model) View() string {
 
 		// Render the options within the visible range
 		for i := start; i < end; i++ {
+			label := m.filteredKeys[i].Label
+
 			if i == m.selected {
-				b.WriteString(selectedItemStyle.Render(m.filteredKeys[i].Label) + "\n")
+				if m.filteredKeys[i].HasNewEpisodes {
+					b.WriteString(newEpisodeItemStyle.Render(" [NEW]") + selectedItemStyle.Render(label) + "\n")
+				} else {
+					b.WriteString(selectedItemStyle.Render(label) + "\n")
+				}
+			} else if m.filteredKeys[i].HasNewEpisodes {
+				b.WriteString(newEpisodeItemStyle.Render(" [NEW]") + regularItemStyle.Render(label) + "\n")
 			} else {
-				b.WriteString(regularItemStyle.Render(m.filteredKeys[i].Label) + "\n")
+				b.WriteString(regularItemStyle.Render(label) + "\n")
 			}
 		}
 	}
@@ -339,11 +352,19 @@ func (m Model) visibleItemsCount() int {
 	return count
 }
 
+func displayLabel(opt SelectionOption) string {
+	if opt.HasNewEpisodes {
+		return "[NEW]" + opt.Label
+	}
+	return opt.Label
+}
+
 // filterOptions filters and sorts options based on the search term
 func (m *Model) filterOptions() {
 	m.filteredKeys = nil
 	for _, opt := range m.allOptions {
-		if strings.Contains(strings.ToLower(opt.Label), strings.ToLower(m.filter)) {
+		// Small function to also consider new episode from list
+		if strings.Contains(strings.ToLower(displayLabel(opt)), strings.ToLower(m.filter)) {
 			m.filteredKeys = append(m.filteredKeys, opt)
 		}
 	}
@@ -498,8 +519,9 @@ func previewOptionsToSortedSelection(options map[string]RofiSelectPreview) []Sel
 	selectionOptions := make([]SelectionOption, 0, len(options))
 	for id, opt := range options {
 		selectionOptions = append(selectionOptions, SelectionOption{
-			Label: opt.Title,
-			Key:   id,
+			Label:          opt.Title,
+			Key:            id,
+			HasNewEpisodes: opt.HasNewEpisodes,
 		})
 	}
 
@@ -531,18 +553,22 @@ func DynamicSelectPreviewWithRefresh(options map[string]RofiSelectPreview, addne
 				Log(fmt.Sprintf("Error caching image: %v", err))
 				continue
 			}
-			rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", opt.Label, cachePath))
+			label := opt.Label
+			if opt.HasNewEpisodes {
+				label = fmt.Sprintf("<span foreground=\"%s\">[NEW]</span> %s ", rofiNewEpisodeColor, opt.Label)
+			}
+			rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", label, cachePath))
 		}
 
 		if addnewoption {
-
 			rofiInput.WriteString("Add new anime\n")
 		}
 		rofiInput.WriteString("Back\n")
 		rofiInput.WriteString("Quit\n")
 
 		configPath := filepath.Join(GetStoragePath(), "selectanimepreview.rasi")
-		cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-show-icons", "-p", "Select Anime", "-i", "-no-custom")
+		// NOTE: Need `-markup-rows` to enable pango
+		cmd := exec.Command("rofi", "-dmenu", "-theme", configPath, "-show-icons", "-markup-rows", "-p", "Select Anime", "-i", "-no-custom")
 		cmd.Stdin = strings.NewReader(rofiInput.String())
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
@@ -613,6 +639,9 @@ func preDownloadImages(options map[string]RofiSelectPreview, count int) {
 
 func parsePreviewSelection(rawSelection string, selectionOptions []SelectionOption) (SelectionOption, error) {
 	selected := strings.TrimSpace(rawSelection)
+	selected = strings.TrimSpace(pangoStrip.ReplaceAllString(selected, ""))
+	selected = strings.TrimSuffix(selected, " [NEW]")
+	selected = strings.TrimSpace(selected)
 
 	switch selected {
 	case "":
@@ -641,7 +670,7 @@ func downloadToCache(imageURL string) (string, error) {
 	}
 
 	cacheDir := os.ExpandEnv("${HOME}/.cache/curd/images")
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
@@ -725,8 +754,7 @@ func rofiSelectInternal(options []SelectionOption, isHomeMenu bool, refreshConfi
 	for {
 		optionsString := buildRofiOptionsString(currentOptions, isHomeMenu)
 		configPath := filepath.Join(GetStoragePath(), "selectanime.rasi")
-		// -markup: enable Pango in -mesg (and prompts where supported)
-		args := []string{"-dmenu", "-theme", configPath, "-i", "-markup", "-p", prompt}
+		args := []string{"-dmenu", "-theme", configPath, "-i", "-markup", "-markup-rows", "-p", prompt}
 		if msg := strings.TrimSpace(message); msg != "" {
 			args = append(args, "-mesg", msg)
 		}
@@ -894,7 +922,11 @@ func dynamicSelectInternal(options []SelectionOption, refreshConfig *SelectionRe
 func buildRofiOptionsString(options []SelectionOption, isHomeMenu bool) string {
 	optionsList := make([]string, 0, len(options)+2)
 	for _, opt := range options {
-		optionsList = append(optionsList, opt.Label)
+		if opt.HasNewEpisodes {
+			optionsList = append(optionsList, fmt.Sprintf("<span foreground=\"%s\">%s [NEW]</span>", rofiNewEpisodeColor, opt.Label))
+		} else {
+			optionsList = append(optionsList, opt.Label)
+		}
 	}
 
 	if !isHomeMenu {
@@ -917,8 +949,12 @@ func parseRofiSelection(err error, rawSelection string, options []SelectionOptio
 	}
 
 	selected := strings.TrimSpace(rawSelection)
-	// Strip accidental Pango/markup noise if a theme echoes it.
-	selected = strings.TrimSpace(ansiStrip.ReplaceAllString(selected, ""))
+	// strip accidental pango noise if a theme echoes it.
+	selected = strings.TrimSpace(pangoStrip.ReplaceAllString(
+		ansiStrip.ReplaceAllString(selected, ""), "",
+	))
+	selected = strings.TrimSuffix(selected, " [NEW]")
+	selected = strings.TrimSpace(selected)
 	switch {
 	case selected == "":
 		if isHomeMenu {

@@ -6,7 +6,7 @@
     text-color:                     #BBBBBB;  /* Default text color (light gray) */
     text-color-selected:            #FFFFFF;  /* Text color when selected (white) */
     primary:                        rgba(53, 132, 228, 0.75);  /* Blusish primary color */
-    important:                        rgba(53, 132, 228, 0.75);  /* Bluish primary color */
+    important:                      rgba(53, 132, 228, 0.75);  /* Bluish primary color */
 }
 
 configuration {

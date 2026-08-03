@@ -269,9 +269,16 @@ func buildCategorySelectionOptions(list AnimeList, category string) []SelectionO
 	for _, entry := range getEntriesByCategory(list, category) {
 		title := mediaDisplayTitle(entry.Media, userCurdConfig)
 
+		hasNew := false
+		if userCurdConfig.ShowNewEpisodes && entry.Media.NextAiringEpisode != nil {
+			nextWatched := nextEpisodeFromProgress(entry.Progress)
+			hasNew = entry.Media.NextAiringEpisode.Episode > nextWatched
+		}
+
 		options = append(options, SelectionOption{
-			Key:   strconv.Itoa(entry.Media.ID),
-			Label: title,
+			Key:            strconv.Itoa(entry.Media.ID),
+			Label:          title,
+			HasNewEpisodes: hasNew,
 		})
 	}
 
@@ -285,9 +292,16 @@ func buildCategoryPreviewOptions(list AnimeList, category string) map[string]Rof
 	for _, entry := range getEntriesByCategory(list, category) {
 		title := mediaDisplayTitle(entry.Media, userCurdConfig)
 
+		hasNew := false
+		if userCurdConfig.ShowNewEpisodes && entry.Media.NextAiringEpisode != nil {
+			nextWatched := nextEpisodeFromProgress(entry.Progress)
+			hasNew = entry.Media.NextAiringEpisode.Episode > nextWatched
+		}
+
 		options[strconv.Itoa(entry.Media.ID)] = RofiSelectPreview{
-			Title:      title,
-			CoverImage: entry.CoverImage,
+			Title:          title,
+			CoverImage:     entry.CoverImage,
+			HasNewEpisodes: hasNew,
 		}
 	}
 

@@ -534,6 +534,10 @@ func GetUserData(token string, userID int) (map[string]interface{}, error) {
 							native
 						}
 						status
+						nextAiringEpisode {
+							episode
+							timeUntilAiring
+						}
 					}
 					status
 					score
@@ -597,6 +601,10 @@ func GetUserDataPreview(token string, userID int) (map[string]interface{}, error
 							native
 						}
 						status
+						nextAiringEpisode {
+							episode
+							timeUntilAiring
+						}
 					}
 					status
 					score
@@ -1169,6 +1177,13 @@ func ParseAnimeList(input map[string]interface{}) AnimeList {
 
 			if coverImage, ok := media["coverImage"].(map[string]interface{}); ok {
 				animeEntry.CoverImage = safeString(coverImage["large"])
+			}
+
+			if nextEp, ok := media["nextAiringEpisode"].(map[string]interface{}); ok && nextEp != nil {
+				animeEntry.Media.NextAiringEpisode = &NextAiringEpisodeInfo{
+					Episode:         toInt(nextEp["episode"]),
+					TimeUntilAiring: toInt(nextEp["timeUntilAiring"]),
+				}
 			}
 
 			// Defense in depth: never insert the same media twice even if AniList

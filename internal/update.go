@@ -287,6 +287,7 @@ var (
 	mdLinkRe  = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 	mdURLRe   = regexp.MustCompile(`https?://[^\s<>\]]+`)
 	ansiStrip = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	pangoStrip = regexp.MustCompile(`<[^>]*>`)
 )
 
 // markdownToPango turns common GitHub release markdown into Rofi-friendly Pango.

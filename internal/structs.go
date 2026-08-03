@@ -71,6 +71,11 @@ type NextEpisode struct {
 	Mode         string
 }
 
+type NextAiringEpisodeInfo struct {
+	Episode         int
+	TimeUntilAiring int
+}
+
 // StreamPlaybackHint carries MPV playback metadata for a resolved stream URL.
 type StreamPlaybackHint struct {
 	Referrer string
@@ -127,13 +132,14 @@ type ResponseData struct {
 }
 
 type Media struct {
-	Duration int        `json:"duration"`
-	Episodes int        `json:"episodes"`
-	Format   string     `json:"format"`
-	ID       int        `json:"id"`
-	MalID    int        `json:"mal_id"`
-	Title    AnimeTitle `json:"title"`
-	Status   string     `json:"status"`
+	Duration          int                    `json:"duration"`
+	Episodes          int                    `json:"episodes"`
+	Format            string                 `json:"format"`
+	ID                int                    `json:"id"`
+	MalID             int                    `json:"mal_id"`
+	Title             AnimeTitle             `json:"title"`
+	Status            string                 `json:"status"`
+	NextAiringEpisode *NextAiringEpisodeInfo `json:"nextAiringEpisode,omitempty"`
 }
 
 type Entry struct {
@@ -159,8 +165,9 @@ type AnimeList struct {
 }
 
 type RofiSelectPreview struct {
-	Title      string `json:"title"`
-	CoverImage string `json:"coverImage"`
+	Title          string `json:"title"`
+	CoverImage     string `json:"coverImage"`
+	HasNewEpisodes bool   `json:"-"`
 }
 
 type SelectionOptionImage struct {
@@ -171,9 +178,10 @@ type SelectionOptionImage struct {
 
 // SelectionOption holds the label and the internal key
 type SelectionOption struct {
-	Title     string
-	Label     string
-	Key       string
-	Thumbnail string
-	ExtraData interface{}
+	Title          string
+	Label          string
+	Key            string
+	Thumbnail      string
+	ExtraData      interface{}
+	HasNewEpisodes bool
 }
