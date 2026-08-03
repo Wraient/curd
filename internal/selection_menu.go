@@ -640,7 +640,7 @@ func preDownloadImages(options map[string]RofiSelectPreview, count int) {
 func parsePreviewSelection(rawSelection string, selectionOptions []SelectionOption) (SelectionOption, error) {
 	selected := strings.TrimSpace(rawSelection)
 	selected = strings.TrimSpace(pangoStrip.ReplaceAllString(selected, ""))
-	selected = strings.TrimSuffix(selected, " [NEW]")
+	selected = strings.TrimPrefix(selected, "[NEW] ")
 	selected = strings.TrimSpace(selected)
 
 	switch selected {
@@ -923,7 +923,7 @@ func buildRofiOptionsString(options []SelectionOption, isHomeMenu bool) string {
 	optionsList := make([]string, 0, len(options)+2)
 	for _, opt := range options {
 		if opt.HasNewEpisodes {
-			optionsList = append(optionsList, fmt.Sprintf("<span foreground=\"%s\">%s [NEW]</span>", rofiNewEpisodeColor, opt.Label))
+			optionsList = append(optionsList, fmt.Sprintf("<span foreground=\"%s\">[NEW]</span> %s", rofiNewEpisodeColor, opt.Label))
 		} else {
 			optionsList = append(optionsList, opt.Label)
 		}
@@ -953,7 +953,7 @@ func parseRofiSelection(err error, rawSelection string, options []SelectionOptio
 	selected = strings.TrimSpace(pangoStrip.ReplaceAllString(
 		ansiStrip.ReplaceAllString(selected, ""), "",
 	))
-	selected = strings.TrimSuffix(selected, " [NEW]")
+	selected = strings.TrimPrefix(selected, "[NEW] ")
 	selected = strings.TrimSpace(selected)
 	switch {
 	case selected == "":
