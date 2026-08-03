@@ -86,7 +86,8 @@ func EnsureTrackingConfigured(config *CurdConfig) error {
 
 	normalizeTrackingConfig(config)
 	if config.TrackingConfigured {
-		return persistTrackingConfig(config)
+		// NOTE: persistTrackingConfig is only needed when tracker is changed not every startup
+		return nil
 	}
 
 	options := []SelectionOption{
@@ -376,7 +377,7 @@ func writeTrackingBackup(config *CurdConfig, action string, aniList, myAnimeList
 	}
 
 	backupDir := filepath.Join(os.ExpandEnv(config.StoragePath), "tracking-backups")
-	if err := os.MkdirAll(backupDir, 0755); err != nil {
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		return "", err
 	}
 
@@ -398,7 +399,7 @@ func writeTrackingBackup(config *CurdConfig, action string, aniList, myAnimeList
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+	if err := os.WriteFile(backupPath, data, 0o644); err != nil {
 		return "", err
 	}
 	return backupPath, nil
