@@ -8,7 +8,7 @@ func init() {
 		Aliases:         []string{"all-anime", "all anime"},
 		Referrer:        "https://allanime.day/",
 		DefaultDisabled: true,
-		DisableReason:   "disabled by default; set Provider to include allanime to enable",
+		DisableReason:   "episode sources require rotating signed anti-bot tokens (AA_CRYPTO_MISSING); set Provider to include allanime to try anyway",
 	}, func() providers.Provider {
 		return &Provider{}
 	})

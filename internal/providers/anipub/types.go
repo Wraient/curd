@@ -42,6 +42,7 @@ type megaplaySourcesResponse struct {
 	Sources struct {
 		File string `json:"file"`
 	} `json:"sources"`
+	Enc    string `json:"enc"`
 	Tracks []struct {
 		File    string `json:"file"`
 		Label   string `json:"label"`
