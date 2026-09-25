@@ -29,6 +29,14 @@ const mpvPlaybackPollInterval = 500 * time.Millisecond
 // This is not generic but we have MpvArgs in CurdConfig to add custom ones
 const defaultStreamReferrer = "https://allanime.day/"
 
+// CurdWebModeEnabled reports whether curd is running under curd-web's fake-mpv
+// bridge. It gates curd-web-only behavior (like exposing the active provider
+// name to the player) so a real, standalone mpv never sees a custom flag or
+// property it doesn't understand.
+func CurdWebModeEnabled() bool {
+	return os.Getenv("CURD_WEB") == "1"
+}
+
 func streamReferrerForLink(link, provider string) string {
 	if strings.Contains(strings.ToLower(link), "tools.fast4speed.rsvp") {
 		return "https://allanime.to"
@@ -358,6 +366,13 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 			Log(fmt.Sprintf("Failed to update window title: %v", err))
 		}
 
+		if CurdWebModeEnabled() {
+			providerCommand := []interface{}{"set_property", "user-data/curd-web-provider", CurrentAnimeProviderName(anime)}
+			if _, err = MPVSendCommand(mpvSocketPath, providerCommand); err != nil {
+				Log(fmt.Sprintf("Failed to update curd-web provider property: %v", err))
+			}
+		}
+
 		return mpvSocketPath, nil
 	}
 
@@ -388,6 +403,9 @@ func StartVideo(link string, args []string, title string, anime *Anime) (string,
 	// Keep the window open after episode completes, new episode starts in the same mpv window
 	args = append(args, "--force-window=yes", "--idle=yes")
 	args = append(args, titleArgs...)
+	if CurdWebModeEnabled() {
+		args = append(args, fmt.Sprintf("--curd-web-provider=%s", CurrentAnimeProviderName(anime)))
+	}
 
 	// Prepare arguments for mpv-compatible players.
 	var mpvArgs []string

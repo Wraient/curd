@@ -95,11 +95,11 @@ func TestConfiguredProviderNamesAcceptsOrderedLists(t *testing.T) {
 		cfg  *CurdConfig
 		want []string
 	}{
-		{name: "empty", cfg: &CurdConfig{}, want: []string{"senshi", "anipub", "anineko", "allanime", "animepahe"}},
+		{name: "empty", cfg: &CurdConfig{}, want: []string{"anineko", "anipub", "senshi", "allanime", "animepahe"}},
 		{name: "json list", cfg: &CurdConfig{Provider: `["allanime","animepahe"]`}, want: []string{"allanime", "animepahe"}},
 		{name: "comma list", cfg: &CurdConfig{Provider: "animepahe,allanime"}, want: []string{"animepahe", "allanime"}},
 		{name: "plus list", cfg: &CurdConfig{Provider: "allanime+animepahe"}, want: []string{"allanime", "animepahe"}},
-		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"senshi", "anipub", "anineko", "allanime", "animepahe"}},
+		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"anineko", "anipub", "senshi", "allanime", "animepahe"}},
 	}
 
 	for _, tc := range cases {
@@ -111,6 +111,22 @@ func TestConfiguredProviderNamesAcceptsOrderedLists(t *testing.T) {
 			if got[i] != tc.want[i] {
 				t.Fatalf("%s: got %v, want %v", tc.name, got, tc.want)
 			}
+		}
+	}
+}
+
+func TestProviderNamesForAnimePrefersStackBeforeSavedProvider(t *testing.T) {
+	config := &CurdConfig{Provider: "stacked"}
+	anime := &Anime{ProviderName: "senshi", ProviderId: "11757"}
+
+	got := providerNamesForAnime(config, anime)
+	want := []string{"anineko", "anipub", "senshi"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
 		}
 	}
 }

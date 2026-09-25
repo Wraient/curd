@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -95,6 +97,7 @@ func main() {
 	softSubFlag := flag.Bool("softsub", false, "Prefer soft subtitles when available (anineko)")
 	hardSubFlag := flag.Bool("hardsub", false, "Prefer hard subtitles when available (anineko)")
 	versionFlag := flag.Bool("v", false, "Print version information")
+	remapProviderFlag := flag.String("remap-provider", "", "Non-interactively resolve one anime/episode against a specific provider: -remap-provider=<anilistId>:<episode>:<providerName>. Persists the mapping to local history and prints the resolved stream as JSON on stdout ({providerName,providerId,link,referrer,subtitle}) or {\"error\":...} on failure, then exits; does not start playback.")
 
 	// Custom help/usage function
 	flag.Usage = func() {
@@ -190,10 +193,15 @@ func main() {
 		return
 	}
 
-	// Setup screen for interactive mode (only if not changing token)
-	internal.ClearScreen()
-	internal.InstallTerminalInterruptHandler()
-	defer internal.RestoreScreen()
+	// Setup screen for interactive mode (only if not changing token, and not
+	// a non-interactive -remap-provider CLI call — that path prints JSON on
+	// stdout for curd-web to parse, and ClearScreen's terminal escape codes
+	// would corrupt it).
+	if *remapProviderFlag == "" {
+		internal.ClearScreen()
+		internal.InstallTerminalInterruptHandler()
+		defer internal.RestoreScreen()
+	}
 
 	// Set SubOrDub based on the flags
 	if *subFlag {
@@ -226,6 +234,41 @@ func main() {
 	// Load animes in database
 	databaseFile := filepath.Join(os.ExpandEnv(userCurdConfig.StoragePath), "curd_history.txt")
 	databaseAnimes := internal.LocalGetAllAnime(databaseFile)
+
+	if *remapProviderFlag != "" {
+		parts := strings.SplitN(*remapProviderFlag, ":", 3)
+		if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+			fmt.Println(`{"error":"invalid -remap-provider value, expected <anilistId>:<episode>:<providerName>"}`)
+			os.Exit(2)
+		}
+		anilistID, convErr := strconv.Atoi(parts[0])
+		if convErr != nil {
+			fmt.Printf(`{"error":"invalid anilist id: %s"}`+"\n", convErr)
+			os.Exit(2)
+		}
+		episode, epErr := strconv.Atoi(parts[1])
+		if epErr != nil {
+			fmt.Printf(`{"error":"invalid episode number: %s"}`+"\n", epErr)
+			os.Exit(2)
+		}
+		providerName := parts[2]
+		if refreshErr := internal.RefreshUserAnimeList(&userCurdConfig, &user); refreshErr != nil {
+			fmt.Printf(`{"error":"refreshing anime list: %s"}`+"\n", refreshErr)
+			os.Exit(1)
+		}
+		if user.ListSync != nil {
+			user.AnimeList = user.ListSync.Current()
+		}
+		stream, switchErr := internal.SwitchToSingleProviderStream(&userCurdConfig, &user, &databaseAnimes, anilistID, episode, providerName)
+		if switchErr != nil {
+			payload, _ := json.Marshal(map[string]string{"error": switchErr.Error()})
+			fmt.Println(string(payload))
+			os.Exit(1)
+		}
+		payload, _ := json.Marshal(stream)
+		fmt.Println(string(payload))
+		os.Exit(0)
+	}
 
 	if *addNewAnime {
 		internal.AddNewAnime(&userCurdConfig, &anime, &user, &databaseAnimes)
