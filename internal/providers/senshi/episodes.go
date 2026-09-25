@@ -26,9 +26,6 @@ func episodesList(showID, mode string) ([]string, error) {
 	seen := map[int]struct{}{}
 	for _, ep := range episodes {
 		epNo := ep.EpID
-		if epNo <= 0 {
-			epNo = ep.ID
-		}
 		if epNo > 0 {
 			seen[epNo] = struct{}{}
 		}

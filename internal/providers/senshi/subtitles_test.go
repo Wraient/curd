@@ -7,13 +7,6 @@ import (
 	"testing"
 )
 
-func TestSubtitleInfoFromURL(t *testing.T) {
-	rawURL := "https://embed.example/e/abc/?sub.info=https%3A%2F%2Fninstream.com%2Fmanifest.json"
-	if got := subtitleInfoFromURL(rawURL); got != "https://ninstream.com/manifest.json" {
-		t.Fatalf("unexpected manifest url %q", got)
-	}
-}
-
 func TestPickSenshiSubtitleTrackPrefersEnglishDefault(t *testing.T) {
 	tracks := []senshiSubtitleTrack{
 		{Src: "https://cdn.example/jpn.vtt", Label: "JPN"},
@@ -42,21 +35,6 @@ func TestPickSenshiSubtitleTrackAvoidsForcedEnglishFallback(t *testing.T) {
 	}
 	if got := pickSenshiSubtitleTrack(tracks); got != "https://cdn.example/dialogue.vtt" {
 		t.Fatalf("picked %q instead of the full dialogue track", got)
-	}
-}
-
-func TestSenshiSubtitleManifestURLUsesServerFM(t *testing.T) {
-	serverFM := "https://embed.example/e/abc/?sub.info=https://ninstream.com/manifest.json"
-	item := embedItem{ServerFM: &serverFM}
-	if got := senshiSubtitleManifestURL(item); got != "https://ninstream.com/manifest.json" {
-		t.Fatalf("unexpected manifest url %q", got)
-	}
-}
-
-func TestSenshiSubtitleManifestURLFallsBackToMaskedBase(t *testing.T) {
-	item := embedItem{MaskedBaseURL: "https://ninstream.com/example/base"}
-	if got := senshiSubtitleManifestURL(item); got != "https://ninstream.com/example/base/sub_filemoon.json" {
-		t.Fatalf("unexpected manifest url %q", got)
 	}
 }
 

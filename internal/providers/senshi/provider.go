@@ -2,7 +2,7 @@ package senshi
 
 import "github.com/wraient/curd/internal/providers"
 
-// Provider implements senshi.live catalog search and direct HLS stream resolution.
+// Provider implements senshi.to catalog search and Vidcloud HLS stream resolution.
 type Provider struct{}
 
 func (p *Provider) Name() string {

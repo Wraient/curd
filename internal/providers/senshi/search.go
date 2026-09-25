@@ -18,9 +18,19 @@ func searchAnime(query, mode string) ([]providers.SelectionOption, error) {
 
 	var payload filterResponse
 	err := fetchJSON(http.MethodPost, baseURL+"/anime/filter", map[string]any{
-		"searchTerm": query,
-		"page":       1,
-		"limit":      25,
+		"searchTerm":         query,
+		"types":              []string{},
+		"genres":             []string{},
+		"status":             []string{},
+		"seasons":            []string{},
+		"year":               "",
+		"studios":            []string{},
+		"producers":          []string{},
+		"languages":          []string{},
+		"page":               1,
+		"limit":              30,
+		"sortBy":             "score_desc",
+		"languagePreference": "EN",
 	}, &payload)
 	if err != nil {
 		return nil, err
@@ -44,7 +54,7 @@ func searchAnime(query, mode string) ([]providers.SelectionOption, error) {
 			Key:       strconv.Itoa(malID),
 			Label:     label,
 			Title:     title,
-			Thumbnail: posterURL(malID),
+			Thumbnail: searchThumbnail(item),
 			ExtraData: toSearchItem(item),
 		})
 	}
@@ -52,6 +62,13 @@ func searchAnime(query, mode string) ([]providers.SelectionOption, error) {
 		return nil, fmt.Errorf("no results for %q", query)
 	}
 	return options, nil
+}
+
+func searchThumbnail(item animeItem) string {
+	if thumbnail := absoluteURL(item.AnimePicture); thumbnail != "" {
+		return thumbnail
+	}
+	return posterURL(item.ID)
 }
 
 func formatSearchLabel(item animeItem) string {
