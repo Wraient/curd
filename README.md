@@ -424,7 +424,7 @@ If the browser reaches the localhost callback page but curd does not continue au
 - [MyAnimeList API](https://myanimelist.net/apiconfig/references/api/v2) - MyAnimeList OAuth and tracking sync
 - [AniSkip API](https://api.aniskip.com/api-docs) - Get anime intro and outro timings
 - [AllAnime Content](https://allanime.to/) - Fetch anime url
-- [Senshi Project](https://senshi.live/) - Default provider with direct HLS streams and MAL-based catalog matching
+- [Senshi Project](https://senshi.to/) - Default provider with Vidcloud HLS streams and MAL-based catalog matching
 - [AniPub](https://anipub.xyz/) - Fast JSON catalog APIs with MegaPlay HLS streams
 - [AniNeko Content](https://anineko.to/) - Alternative provider with soft/hard sub stream selection
 - [Animepahe Content](https://animepahe.pw/) - Alternative provider for 1080p streams

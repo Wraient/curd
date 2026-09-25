@@ -13,7 +13,7 @@ import (
 
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-var baseURL = "https://senshi.live"
+var baseURL = "https://senshi.to"
 
 func newRequest(method, rawURL string) (*http.Request, error) {
 	req, err := http.NewRequest(method, rawURL, nil)
@@ -22,6 +22,10 @@ func newRequest(method, rawURL string) (*http.Request, error) {
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Referer", baseURL+"/")
+	req.Header.Set("Accept", "application/json")
+	if strings.HasPrefix(rawURL, vidcloudSourcesBaseURL+"/") {
+		req.Header.Set("Origin", baseURL)
+	}
 	return req, nil
 }
 
@@ -41,6 +45,10 @@ func fetchJSON(method, rawURL string, payload any, dest any) error {
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Referer", baseURL+"/")
+	req.Header.Set("Accept", "application/json")
+	if strings.HasPrefix(rawURL, vidcloudSourcesBaseURL+"/") {
+		req.Header.Set("Origin", baseURL)
+	}
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

@@ -25,43 +25,6 @@ type senshiSubtitleTrack struct {
 	Default bool   `json:"default"`
 }
 
-func senshiSubtitleManifestURL(item embedItem) string {
-	if item.ServerFM != nil {
-		if manifest := subtitleInfoFromURL(strings.TrimSpace(*item.ServerFM)); manifest != "" {
-			return manifest
-		}
-	}
-	base := strings.TrimSpace(item.MaskedBaseURL)
-	if base == "" {
-		return ""
-	}
-	return strings.TrimRight(base, "/") + "/sub_filemoon.json"
-}
-
-func subtitleInfoFromURL(rawURL string) string {
-	if rawURL == "" {
-		return ""
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(parsed.Query().Get("sub.info"))
-}
-
-func fetchSenshiSubtitle(manifestURL string) (string, error) {
-	manifestURL = strings.TrimSpace(manifestURL)
-	if manifestURL == "" {
-		return "", nil
-	}
-
-	var tracks []senshiSubtitleTrack
-	if err := fetchJSON(http.MethodGet, manifestURL, nil, &tracks); err != nil {
-		return "", err
-	}
-	return pickSenshiSubtitleTrack(tracks), nil
-}
-
 func pickSenshiSubtitleTrack(tracks []senshiSubtitleTrack) string {
 	// Senshi can put a forced/signs-only English track before the full dialogue
 	// track. Prefer a non-forced default before considering label fallbacks.
@@ -104,18 +67,6 @@ func isSenshiForcedSubtitleLabel(label string) bool {
 	return strings.Contains(label, "forced") ||
 		strings.Contains(label, "sign") ||
 		strings.Contains(label, "song")
-}
-
-func resolveSenshiSubtitle(item embedItem) string {
-	manifestURL := senshiSubtitleManifestURL(item)
-	if manifestURL == "" {
-		return ""
-	}
-	subtitle, err := fetchSenshiSubtitle(manifestURL)
-	if err != nil {
-		return ""
-	}
-	return prepareSenshiSubtitle(subtitle)
 }
 
 func prepareSenshiSubtitle(subtitleURL string) string {
