@@ -1345,9 +1345,16 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 			nextEpisode := *anime
 			nextEpisode.ProviderId = anime.ProviderId
 			nextEpisode.ProviderName = anime.ProviderName
+			if providerNoPrefetch(CurrentAnimeProviderName(&nextEpisode)) {
+				anime.Ep.NextEpisode = NextEpisode{}
+				return
+			}
 			nextResult, err := ResolveEpisodeURL(*userCurdConfig, &nextEpisode, nextEpNum)
 			if err != nil {
 				Log(fmt.Sprintf("Error getting next episode link for ep %d: %v", nextEpNum, err))
+			} else if providerNoPrefetch(nextResult.ProviderName) {
+				anime.Ep.NextEpisode = NextEpisode{}
+				return
 			} else {
 				anime.Ep.NextEpisode = NextEpisode{
 					Number:       nextEpNum,

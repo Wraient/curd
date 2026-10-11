@@ -180,6 +180,11 @@ func animepaheDeclinedInConfig(config *CurdConfig) bool {
 	return declined
 }
 
+func providerNoPrefetch(providerName string) bool {
+	meta, ok := providers.MetaFor(providerName)
+	return ok && meta.NoPrefetch
+}
+
 func ProviderStackContains(config *CurdConfig, providerName string) bool {
 	providerName = normalizeProviderName(providerName)
 	if providerName == "" {

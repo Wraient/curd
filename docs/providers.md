@@ -36,7 +36,7 @@ This document explains the intent of the design, how to add a provider, how user
 │  internal/providers/                                     │
 │  registry · types · Provider interface                   │
 ├─────────────────────────────────────────────────────────┤
-│  allanime/   animepahe/   yourprovider/                │
+│  allanime/   animepahe/   anikoto/    yourprovider/    │
 │  search · episodes · streams · register.go               │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -170,6 +170,7 @@ func init() {
 | `Referrer` | Default HTTP Referer for mpv when playing this provider's links. |
 | `DefaultDisabled` | If true, provider is off until user enables it (see Animepahe). |
 | `DisableReason` | Shown when a disabled provider is requested. |
+| `NoPrefetch` | Skip next-episode link prefetch for providers whose resolved links expire quickly. |
 | `OptOutToken` | Config token to permanently skip fallback prompts (e.g. `no-animepahe`). |
 | `FallbackPrompt` | Reserved for host fallback UX (Animepahe chromium warning). |
 
@@ -332,6 +333,7 @@ Document the decision in a short ADR before building. The compile-time registry 
 | AniNeko | `internal/providers/anineko` | AJAX search, HTML scrape, bibiemb/vibeplayer embed resolution, `SubStyle` / `HintResolver` |
 | AllAnime | `internal/providers/allanime` | GraphQL search/episodes, parallel stream resolution, `HintResolver` |
 | Animepahe | `internal/providers/animepahe` | DDoS-Guard + rod browser, `IDResolver`, `DefaultDisabled`, `OptOutToken` |
+| Anikoto | `internal/providers/anikoto` | VRF-protected HTML/JSON catalog, native server selection, and MegaPlay AES/HMAC stream resolution |
 
 Key host files:
 
