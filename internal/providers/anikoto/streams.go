@@ -72,7 +72,7 @@ func getEpisodeStreamsForMode(showID string, epNo int, mode string) ([]string, m
 		}
 		return nil, nil, fmt.Errorf("no playable Anikoto %s streams found for episode %d", mode, epNo)
 	}
-	return links, hints, nil
+	return prioritizePlayableStreams(links, hints), hints, nil
 }
 
 func fetchServerCandidates(episodeIDs, referer, mode string) ([]serverCandidate, error) {
