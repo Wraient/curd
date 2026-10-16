@@ -121,10 +121,10 @@ func TestEpisodesListCountsLocalEpisodes(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(detailsResponse{
 			Local: localDetails{
-				Link: "src=https://anipub.xyz/video/107257/sub",
+				Link: "src=https://anipub.org/video/107257/sub",
 				Ep: []episodeLink{
-					{Link: "src=https://anipub.xyz/video/107259/sub"},
-					{Link: "src=https://anipub.xyz/video/107260/sub"},
+					{Link: "src=https://anipub.org/video/107259/sub"},
+					{Link: "src=https://anipub.org/video/107260/sub"},
 				},
 			},
 		})
@@ -178,7 +178,7 @@ func TestGetEpisodeStreamsForModeResolvesMegaplay(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(detailsResponse{
 			Local: localDetails{
-				Link: "src=https://anipub.xyz/video/107257/sub",
+				Link: "src=https://anipub.org/video/107257/sub",
 			},
 		})
 	}))
@@ -247,7 +247,7 @@ func TestResolveMegaplayStreamUsesDubMode(t *testing.T) {
 	t.Cleanup(func() { megaplayBaseURL = originalMega })
 	megaplayBaseURL = megaplay.URL
 
-	streamURL, subtitle, err := resolveMegaplayStream("https://anipub.xyz/video/42/sub", "dub")
+	streamURL, subtitle, err := resolveMegaplayStream("https://anipub.org/video/42/sub", "dub")
 	if err != nil {
 		t.Fatalf("resolveMegaplayStream: %v", err)
 	}

@@ -2,7 +2,7 @@ package anipub
 
 import "github.com/wraient/curd/internal/providers"
 
-// Provider implements anipub.xyz catalog search and MegaPlay stream resolution.
+// Provider implements anipub.org catalog search and MegaPlay stream resolution.
 type Provider struct{}
 
 func (p *Provider) Name() string {
