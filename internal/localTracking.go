@@ -637,9 +637,17 @@ func prefetchNextUntrackedEpisode(userCurdConfig *CurdConfig, anime *Anime) {
 	nextEpisode := *anime
 	nextEpisode.ProviderId = anime.ProviderId
 	nextEpisode.ProviderName = anime.ProviderName
+	if providerNoPrefetch(CurrentAnimeProviderName(&nextEpisode)) {
+		anime.Ep.NextEpisode = NextEpisode{}
+		return
+	}
 	nextResult, err := ResolveEpisodeURL(*userCurdConfig, &nextEpisode, nextEpNum)
 	if err != nil {
 		Log(fmt.Sprintf("Error getting next untracked episode link for ep %d: %v", nextEpNum, err))
+		return
+	}
+	if providerNoPrefetch(nextResult.ProviderName) {
+		anime.Ep.NextEpisode = NextEpisode{}
 		return
 	}
 	anime.Ep.NextEpisode = NextEpisode{

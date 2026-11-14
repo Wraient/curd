@@ -87,6 +87,69 @@ func (s *stackStubProviderBridge) GetEpisodeURLForMode(config providers.Playback
 	return s.stackStubProvider.GetEpisodeURLForMode(CurdConfig{SubOrDub: config.SubOrDub}, id, epNo, mode)
 }
 
+func TestProviderNoPrefetchMetadata(t *testing.T) {
+	if !providerNoPrefetch("anikoto") {
+		t.Fatal("expected Anikoto to disable next-episode prefetch")
+	}
+	if providerNoPrefetch("senshi") {
+		t.Fatal("expected Senshi to keep next-episode prefetch")
+	}
+}
+
+func TestPrefetchNextUntrackedEpisodeSkipsNoPrefetchProvider(t *testing.T) {
+	provider := &stackStubProvider{name: "anikoto"}
+	withProviderFactories(t, provider)
+	anime := &Anime{
+		ProviderId:   "show-id",
+		ProviderName: "anikoto",
+		Ep:           Episode{Number: 1},
+	}
+
+	prefetchNextUntrackedEpisode(&CurdConfig{}, anime)
+
+	if len(provider.calls) != 0 {
+		t.Fatalf("no-prefetch provider was called: %#v", provider.calls)
+	}
+	if anime.Ep.NextEpisode.Number != 0 || len(anime.Ep.NextEpisode.Links) != 0 {
+		t.Fatalf("unexpected prefetched episode: %#v", anime.Ep.NextEpisode)
+	}
+}
+
+func TestPrefetchNextUntrackedEpisodeDiscardsNoPrefetchFallback(t *testing.T) {
+	senshi := &stackStubProvider{
+		name: "senshi",
+		episodeErrors: map[string]map[string]error{
+			"show-id": {"sub": errors.New("provider unavailable")},
+		},
+	}
+	anikoto := &stackStubProvider{
+		name: "anikoto",
+		searchResults: map[string][]SelectionOption{
+			"sub": {{Key: "show-id", Title: "Example"}},
+		},
+		episodeResults: map[string]map[string][]string{
+			"show-id": {"sub": {"https://cdn.example/short-lived.m3u8"}},
+		},
+	}
+	withProviderFactories(t, senshi, anikoto)
+	config := &CurdConfig{Provider: `["senshi","anikoto"]`}
+	anime := &Anime{
+		Title:        AnimeTitle{Romaji: "Example"},
+		ProviderId:   "show-id",
+		ProviderName: "senshi",
+		Ep:           Episode{Number: 1},
+	}
+
+	prefetchNextUntrackedEpisode(config, anime)
+
+	if len(senshi.calls) == 0 || len(anikoto.calls) == 0 {
+		t.Fatalf("expected stack fallback during prefetch: senshi=%#v anikoto=%#v", senshi.calls, anikoto.calls)
+	}
+	if anime.Ep.NextEpisode.Number != 0 || len(anime.Ep.NextEpisode.Links) != 0 {
+		t.Fatalf("no-prefetch fallback was cached: %#v", anime.Ep.NextEpisode)
+	}
+}
+
 func TestConfiguredProviderNamesAcceptsOrderedLists(t *testing.T) {
 	withAllProvidersEnabledForTest(t)
 
@@ -95,11 +158,11 @@ func TestConfiguredProviderNamesAcceptsOrderedLists(t *testing.T) {
 		cfg  *CurdConfig
 		want []string
 	}{
-		{name: "empty", cfg: &CurdConfig{}, want: []string{"senshi", "anipub", "anineko", "allanime", "animepahe"}},
+		{name: "empty", cfg: &CurdConfig{}, want: []string{"senshi", "anipub", "anineko", "allanime", "animepahe", "anikoto"}},
 		{name: "json list", cfg: &CurdConfig{Provider: `["allanime","animepahe"]`}, want: []string{"allanime", "animepahe"}},
 		{name: "comma list", cfg: &CurdConfig{Provider: "animepahe,allanime"}, want: []string{"animepahe", "allanime"}},
 		{name: "plus list", cfg: &CurdConfig{Provider: "allanime+animepahe"}, want: []string{"allanime", "animepahe"}},
-		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"senshi", "anipub", "anineko", "allanime", "animepahe"}},
+		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"senshi", "anipub", "anineko", "allanime", "animepahe", "anikoto"}},
 	}
 
 	for _, tc := range cases {

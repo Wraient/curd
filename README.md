@@ -437,6 +437,7 @@ If the browser reaches the localhost callback page but curd does not continue au
 - [AniPub](https://anipub.org/) - Fast JSON catalog APIs with MegaPlay HLS streams
 - [AniNeko Content](https://anineko.to/) - Alternative provider with soft/hard sub stream selection
 - [Animepahe Content](https://animepahe.pw/) - Alternative provider for 1080p streams
+- [Anikoto](https://anikototv.to/) - VRF-protected catalog with native MegaPlay stream resolution
 - [Jikan](https://jikan.moe/) - Get filler episode number
 
 ## Credits

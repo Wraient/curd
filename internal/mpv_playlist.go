@@ -1123,9 +1123,17 @@ func (c *MPVPlaylistController) prefetchAfterPlaylistSwitch(currentEp int) {
 	cfg := *c.config
 	cfg.SubOrDub = c.preferredMode
 	next := *c.anime
+	if providerNoPrefetch(CurrentAnimeProviderName(&next)) {
+		c.anime.Ep.NextEpisode = NextEpisode{}
+		return
+	}
 	result, err := ResolveEpisodeURL(cfg, &next, nextEp)
 	if err != nil || len(result.Links) == 0 {
 		Log(fmt.Sprintf("MPV playlist: prefetch ep %d: %v", nextEp, err))
+		return
+	}
+	if providerNoPrefetch(result.ProviderName) {
+		c.anime.Ep.NextEpisode = NextEpisode{}
 		return
 	}
 	c.anime.Ep.NextEpisode = NextEpisode{
