@@ -54,7 +54,7 @@ func TestResolveMegaplayStreamFallsBackToEnc(t *testing.T) {
 	t.Cleanup(func() { megaplayBaseURL = originalMega })
 	megaplayBaseURL = megaplay.URL
 
-	streamURL, _, err := resolveMegaplayStream("https://anipub.xyz/video/42/sub", "sub")
+	streamURL, _, err := resolveMegaplayStream("https://anipub.org/video/42/sub", "sub")
 	if err != nil {
 		t.Fatalf("resolveMegaplayStream: %v", err)
 	}

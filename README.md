@@ -2,6 +2,15 @@
 
 A cli application to stream anime with [Anilist](https://anilist.co/) integration and Discord RPC written in golang.
 Works on Linux, MacOS and Windows.
+## Until The Maintainer Picks it up .. you can use this version to manually install ..
+```
+In Arch 
+
+git clone https://github.com/adnanisagoodboy/curd.git
+cd curd
+makepkg -si
+sudo pacman -S rofi ueberzugpp
+```
 
 ## Join the discord server
 
@@ -425,7 +434,7 @@ If the browser reaches the localhost callback page but curd does not continue au
 - [AniSkip API](https://api.aniskip.com/api-docs) - Get anime intro and outro timings
 - [AllAnime Content](https://allanime.to/) - Fetch anime url
 - [Senshi Project](https://senshi.to/) - Default provider with Vidcloud HLS streams and MAL-based catalog matching
-- [AniPub](https://anipub.xyz/) - Fast JSON catalog APIs with MegaPlay HLS streams
+- [AniPub](https://anipub.org/) - Fast JSON catalog APIs with MegaPlay HLS streams
 - [AniNeko Content](https://anineko.to/) - Alternative provider with soft/hard sub stream selection
 - [Animepahe Content](https://animepahe.pw/) - Alternative provider for 1080p streams
 - [Jikan](https://jikan.moe/) - Get filler episode number
