@@ -11,12 +11,15 @@ import (
 )
 
 type stackStubProvider struct {
-	name           string
-	searchResults  map[string][]SelectionOption
-	episodeResults map[string]map[string][]string
-	episodeErrors  map[string]map[string]error
-	searchCalls    []string
-	calls          []string
+	name             string
+	searchResults    map[string][]SelectionOption
+	episodeResults   map[string]map[string][]string
+	episodeErrors    map[string]map[string]error
+	episodeLists     map[string][]string
+	episodeListErr   error
+	searchCalls      []string
+	calls            []string
+	episodeListCalls []string
 }
 
 func (s *stackStubProvider) Name() string { return s.name }
@@ -28,7 +31,12 @@ func (s *stackStubProvider) SearchAnime(query, mode string) ([]SelectionOption, 
 }
 
 func (s *stackStubProvider) EpisodesList(showID, mode string) ([]string, error) {
-	return nil, nil
+	mode = normalizeTranslationType(mode)
+	s.episodeListCalls = append(s.episodeListCalls, s.name+":"+mode+":"+showID)
+	if s.episodeListErr != nil {
+		return nil, s.episodeListErr
+	}
+	return s.episodeLists[mode], nil
 }
 
 func (s *stackStubProvider) GetEpisodeURL(config CurdConfig, id string, epNo int) ([]string, error) {

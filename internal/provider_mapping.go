@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,9 +10,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/wraient/curd/internal/providers/animepahe"
 	"github.com/wraient/curd/internal/providers/anipub"
+	"github.com/wraient/curd/internal/providers/senshi"
 )
 
 type ProviderMappingOutcome int
@@ -22,81 +26,194 @@ const (
 	ProviderMappingQuit
 )
 
+// providerMappingSearchState carries the in-progress mapping query. Searches
+// always cover the full configured stack; there is no per-provider stepping.
 type providerMappingSearchState struct {
-	query         string
-	allProviders  []string
-	sequential    bool
-	providerIndex int
+	query string
 }
 
-func (s *providerMappingSearchState) activeProviders() []string {
-	if !s.sequential {
-		return s.allProviders
-	}
-	if s.providerIndex >= len(s.allProviders) {
-		return nil
-	}
-	return []string{s.allProviders[s.providerIndex]}
+// mappingValidationCache memoizes live episode lists per provider+mode for
+// the session so saved-mapping validation doesn't re-fetch every playback.
+var (
+	mappingValidationCacheMu sync.Mutex
+	mappingValidationCache   = map[string][]string{}
+)
+
+func resetMappingValidationCacheForTest(t interface{ Helper() }) {
+	t.Helper()
+	mappingValidationCacheMu.Lock()
+	defer mappingValidationCacheMu.Unlock()
+	mappingValidationCache = map[string][]string{}
 }
 
-func (s *providerMappingSearchState) currentProviderLabel() string {
-	if !s.sequential {
-		return "all configured providers"
+// validateSavedMapping checks a stored provider mapping against the live
+// provider in the requested mode only (never the alternate mode). A lookup
+// error is transient: the mapping is kept and playback surfaces the real
+// error. Only a definitive miss (list loads but lacks the episode) rejects
+// the mapping and forces a re-search.
+func validateSavedMapping(config *CurdConfig, anime *Anime, epNo int) (episodes []string, usable bool) {
+	providerName, providerID := AnimeProviderID(anime)
+	if providerID == "" || !ProviderEnabled(providerName) || !ProviderStackContains(config, providerName) {
+		return nil, false
 	}
-	if s.providerIndex >= len(s.allProviders) {
-		return ""
-	}
-	return s.allProviders[s.providerIndex]
-}
-
-func (s *providerMappingSearchState) nextProviderLabel() string {
-	if len(s.allProviders) == 0 {
-		return ""
-	}
-	if !s.sequential {
-		if len(s.allProviders) <= 1 {
-			return ""
+	mode := normalizeTranslationType(config.SubOrDub)
+	cacheKey := providerName + "::" + providerID + "::" + mode
+	mappingValidationCacheMu.Lock()
+	cached, ok := mappingValidationCache[cacheKey]
+	mappingValidationCacheMu.Unlock()
+	if ok {
+		episodes = cached
+	} else {
+		list, err := EpisodesList(QualifyProviderID(providerName, providerID), mode)
+		if err != nil {
+			return nil, true
 		}
-		return s.allProviders[0]
+		episodes = list
+		mappingValidationCacheMu.Lock()
+		mappingValidationCache[cacheKey] = list
+		mappingValidationCacheMu.Unlock()
 	}
-	next := s.providerIndex + 1
-	if next < len(s.allProviders) {
-		return s.allProviders[next]
+	if epNo > 0 && !episodeNumberInList(episodes, epNo) {
+		return episodes, false
 	}
-	return ""
+	return episodes, true
 }
 
-func (s *providerMappingSearchState) advanceToNextProvider() bool {
-	if len(s.allProviders) == 0 {
+// episodeNumberInList reports membership by numeric episode identity.
+// Non-numeric entries (specials, decimals) never match a plain episode.
+func episodeNumberInList(episodes []string, epNo int) bool {
+	if epNo <= 0 {
 		return false
 	}
-	if !s.sequential {
-		if len(s.allProviders) <= 1 {
-			return false
+	for _, entry := range episodes {
+		if n, err := strconv.Atoi(strings.TrimSpace(entry)); err == nil && n == epNo {
+			return true
 		}
-		s.sequential = true
-		s.providerIndex = 0
-		return true
 	}
-	s.providerIndex++
-	return s.providerIndex < len(s.allProviders)
+	return false
 }
 
-func (s *providerMappingSearchState) resetToAllProviders() {
-	s.sequential = false
-	s.providerIndex = 0
+// maxEpisodeCountInResults returns the highest episode count advertised by
+// the given search results, or 0 when none carry a count.
+func maxEpisodeCountInResults(results []SelectionOption) int {
+	maxCount := 0
+	for _, option := range results {
+		if count, ok := episodeCountFromSelectionOption(option); ok && count > maxCount {
+			maxCount = count
+		}
+	}
+	return maxCount
 }
 
-func searchAnimeForMapping(config *CurdConfig, state *providerMappingSearchState, mode string) ([]SelectionOption, error) {
-	providers := state.activeProviders()
-	if len(providers) == 0 {
-		return nil, nil
+// truncateSearchQuery bounds user-typed queries so garbage input cannot fan
+// out into oversized provider requests.
+func truncateSearchQuery(query string) string {
+	query = strings.TrimSpace(query)
+	if len(query) > 200 {
+		return query[:200]
 	}
-	if !state.sequential && len(providers) == len(state.allProviders) {
-		return SearchAnime(state.query, mode)
-	}
-	return searchAnimeWithProviders(providers, state.query, mode)
+	return query
 }
+
+// stackedSearchWithExpansion runs one stacked search in the requested mode.
+// When the primary query returns nothing, it tries the alternate tracker
+// title (Romaji<->English) once and merges both result sets, deduplicated by
+// qualified key then by normalized title within a provider.
+func stackedSearchWithExpansion(config *CurdConfig, anime *Anime, primaryQuery, mode string) ([]SelectionOption, []ProviderSearchError, error) {
+	results, failures, err := searchAnimeStack(config, primaryQuery, mode)
+	if len(results) > 0 {
+		return results, failures, err
+	}
+	alternate := alternateSearchTitle(anime, primaryQuery)
+	if alternate == "" {
+		return results, failures, err
+	}
+	altResults, altFailures, altErr := searchAnimeStack(config, alternate, mode)
+	merged, mergedFailures := mergeDedupeSearchResults(results, altResults, failures, altFailures)
+	if len(merged) > 0 {
+		return merged, mergedFailures, nil
+	}
+	if err == nil {
+		return merged, mergedFailures, altErr
+	}
+	if altErr != nil {
+		return merged, mergedFailures, fmt.Errorf("%v; alternate %q: %v", err, alternate, altErr)
+	}
+	return merged, mergedFailures, err
+}
+
+func alternateSearchTitle(anime *Anime, primaryQuery string) string {
+	if anime == nil {
+		return ""
+	}
+	primary := normalizeSearchTitle(primaryQuery)
+	romaji := normalizeSearchTitle(anime.Title.Romaji)
+	english := normalizeSearchTitle(anime.Title.English)
+	switch {
+	case primary != "" && primary == romaji && english != "" && english != romaji:
+		return strings.TrimSpace(anime.Title.English)
+	case primary != "" && primary == english && romaji != "" && romaji != english:
+		return strings.TrimSpace(anime.Title.Romaji)
+	default:
+		return ""
+	}
+}
+
+func mergeDedupeSearchResults(primary, alternate []SelectionOption, primaryFailures, alternateFailures []ProviderSearchError) ([]SelectionOption, []ProviderSearchError) {
+	merged := make([]SelectionOption, 0, len(primary)+len(alternate))
+	seen := make(map[string]struct{})
+	add := func(option SelectionOption) {
+		if _, exists := seen[option.Key]; exists {
+			return
+		}
+		seen[option.Key] = struct{}{}
+		merged = append(merged, option)
+	}
+	for _, option := range primary {
+		add(option)
+	}
+	for _, option := range alternate {
+		add(option)
+	}
+	failures := append(append([]ProviderSearchError(nil), primaryFailures...), alternateFailures...)
+	return merged, failures
+}
+
+// formatProviderFailureNotes renders per-provider errors for recovery
+// messages: one short line each, overall capped for rofi -mesg.
+func formatProviderFailureNotes(failures []ProviderSearchError) string {
+	if len(failures) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(failures))
+	total := 0
+	for _, failure := range failures {
+		note := strings.TrimSpace(failure.Err)
+		if len(note) > 120 {
+			note = note[:117] + "..."
+		}
+		line := failure.Provider + ": " + note
+		if total+len(line) > 500 {
+			break
+		}
+		total += len(line)
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
+}
+
+// maxAnimepaheDetailFetches bounds the exact-meta-tag verification fetches per
+// mapping attempt; animepaheDetailFetchTimeout bounds each fetch. Beyond the
+// budget, remaining candidates go to the manual picker.
+const (
+	maxAnimepaheDetailFetches      = 3
+	animepaheDetailFetchTimeout    = 10 * time.Second
+	mappingCustomQueryMaxBlanks    = 3
+	mappingRecoveryMessageMaxChars = 500
+)
 
 func confirmProviderMatch(option SelectionOption, reason string) bool {
 	label := option.Label
@@ -119,87 +236,92 @@ func confirmProviderMatch(option SelectionOption, reason string) bool {
 	return selected.Key == "use"
 }
 
-func autoMatchProviderListing(config *CurdConfig, anime *Anime, animeList []SelectionOption, userQuery string, anilistEntry *Entry) bool {
-	anilistIDStr := strconv.Itoa(anime.AnilistId)
+// matchJikanThumbnail auto-matches when a result thumbnail is byte-identical
+// to a Jikan (MyAnimeList) picture for the anime's MAL ID. The Jikan picture
+// list is fetched lazily and only when a MAL thumbnail candidate exists.
+func matchJikanThumbnail(anime *Anime, animeList []SelectionOption) bool {
+	malRegex := regexp.MustCompile(`myanimelist\.net/images/anime/[^/]+/([^/]+\.jpg)`)
 	var jikanUrls []string
 	fetchedJikan := false
 
-	anilistRegex := regexp.MustCompile(`anilistcdn/media/anime/cover/(?:large|medium)/(?:bx)?(\d+)`)
-	malRegex := regexp.MustCompile(`myanimelist\.net/images/anime/[^/]+/([^/]+\.jpg)`)
-	senshiPosterRE := regexp.MustCompile(`/posters/(\d+)(?:\.webp)?`)
+	for _, option := range animeList {
+		if !strings.Contains(option.Thumbnail, "myanimelist.net") {
+			continue
+		}
+		matches := malRegex.FindStringSubmatch(option.Thumbnail)
+		if len(matches) < 2 {
+			continue
+		}
+		fileName := matches[1]
 
-	if anime.MalId == 0 {
-		anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
-	}
-	if anime.MalId != 0 {
-		malIDStr := strconv.Itoa(anime.MalId)
-		for i, option := range animeList {
-			if option.Key == malIDStr {
-				Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s', Thumbnail='%s'", i, option.Key, option.Label, option.Thumbnail))
+		if !fetchedJikan {
+			if anime.MalId == 0 {
+				anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
+			}
+			if anime.MalId != 0 {
+				urls, err := FetchJikanPictures(anime.MalId)
+				if err != nil {
+					Log(fmt.Sprintf("Failed to fetch Jikan pictures: %v", err))
+				} else {
+					jikanUrls = urls
+				}
+			}
+			fetchedJikan = true
+		}
+
+		for _, url := range jikanUrls {
+			if strings.HasSuffix(url, "/"+fileName) || strings.Contains(url, fileName) {
 				anime.ProviderId = option.Key
-				Log(fmt.Sprintf("Found MAL ID provider key match! Setting ProviderId to: %s", anime.ProviderId))
+				Log(fmt.Sprintf("Found MyAnimeList Thumbnail match (%s)! Setting ProviderId to: %s", fileName, anime.ProviderId))
 				return true
 			}
 		}
+	}
+	return false
+}
+
+func autoMatchProviderListing(config *CurdConfig, anime *Anime, animeList []SelectionOption, userQuery string, anilistEntry *Entry) bool {
+	// Silent auto-match requires cross-system identity: a MAL ID, an exact
+	// image ID, or an exact animepahe meta tag. Title similarity only ranks
+	// the picker list and never decides here.
+	if anime.MalId == 0 {
+		anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
 	}
 
 	for i, option := range animeList {
 		Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s', Thumbnail='%s'", i, option.Key, option.Label, option.Thumbnail))
 
-		if malID := malIDFromProviderExtraData(option.ExtraData); malID != 0 && anime.MalId != 0 && malID == anime.MalId {
+		rawID := option.Key
+		if _, parsed, ok := ParseProviderQualifiedID(option.Key); ok {
+			rawID = parsed
+		}
+		if anime.MalId != 0 {
+			if rawID == strconv.Itoa(anime.MalId) {
+				anime.ProviderId = option.Key
+				Log(fmt.Sprintf("Found MAL ID provider key match! Setting ProviderId to: %s", anime.ProviderId))
+				return true
+			}
+			if malID := malIDFromProviderExtraData(option.ExtraData); malID != 0 && malID == anime.MalId {
+				anime.ProviderId = option.Key
+				Log(fmt.Sprintf("Found provider MAL ID extra-data match! Setting ProviderId to: %s", anime.ProviderId))
+				return true
+			}
+		}
+
+		if anime.AnilistId != 0 && thumbnailExactAnilistMatch(option.Thumbnail, anime.AnilistId) {
 			anime.ProviderId = option.Key
-			Log(fmt.Sprintf("Found provider MAL ID extra-data match! Setting ProviderId to: %s", anime.ProviderId))
+			Log(fmt.Sprintf("Found Anilist Thumbnail match! Setting ProviderId to: %s", anime.ProviderId))
 			return true
 		}
 
-		if strings.Contains(option.Thumbnail, "anilist.co") {
-			matches := anilistRegex.FindStringSubmatch(option.Thumbnail)
-			if len(matches) > 1 && matches[1] == anilistIDStr {
-				anime.ProviderId = option.Key
-				Log(fmt.Sprintf("Found Anilist Thumbnail match! Setting ProviderId to: %s", anime.ProviderId))
-				return true
-			}
-		} else if strings.Contains(option.Thumbnail, "myanimelist.net") {
-			matches := malRegex.FindStringSubmatch(option.Thumbnail)
-			if len(matches) > 1 {
-				fileName := matches[1]
-
-				if !fetchedJikan {
-					if anime.MalId == 0 {
-						anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
-					}
-					if anime.MalId != 0 {
-						urls, err := FetchJikanPictures(anime.MalId)
-						if err != nil {
-							Log(fmt.Sprintf("Failed to fetch Jikan pictures: %v", err))
-						} else {
-							jikanUrls = urls
-						}
-					}
-					fetchedJikan = true
-				}
-
-				for _, url := range jikanUrls {
-					if strings.HasSuffix(url, "/"+fileName) || strings.Contains(url, fileName) {
-						anime.ProviderId = option.Key
-						Log(fmt.Sprintf("Found MyAnimeList Thumbnail match (%s)! Setting ProviderId to: %s", fileName, anime.ProviderId))
-						return true
-					}
-				}
-			}
-		} else if strings.Contains(option.Thumbnail, "/posters/") {
-			matches := senshiPosterRE.FindStringSubmatch(option.Thumbnail)
-			if len(matches) > 1 && anime.MalId != 0 && matches[1] == strconv.Itoa(anime.MalId) {
-				anime.ProviderId = option.Key
-				Log(fmt.Sprintf("Found Senshi MAL poster match! Setting ProviderId to: %s", anime.ProviderId))
-				return true
-			}
+		if anime.MalId != 0 && senshiPosterMatchesMalID(option.Thumbnail, anime.MalId) {
+			anime.ProviderId = option.Key
+			Log(fmt.Sprintf("Found Senshi MAL poster match! Setting ProviderId to: %s", anime.ProviderId))
+			return true
 		}
 	}
 
-	if bestMatch, ok := confidentProviderSearchMatch(animeList, anime, userQuery); ok {
-		anime.ProviderId = bestMatch.Key
-		Log(fmt.Sprintf("Found confident provider title match! Setting ProviderId to: %s (%s)", anime.ProviderId, bestMatch.Label))
+	if matchJikanThumbnail(anime, animeList) {
 		return true
 	}
 
@@ -209,6 +331,7 @@ func autoMatchProviderListing(config *CurdConfig, anime *Anime, animeList []Sele
 		targetAnilistID := strconv.Itoa(anime.AnilistId)
 		var bestMatch *SelectionOption
 		var highestScore int
+		detailFetches := 0
 
 		if anime.MalId == 0 {
 			anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
@@ -270,6 +393,10 @@ func autoMatchProviderListing(config *CurdConfig, anime *Anime, animeList []Sele
 				score += 2
 			}
 
+			if detailFetches >= maxAnimepaheDetailFetches {
+				Log("Animepahe detail-fetch budget exhausted; remaining candidates go to manual pick.")
+				break
+			}
 			if score >= 2 || len(animeList) <= 3 {
 				animeRef := animepahe.ParseProviderID(rawProviderID)
 				if animeRef.Session == "" {
@@ -283,7 +410,10 @@ func autoMatchProviderListing(config *CurdConfig, anime *Anime, animeList []Sele
 					continue
 				}
 
-				resp, err := sharedHTTPClient.Do(req)
+				fetchCtx, cancel := context.WithTimeout(context.Background(), animepaheDetailFetchTimeout)
+				resp, err := sharedHTTPClient.Do(req.WithContext(fetchCtx))
+				cancel()
+				detailFetches++
 				if err != nil {
 					Log(fmt.Sprintf("Failed to fetch animepahe detail page %s: %v", animeUrl, err))
 					continue
@@ -354,62 +484,61 @@ func autoMatchProviderListing(config *CurdConfig, anime *Anime, animeList []Sele
 	return anime.ProviderId != ""
 }
 
-func promptProviderSearchRecovery(config *CurdConfig, state *providerMappingSearchState, reason string) (action string, err error) {
+// promptMappingRecovery shows the single mapping recovery menu (M1): rename,
+// switch audio language, or go back — plus an episode row when results exist
+// but the wanted episode is missing. It returns the chosen action and, for
+// the episode action, the newly entered episode number (0 otherwise).
+func promptMappingRecovery(config *CurdConfig, state *providerMappingSearchState, mode string, failures []ProviderSearchError, results []SelectionOption, epNo int, reason string) (action string, episode int) {
+	alternate := alternateTranslationType(mode)
 	options := []SelectionOption{
 		{Key: "custom", Label: "Search with a different name"},
+		{Key: "audio", Label: fmt.Sprintf("Try %s instead (search all providers in %s)", titleAudioMode(alternate), alternate)},
 	}
-	if next := state.nextProviderLabel(); next != "" {
-		options = append(options, SelectionOption{
-			Key:   "next_provider",
-			Label: fmt.Sprintf("Try next provider (%s)", next),
-		})
+	if len(results) > 0 && epNo > 0 {
+		if maxEp := maxEpisodeCountInResults(results); maxEp > 0 {
+			options = append(options, SelectionOption{Key: "episode", Label: fmt.Sprintf("Change episode (provider lists up to %d)", maxEp)})
+		} else {
+			options = append(options, SelectionOption{Key: "episode", Label: "Change episode number (if this one is wrong)"})
+		}
 	}
 	options = append(options, SelectionOption{Key: "back", Label: "Back to menu"})
 
 	message := reason
 	if message == "" {
-		message = fmt.Sprintf("No results found for '%s' on %s.", state.query, state.currentProviderLabel())
+		message = fmt.Sprintf("No %s results for %q on %s.", mode, state.query, strings.Join(configuredProviderNames(config), ", "))
+	}
+	if notes := formatProviderFailureNotes(failures); notes != "" {
+		message += "\n" + notes
+	}
+	if len(message) > mappingRecoveryMessageMaxChars {
+		message = message[:mappingRecoveryMessageMaxChars-3] + "..."
 	}
 
 	selected, err := selectWithOptionalMessage(config, options, "Provider search", message)
 	if err != nil {
-		return "", err
+		return "back", 0
 	}
 	selected = NormalizeSelectionKey(selected)
 	if SelectionMeansQuit(selected) {
-		return "quit", nil
+		return "quit", 0
 	}
-	if SelectionMeansBack(selected) || selected.Key == "back" {
-		return "back", nil
+	if SelectionMeansBack(selected) || selected.Key == "" || selected.Key == "back" {
+		return "back", 0
 	}
-	return selected.Key, nil
-}
-
-func promptProviderMatchRecovery(config *CurdConfig, state *providerMappingSearchState) (action string, err error) {
-	options := []SelectionOption{
-		{Key: "pick", Label: "Pick from search results"},
-		{Key: "custom", Label: "Search with a different name"},
+	switch selected.Key {
+	case "custom", "audio":
+		return selected.Key, 0
+	case "episode":
+		episodeNumber, promptErr := promptPositiveEpisodeNumber(config, "Change episode number (if this one is wrong)")
+		if promptErr != nil {
+			Log("Invalid episode input: " + promptErr.Error())
+			CurdOut("Invalid episode number")
+			return "episode", 0
+		}
+		return "episode", episodeNumber
+	default:
+		return "back", 0
 	}
-	if next := state.nextProviderLabel(); next != "" {
-		options = append(options, SelectionOption{
-			Key:   "next_provider",
-			Label: fmt.Sprintf("Try next provider (%s)", next),
-		})
-	}
-	options = append(options, SelectionOption{Key: "back", Label: "Back to menu"})
-
-	selected, err := selectWithOptionalMessage(config, options, "Provider match", "We didn't find an automatic provider match.")
-	if err != nil {
-		return "", err
-	}
-	selected = NormalizeSelectionKey(selected)
-	if SelectionMeansQuit(selected) {
-		return "quit", nil
-	}
-	if SelectionMeansBack(selected) || selected.Key == "back" {
-		return "back", nil
-	}
-	return selected.Key, nil
 }
 
 // selectWithOptionalMessage uses Rofi -mesg when Rofi is on (no notify spam), else prints + ordered select.
@@ -423,12 +552,7 @@ func selectWithOptionalMessage(config *CurdConfig, options []SelectionOption, pr
 	return promptSelectOrdered(options)
 }
 
-func activeProviderName(config *CurdConfig, state *providerMappingSearchState) string {
-	if state != nil && state.sequential {
-		if name := state.currentProviderLabel(); name != "" {
-			return name
-		}
-	}
+func activeProviderName(config *CurdConfig) string {
 	names := configuredProviderNames(config)
 	if len(names) > 0 {
 		return names[0]
@@ -447,14 +571,14 @@ func providerNameFromSelectionLabel(label string) string {
 	return ""
 }
 
-func providerNameFromSelection(config *CurdConfig, state *providerMappingSearchState, selected SelectionOption) string {
+func providerNameFromSelection(config *CurdConfig, selected SelectionOption) string {
 	if providerName, _, ok := ParseProviderQualifiedID(selected.Key); ok {
 		return providerName
 	}
 	if name := providerNameFromSelectionLabel(selected.Label); name != "" {
 		return name
 	}
-	return activeProviderName(config, state)
+	return activeProviderName(config)
 }
 
 func applyMatchedProviderMapping(config *CurdConfig, state *providerMappingSearchState, anime *Anime) {
@@ -463,7 +587,7 @@ func applyMatchedProviderMapping(config *CurdConfig, state *providerMappingSearc
 		anime.ProviderId = rawProviderID
 		return
 	}
-	anime.ProviderName = activeProviderName(config, state)
+	anime.ProviderName = activeProviderName(config)
 }
 
 func applySelectedProviderMapping(config *CurdConfig, state *providerMappingSearchState, anime *Anime, selected SelectionOption) {
@@ -473,56 +597,57 @@ func applySelectedProviderMapping(config *CurdConfig, state *providerMappingSear
 		anime.ProviderId = rawProviderID
 		return
 	}
-	anime.ProviderName = providerNameFromSelection(config, state, selected)
+	anime.ProviderName = providerNameFromSelection(config, selected)
 }
 
+// promptCustomProviderSearchQuery re-prompts for a provider search name.
+// Blank input re-prompts instead of silently reusing the current query; after
+// repeated blanks it backs out. Returns (query, back, quit, err).
 func promptCustomProviderSearchQuery(config *CurdConfig, currentQuery, hint string) (string, bool, bool, error) {
-	manualQuery, err := promptText(config, hint, true)
-	if err != nil {
-		return "", false, false, err
+	for attempts := 0; attempts < mappingCustomQueryMaxBlanks; attempts++ {
+		manualQuery, err := promptText(config, hint, true)
+		if err != nil {
+			return "", false, false, err
+		}
+		if strings.TrimSpace(manualQuery) != "" {
+			return truncateSearchQuery(manualQuery), false, false, nil
+		}
+		CurdOut("Please enter a name, or go back.")
 	}
-	if manualQuery == "" {
-		manualQuery = currentQuery
-	}
-	return manualQuery, false, false, nil
+	return "", true, false, nil
 }
 
 func ResolveAnimeProviderMapping(config *CurdConfig, anime *Anime, query string, anilistEntry *Entry) (ProviderMappingOutcome, error) {
 	return resolveAnimeProviderMapping(config, anime, query, anilistEntry, ManualProviderSearchEnabled(config))
 }
 
-func resolveAnimeProviderMapping(config *CurdConfig, anime *Anime, query string, anilistEntry *Entry, manualOnly bool) (ProviderMappingOutcome, error) {
-	state := &providerMappingSearchState{
-		query:        query,
-		allProviders: configuredProviderNames(config),
+// mappingEpisodeForRecovery returns the episode number the mapping recovery
+// menu should reason about, or 0 when no episode is decided yet.
+func mappingEpisodeForRecovery(anime *Anime) int {
+	if anime == nil || anime.Ep.Number <= 0 {
+		return 0
 	}
+	return anime.Ep.Number
+}
+
+func resolveAnimeProviderMapping(config *CurdConfig, anime *Anime, query string, anilistEntry *Entry, manualOnly bool) (ProviderMappingOutcome, error) {
+	state := &providerMappingSearchState{query: truncateSearchQuery(query)}
+	// The audio mode is loop-local: an M1 language flip re-searches in the
+	// other mode for this resolve only and never writes config.SubOrDub.
+	mode := normalizeTranslationType(config.SubOrDub)
 
 	for {
-		Log(fmt.Sprintf("Searching for anime with query: %s, SubOrDub: %s, scope: %s", state.query, config.SubOrDub, state.currentProviderLabel()))
+		Log(fmt.Sprintf("Searching for anime with query: %s, mode: %s", state.query, mode))
 
-		animeList, err := searchAnimeForMapping(config, state, config.SubOrDub)
-		if err != nil {
-			Log(fmt.Sprintf("Provider search failed: %v", err))
-			action, actionErr := promptProviderSearchRecovery(config, state, fmt.Sprintf("Provider search failed for '%s': %v", state.query, err))
-			if actionErr != nil {
-				return ProviderMappingQuit, actionErr
+		animeList, failures, err := stackedSearchWithExpansion(config, anime, state.query, mode)
+		if err != nil || len(animeList) == 0 {
+			reason := ""
+			if err != nil {
+				Log(fmt.Sprintf("Provider search failed: %v", err))
+				reason = fmt.Sprintf("Provider search failed for '%s': %v", state.query, err)
 			}
-			outcome, cont, actionErr := handleProviderMappingAction(config, state, action, query)
-			if actionErr != nil {
-				return ProviderMappingQuit, actionErr
-			}
-			if !cont {
-				return outcome, nil
-			}
-			continue
-		}
-
-		if len(animeList) == 0 {
-			action, actionErr := promptProviderSearchRecovery(config, state, "")
-			if actionErr != nil {
-				return ProviderMappingQuit, actionErr
-			}
-			outcome, cont, actionErr := handleProviderMappingAction(config, state, action, query)
+			action, episode := promptMappingRecovery(config, state, mode, failures, animeList, mappingEpisodeForRecovery(anime), reason)
+			outcome, cont, actionErr := handleMappingRecoveryAction(config, state, anime, action, episode, &mode)
 			if actionErr != nil {
 				return ProviderMappingQuit, actionErr
 			}
@@ -538,93 +663,73 @@ func resolveAnimeProviderMapping(config *CurdConfig, anime *Anime, query string,
 			return ProviderMappingOK, nil
 		}
 
+		// One merged, ranked picker list — no intermediate "pick from
+		// results" step. Ranking never decides; the user picks.
+		ranked := rankProviderSearchOptions(animeList, anime, state.query, configuredProviderNames(config))
+		hint := TrackerEpisodeHint(config, anilistEntry)
 		if manualOnly {
-			for {
-				hint := ManualProviderSearchHint(config, anilistEntry, state.query, config.SubOrDub)
-				selected, selectErr := promptProviderSearchSelectionWithHint(config, animeList, anilistEntry, hint)
-				if selectErr != nil {
-					Log(fmt.Sprintf("Failed to select anime: %v", selectErr))
-				} else {
-					switch selected.Key {
-					case "-1":
-						// fall through to recovery menu
-					case "-2":
-						return ProviderMappingBack, nil
-					default:
-						applySelectedProviderMapping(config, state, anime, selected)
-						return ProviderMappingOK, nil
-					}
-				}
-
-				action, actionErr := promptProviderMatchRecovery(config, state)
-				if actionErr != nil {
-					return ProviderMappingQuit, actionErr
-				}
-				switch action {
-				case "pick":
-					continue
-				case "custom", "next_provider":
-					outcome, cont, handleErr := handleProviderMappingAction(config, state, action, query)
-					if handleErr != nil {
-						return ProviderMappingQuit, handleErr
-					}
-					if !cont {
-						return outcome, nil
-					}
-					break
-				case "back":
-					return ProviderMappingBack, nil
-				case "quit":
-					return ProviderMappingQuit, nil
-				default:
-					continue
-				}
-				break
-			}
-			continue
+			hint = ManualProviderSearchHint(config, anilistEntry, state.query, mode)
 		}
-
-		for {
-			action, actionErr := promptProviderMatchRecovery(config, state)
-			if actionErr != nil {
-				return ProviderMappingQuit, actionErr
-			}
-
-			switch action {
-			case "pick":
-				CurdOut("Select the correct anime from the search results.")
-				selected, selectErr := promptProviderSearchSelection(config, animeList, anilistEntry)
-				if selectErr != nil {
-					Log(fmt.Sprintf("Failed to select anime: %v", selectErr))
-					continue
-				}
-				switch selected.Key {
-				case "-1":
-					continue
-				case "-2":
-					return ProviderMappingBack, nil
-				default:
-					applySelectedProviderMapping(config, state, anime, selected)
-					return ProviderMappingOK, nil
-				}
-			case "custom", "next_provider":
-				outcome, cont, handleErr := handleProviderMappingAction(config, state, action, query)
-				if handleErr != nil {
-					return ProviderMappingQuit, handleErr
-				}
-				if !cont {
-					return outcome, nil
-				}
-				break
-			case "back":
+		selected, selectErr := promptProviderSearchSelectionWithHint(config, ranked, anilistEntry, hint)
+		if selectErr != nil {
+			Log(fmt.Sprintf("Failed to select anime: %v", selectErr))
+		} else {
+			switch selected.Key {
+			case "-1":
+				// Dismissed picker routes to recovery.
+			case "-2":
 				return ProviderMappingBack, nil
-			case "quit":
-				return ProviderMappingQuit, nil
 			default:
-				continue
+				applySelectedProviderMapping(config, state, anime, selected)
+				return ProviderMappingOK, nil
 			}
-			break
 		}
+
+		action, episode := promptMappingRecovery(config, state, mode, failures, animeList, mappingEpisodeForRecovery(anime), "")
+		outcome, cont, actionErr := handleMappingRecoveryAction(config, state, anime, action, episode, &mode)
+		if actionErr != nil {
+			return ProviderMappingQuit, actionErr
+		}
+		if !cont {
+			return outcome, nil
+		}
+	}
+}
+
+// handleMappingRecoveryAction applies one M1 recovery action. Custom renames
+// the query, audio flips the loop-local search mode, episode retargets the
+// episode number. The mapping itself always stores provider only.
+func handleMappingRecoveryAction(config *CurdConfig, state *providerMappingSearchState, anime *Anime, action string, episode int, mode *string) (ProviderMappingOutcome, bool, error) {
+	switch action {
+	case "custom":
+		hint := fmt.Sprintf("Enter a search name for configured providers (current: '%s').", state.query)
+		newQuery, back, quit, err := promptCustomProviderSearchQuery(config, state.query, hint)
+		if err != nil {
+			return ProviderMappingQuit, false, err
+		}
+		if quit {
+			return ProviderMappingQuit, false, nil
+		}
+		if back {
+			return ProviderMappingBack, false, nil
+		}
+		state.query = newQuery
+		return ProviderMappingOK, true, nil
+	case "audio":
+		*mode = alternateTranslationType(*mode)
+		return ProviderMappingOK, true, nil
+	case "episode":
+		if episode > 0 && anime != nil {
+			anime.Ep.Number = episode
+			anime.Ep.NextEpisode = NextEpisode{}
+		}
+		return ProviderMappingOK, true, nil
+	case "back":
+		return ProviderMappingBack, false, nil
+	case "quit":
+		return ProviderMappingQuit, false, nil
+	default:
+		return ProviderMappingBack, false, nil
 	}
 }
 
@@ -741,36 +846,6 @@ func persistRemappedProvider(historyPath string, databaseAnimes *[]Anime, anilis
 	return nil
 }
 
-func handleProviderMappingAction(config *CurdConfig, state *providerMappingSearchState, action, defaultQuery string) (ProviderMappingOutcome, bool, error) {
-	switch action {
-	case "custom":
-		hint := fmt.Sprintf("Enter a search name for configured providers (current: '%s').", state.query)
-		newQuery, _, _, err := promptCustomProviderSearchQuery(config, state.query, hint)
-		if err != nil {
-			return ProviderMappingQuit, false, err
-		}
-		state.query = newQuery
-		state.resetToAllProviders()
-		return ProviderMappingOK, true, nil
-	case "next_provider":
-		if !state.advanceToNextProvider() {
-			CurdOut("No more providers left to try.")
-			action, err := promptProviderSearchRecovery(config, state, "No more providers left to try.")
-			if err != nil {
-				return ProviderMappingQuit, false, err
-			}
-			return handleProviderMappingAction(config, state, action, defaultQuery)
-		}
-		return ProviderMappingOK, true, nil
-	case "back":
-		return ProviderMappingBack, false, nil
-	case "quit":
-		return ProviderMappingQuit, false, nil
-	default:
-		return ProviderMappingOK, true, nil
-	}
-}
-
 func untrackedProviderSearchSelection(config *CurdConfig, query string, animeList []SelectionOption) (SelectionOption, error) {
 	if ManualProviderSearchEnabled(config) {
 		hint := ManualProviderSearchHint(config, nil, query, config.SubOrDub)
@@ -792,16 +867,28 @@ func RemapAnimeProviderOnEpisodeFailure(config *CurdConfig, anime *Anime, anilis
 	}
 
 	CurdOut("Wrong match is common — search again and pick the right title.")
+	// Remap always shows the manual picker: an automatic re-pick at playback
+	// failure would risk re-selecting the same wrong show. Restore the
+	// previous mapping if the user backs out.
+	savedProviderID := anime.ProviderId
+	savedProviderName := anime.ProviderName
 	anime.ProviderId = ""
 	anime.ProviderName = ""
 	anime.Ep.NextEpisode = NextEpisode{}
 
-	outcome, err := ResolveAnimeProviderMapping(config, anime, query, anilistEntry)
+	outcome, err := resolveAnimeProviderMapping(config, anime, query, anilistEntry, true)
 	if err != nil {
 		Log(fmt.Sprintf("Provider remap failed: %v", err))
+		anime.ProviderId = savedProviderID
+		anime.ProviderName = savedProviderName
 		return false
 	}
-	return outcome == ProviderMappingOK
+	if outcome != ProviderMappingOK {
+		anime.ProviderId = savedProviderID
+		anime.ProviderName = savedProviderName
+		return false
+	}
+	return true
 }
 
 // episodeLinkFailureRecoveryOptions builds ranked recovery actions for a dead-end
@@ -909,14 +996,13 @@ func promptEpisodeLinkFailureRecovery(config *CurdConfig, anime *Anime, lastErr 
 // resolveEpisodeLinksWithRecovery runs preferred-first playback resolve and only
 // after that fails presents the diagnosed recovery menu. Returns ok=false when
 // the user backs out.
-func resolveEpisodeLinksWithRecovery(config *CurdConfig, anime *Anime, anilistEntry *Entry, allowAnimepaheReselect bool) (ProviderEpisodeResult, bool) {
+func resolveEpisodeLinksWithRecovery(config *CurdConfig, anime *Anime, anilistEntry *Entry) (ProviderEpisodeResult, bool) {
 	if config == nil || anime == nil {
 		return ProviderEpisodeResult{}, false
 	}
 
 	var lastErr error
 	includeAudio := true
-	attemptedAnimepaheReselect := false
 
 	for {
 		result, err := ResolveEpisodeURLForPlayback(*config, anime, anime.Ep.Number)
@@ -930,23 +1016,8 @@ func resolveEpisodeLinksWithRecovery(config *CurdConfig, anime *Anime, anilistEn
 		}
 		Log(fmt.Sprintf("ResolveEpisodeURLForPlayback failed for ep %d: %v", anime.Ep.Number, lastErr))
 
-		// One-shot Animepahe stale-mapping reselect (tracked path helper).
-		if allowAnimepaheReselect && !attemptedAnimepaheReselect {
-			attemptedAnimepaheReselect = true
-			if reselectProviderAnime(config, anime, lastErr) {
-				result, err = ResolveEpisodeURLForPlayback(*config, anime, anime.Ep.Number)
-				if err == nil && len(result.Links) > 0 {
-					Log(fmt.Sprintf("Successfully retrieved %s/%s episode link after provider reselect", result.ProviderName, result.Mode))
-					return result, true
-				}
-				if err != nil {
-					lastErr = err
-				} else {
-					lastErr = fmt.Errorf("no episode links found after provider reselect")
-				}
-				Log(fmt.Sprintf("ResolveEpisodeURL still failed after provider reselect: %v", lastErr))
-			}
-		}
+		// Stale mappings surface here and route to the diagnosed recovery
+		// menu below; its remap path re-searches every provider.
 
 		switch promptEpisodeLinkFailureRecovery(config, anime, lastErr, includeAudio) {
 		case "remap":
@@ -997,113 +1068,96 @@ func resolveEpisodeLinksWithRecovery(config *CurdConfig, anime *Anime, anilistEn
 }
 
 func ResolveUntrackedProviderSearch(config *CurdConfig, initialQuery string) (providerID, providerName string, back bool, err error) {
-	state := &providerMappingSearchState{
-		query:        initialQuery,
-		allProviders: configuredProviderNames(config),
-	}
+	state := &providerMappingSearchState{query: truncateSearchQuery(initialQuery)}
+	anime := &Anime{}
+	// The audio mode is loop-local: an M1 language flip re-searches in the
+	// other mode for this resolve only and never writes config.SubOrDub.
+	mode := normalizeTranslationType(config.SubOrDub)
 
 	for {
-		animeList, searchErr := searchAnimeForMapping(config, state, config.SubOrDub)
-		if searchErr != nil {
-			Log(fmt.Sprintf("Provider search failed: %v", searchErr))
-			action, actionErr := promptProviderSearchRecovery(config, state, fmt.Sprintf("Provider search failed for '%s': %v", state.query, searchErr))
+		anime.Title.English = state.query
+		anime.Title.Romaji = state.query
+
+		animeList, failures, searchErr := stackedSearchWithExpansion(config, anime, state.query, mode)
+		if searchErr != nil || len(animeList) == 0 {
+			reason := ""
+			if searchErr != nil {
+				Log(fmt.Sprintf("Provider search failed: %v", searchErr))
+				reason = fmt.Sprintf("Provider search failed for '%s': %v", state.query, searchErr)
+			}
+			action, episode := promptMappingRecovery(config, state, mode, failures, animeList, 0, reason)
+			outcome, cont, actionErr := handleUntrackedRecoveryAction(config, state, action, episode, &mode)
 			if actionErr != nil {
 				return "", "", false, actionErr
 			}
-			if action == "back" {
-				return "", "", true, nil
-			}
-			if action == "quit" {
-				return "", "", false, nil
-			}
-			_, cont, handleErr := handleProviderMappingAction(config, state, action, initialQuery)
-			if handleErr != nil {
-				return "", "", false, handleErr
-			}
 			if !cont {
-				return "", "", false, nil
+				return "", "", outcome == ProviderMappingBack, nil
 			}
 			continue
 		}
 
-		if len(animeList) == 0 {
-			action, actionErr := promptProviderSearchRecovery(config, state, "")
-			if actionErr != nil {
-				return "", "", false, actionErr
-			}
-			if action == "back" {
-				return "", "", true, nil
-			}
-			if action == "quit" {
-				return "", "", false, nil
-			}
-			_, cont, handleErr := handleProviderMappingAction(config, state, action, initialQuery)
-			if handleErr != nil {
-				return "", "", false, handleErr
-			}
-			if !cont {
-				return "", "", false, nil
-			}
-			continue
-		}
-
-		selected, selectErr := untrackedProviderSearchSelection(config, state.query, animeList)
+		ranked := rankProviderSearchOptions(animeList, anime, state.query, configuredProviderNames(config))
+		selected, selectErr := untrackedProviderSearchSelection(config, state.query, ranked)
 		if selectErr != nil {
 			Log(fmt.Sprintf("Failed to select anime: %v", selectErr))
-			action, actionErr := promptProviderMatchRecovery(config, state)
-			if actionErr != nil {
-				return "", "", false, actionErr
-			}
-			if action == "back" {
+		} else {
+			switch selected.Key {
+			case "-1":
+				// Dismissed picker routes to recovery.
+			case "-2":
 				return "", "", true, nil
+			default:
+				if name, rawID, ok := ParseProviderQualifiedID(selected.Key); ok {
+					return rawID, name, false, nil
+				}
+				return selected.Key, providerNameFromSelection(config, selected), false, nil
 			}
-			if action == "quit" {
-				return "", "", false, nil
-			}
-			_, cont, handleErr := handleProviderMappingAction(config, state, action, initialQuery)
-			if handleErr != nil {
-				return "", "", false, handleErr
-			}
-			if !cont {
-				return "", "", false, nil
-			}
-			continue
 		}
 
-		switch selected.Key {
-		case "-1":
-			action, actionErr := promptProviderMatchRecovery(config, state)
-			if actionErr != nil {
-				return "", "", false, actionErr
-			}
-			if action == "back" {
-				return "", "", true, nil
-			}
-			if action == "quit" {
-				return "", "", false, nil
-			}
-			_, cont, handleErr := handleProviderMappingAction(config, state, action, initialQuery)
-			if handleErr != nil {
-				return "", "", false, handleErr
-			}
-			if !cont {
-				return "", "", false, nil
-			}
-			continue
-		case "-2":
-			return "", "", true, nil
-		default:
-			if name, rawID, ok := ParseProviderQualifiedID(selected.Key); ok {
-				return rawID, name, false, nil
-			}
-			return selected.Key, providerNameFromSelection(config, state, selected), false, nil
+		action, episode := promptMappingRecovery(config, state, mode, failures, animeList, 0, "")
+		outcome, cont, actionErr := handleUntrackedRecoveryAction(config, state, action, episode, &mode)
+		if actionErr != nil {
+			return "", "", false, actionErr
 		}
+		if !cont {
+			return "", "", outcome == ProviderMappingBack, nil
+		}
+	}
+}
+
+func handleUntrackedRecoveryAction(config *CurdConfig, state *providerMappingSearchState, action string, episode int, mode *string) (ProviderMappingOutcome, bool, error) {
+	switch action {
+	case "custom":
+		hint := fmt.Sprintf("Enter a search name for configured providers (current: '%s').", state.query)
+		newQuery, back, quit, err := promptCustomProviderSearchQuery(config, state.query, hint)
+		if err != nil {
+			return ProviderMappingQuit, false, err
+		}
+		if quit {
+			return ProviderMappingQuit, false, nil
+		}
+		if back {
+			return ProviderMappingBack, false, nil
+		}
+		state.query = newQuery
+		return ProviderMappingOK, true, nil
+	case "audio":
+		*mode = alternateTranslationType(*mode)
+		return ProviderMappingOK, true, nil
+	case "back":
+		return ProviderMappingBack, false, nil
+	case "quit":
+		return ProviderMappingQuit, false, nil
+	default:
+		return ProviderMappingBack, false, nil
 	}
 }
 
 func malIDFromProviderExtraData(extra any) int {
 	switch item := extra.(type) {
 	case anipub.SearchItem:
+		return item.MalID
+	case senshi.SearchItem:
 		return item.MalID
 	default:
 		return 0

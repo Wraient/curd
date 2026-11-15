@@ -103,7 +103,7 @@ func TestResolveEpisodeLinksWithRecoverySucceedsWithoutRecoveryMenu(t *testing.T
 		Ep:           Episode{Number: 1},
 	}
 
-	result, ok := resolveEpisodeLinksWithRecovery(cfg, anime, nil, false)
+	result, ok := resolveEpisodeLinksWithRecovery(cfg, anime, nil)
 	if !ok {
 		t.Fatal("expected success without recovery")
 	}
@@ -162,7 +162,7 @@ func TestResolveEpisodeLinksWithRecoveryOnlyAfterPreferredAndAlternateFail(t *te
 		Ep:           Episode{Number: 3},
 	}
 
-	result, ok := resolveEpisodeLinksWithRecovery(cfg, anime, nil, false)
+	result, ok := resolveEpisodeLinksWithRecovery(cfg, anime, nil)
 	if ok || len(result.Links) > 0 {
 		t.Fatalf("expected user back-out after recovery, got ok=%v result=%#v", ok, result)
 	}
@@ -203,7 +203,7 @@ func TestResolveEpisodeLinksWithRecoveryOnlyAfterPreferredAndAlternateFail(t *te
 		return SelectionOption{}, nil
 	})
 	anime.Ep.Number = 4
-	if _, ok := resolveEpisodeLinksWithRecovery(cfg, anime, nil, false); ok {
+	if _, ok := resolveEpisodeLinksWithRecovery(cfg, anime, nil); ok {
 		t.Fatal("expected back-out after declining alternate")
 	}
 	if got := strings.Join(promptPhases, ","); got != "alternate-audio,recovery" {
@@ -268,7 +268,7 @@ func TestResolveEpisodeLinksWithRecoveryRemapThenSucceeds(t *testing.T) {
 		Ep:           Episode{Number: 1},
 	}
 
-	result, ok := resolveEpisodeLinksWithRecovery(cfg, anime, nil, false)
+	result, ok := resolveEpisodeLinksWithRecovery(cfg, anime, nil)
 	if !ok {
 		t.Fatal("expected recovery audio path to succeed")
 	}

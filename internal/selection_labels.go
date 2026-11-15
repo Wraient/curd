@@ -199,7 +199,9 @@ func promptProviderSearchSelectionWithHint(config *CurdConfig, options []Selecti
 	if strings.TrimSpace(hint) != "" {
 		CurdOut(hint)
 	}
-	return DynamicSelect(ProviderSearchOptionsForDisplay(options, entry))
+	// Preserve the caller's ranked order: a sorted picker would bury the
+	// best guess the ranking worked to surface.
+	return promptSelectOrdered(ProviderSearchOptionsForDisplay(options, entry))
 }
 
 func promptProviderSearchSelection(config *CurdConfig, options []SelectionOption, entry *Entry) (SelectionOption, error) {

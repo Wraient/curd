@@ -2,12 +2,34 @@ package internal
 
 import (
 	"fmt"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wraient/curd/internal/providers"
 	"github.com/wraient/curd/internal/providers/animepahe"
 )
+
+var (
+	anilistThumbnailRE = regexp.MustCompile(`anilistcdn/media/anime/cover/(?:large|medium)/(?:bx)?(\d+)`)
+	senshiPosterIDRE   = regexp.MustCompile(`/posters/(\d+)(?:\.webp)?`)
+)
+
+// thumbnailExactAnilistMatch reports whether a thumbnail URL embeds exactly
+// the given AniList ID (AniList CDN URLs carry it in the path).
+func thumbnailExactAnilistMatch(thumbnail string, anilistID int) bool {
+	matches := anilistThumbnailRE.FindStringSubmatch(thumbnail)
+	return len(matches) > 1 && matches[1] == strconv.Itoa(anilistID)
+}
+
+// senshiPosterMatchesMalID reports whether a senshi poster URL embeds exactly
+// the given MAL ID (/posters/<malid>.webp).
+func senshiPosterMatchesMalID(thumbnail string, malID int) bool {
+	matches := senshiPosterIDRE.FindStringSubmatch(thumbnail)
+	return len(matches) > 1 && matches[1] == strconv.Itoa(malID)
+}
 
 // Provider interface defines methods for an anime provider.
 type Provider interface {
@@ -30,6 +52,10 @@ type ProviderEpisodeResult struct {
 }
 
 const providerIDSeparator = "::"
+
+// providerSearchTimeout bounds a single provider search inside the stacked
+// search so one slow provider cannot stall the whole lookup.
+const providerSearchTimeout = 15 * time.Second
 
 // Global variable to keep the current provider
 var CurrentProvider Provider
@@ -317,10 +343,7 @@ func providerNamesForAnime(config *CurdConfig, anime *Anime) []string {
 	return result
 }
 
-func qualifySelectionOption(providerName string, option SelectionOption, stacked bool) SelectionOption {
-	if !stacked {
-		return option
-	}
+func qualifySelectionOption(providerName string, option SelectionOption) SelectionOption {
 	option.Key = QualifyProviderID(providerName, option.Key)
 	if !strings.Contains(strings.ToLower(option.Label), "["+providerName+"]") {
 		option.Label = fmt.Sprintf("%s [%s]", option.Label, providerName)
@@ -330,60 +353,87 @@ func qualifySelectionOption(providerName string, option SelectionOption, stacked
 
 // Wrap functions so they can be easily called
 func SearchAnime(query, mode string) ([]SelectionOption, error) {
-	config := GetGlobalConfig()
+	results, _, err := searchAnimeStack(GetGlobalConfig(), query, mode)
+	return results, err
+}
+
+// ProviderSearchError records a per-provider search failure so recovery menus
+// can tell the user which providers failed instead of a bare "no results".
+type ProviderSearchError struct {
+	Provider string
+	Err      string
+}
+
+// searchAnimeStack runs the configured-provider search including the
+// Animepahe consent fallback. It returns the merged results plus the
+// per-provider failures behind them.
+func searchAnimeStack(config *CurdConfig, query, mode string) ([]SelectionOption, []ProviderSearchError, error) {
 	providerNames := configuredProviderNames(config)
-	results, err := searchAnimeWithProviders(providerNames, query, mode)
+	results, failures, err := searchAnimeWithProviders(providerNames, query, mode)
 	if err != nil || len(results) > 0 {
-		return results, err
+		return results, failures, err
 	}
 
 	if shouldOfferAnimepaheFallback(config, providerNames) {
 		useAnimepahe, declinedAnimepahe, promptErr := promptAnimepaheFallbackConsent()
 		if promptErr != nil {
-			return results, promptErr
+			return results, failures, promptErr
 		}
 		if useAnimepahe {
 			if updateErr := updateProviderConfig(config, appendProviderName(providerNames, "animepahe"), false); updateErr != nil {
-				return results, updateErr
+				return results, failures, updateErr
 			}
 			return searchAnimeWithProviders(configuredProviderNames(config), query, mode)
 		}
 		if declinedAnimepahe {
 			if updateErr := updateProviderConfig(config, providerNames, true); updateErr != nil {
-				return results, updateErr
+				return results, failures, updateErr
 			}
 		}
 	}
 
-	return results, nil
+	return results, failures, nil
 }
 
-func searchAnimeWithProviders(providerNames []string, query, mode string) ([]SelectionOption, error) {
-	if len(providerNames) == 1 {
-		provider, err := ProviderByName(providerNames[0])
-		if err != nil {
-			return nil, err
-		}
-		return provider.SearchAnime(query, mode)
+// searchProviderWithTimeout bounds a single provider search so one slow
+// provider cannot stall the whole stacked search. The provider call is left
+// running; only the wait is abandoned.
+func searchProviderWithTimeout(provider Provider, query, mode string) ([]SelectionOption, error) {
+	type outcome struct {
+		options []SelectionOption
+		err     error
 	}
+	done := make(chan outcome, 1)
+	go func() {
+		options, err := provider.SearchAnime(query, mode)
+		done <- outcome{options: options, err: err}
+	}()
+	select {
+	case result := <-done:
+		return result.options, result.err
+	case <-time.After(providerSearchTimeout):
+		return nil, fmt.Errorf("search timed out after %s", providerSearchTimeout)
+	}
+}
 
+func searchAnimeWithProviders(providerNames []string, query, mode string) ([]SelectionOption, []ProviderSearchError, error) {
 	results := make([]SelectionOption, 0)
 	seen := make(map[string]struct{})
-	var searchErrors []string
+	failures := make([]ProviderSearchError, 0)
 	for _, providerName := range providerNames {
 		provider, err := ProviderByName(providerName)
 		if err != nil {
-			searchErrors = append(searchErrors, err.Error())
+			failures = append(failures, ProviderSearchError{Provider: providerName, Err: err.Error()})
 			continue
 		}
-		options, err := provider.SearchAnime(query, mode)
+		options, err := searchProviderWithTimeout(provider, query, mode)
 		if err != nil {
 			Log(fmt.Sprintf("Provider %s search failed for %q: %v", providerName, query, err))
-			searchErrors = append(searchErrors, fmt.Sprintf("%s: %v", providerName, err))
+			failures = append(failures, ProviderSearchError{Provider: providerName, Err: err.Error()})
 			continue
 		}
 		for _, option := range options {
-			option = qualifySelectionOption(providerName, option, true)
+			option = qualifySelectionOption(providerName, option)
 			if _, exists := seen[option.Key]; exists {
 				continue
 			}
@@ -392,10 +442,14 @@ func searchAnimeWithProviders(providerNames []string, query, mode string) ([]Sel
 		}
 	}
 
-	if len(results) == 0 && len(searchErrors) > 0 {
-		return nil, fmt.Errorf("all provider searches failed: %s", strings.Join(searchErrors, "; "))
+	if len(results) == 0 && len(failures) > 0 {
+		details := make([]string, 0, len(failures))
+		for _, failure := range failures {
+			details = append(details, fmt.Sprintf("%s: %v", failure.Provider, failure.Err))
+		}
+		return nil, failures, fmt.Errorf("all provider searches failed: %s", strings.Join(details, "; "))
 	}
-	return results, nil
+	return results, failures, nil
 }
 
 func shouldOfferAnimepaheFallback(config *CurdConfig, providerNames []string) bool {
@@ -578,13 +632,11 @@ func determineProviderTotalEpisodes(config *CurdConfig, query string, anime *Ani
 		if searchQuery == "" {
 			searchQuery = animeSearchTitle(anime)
 		}
-		option, ok := selectBestProviderSearchResult(options, anime, searchQuery)
+		// Identity only: totals must be read from a result proven to be the
+		// same show, never from a fuzzy best guess.
+		providerID, ok := identityMatchProviderOption(options, anime, searchQuery)
 		if !ok {
 			continue
-		}
-		providerID := option.Key
-		if _, parsedID, ok := ParseProviderQualifiedID(option.Key); ok {
-			providerID = parsedID
 		}
 		if strings.TrimSpace(providerID) == "" {
 			continue
@@ -955,7 +1007,7 @@ func normalizeSearchTitle(title string) string {
 	return strings.Join(strings.Fields(title), " ")
 }
 
-func scoreProviderSearchOption(option SelectionOption, anime *Anime, query string, index, total int) int {
+func scoreProviderSearchOption(option SelectionOption, anime *Anime, query string) int {
 	optionTitle := normalizeSearchTitle(option.Title)
 	if optionTitle == "" {
 		optionTitle = normalizeSearchTitle(option.Label)
@@ -968,7 +1020,10 @@ func scoreProviderSearchOption(option SelectionOption, anime *Anime, query strin
 		normalizeSearchTitle(anime.Title.Japanese),
 	}
 
-	score := total - index
+	// Ranking only: this score orders the picker list and never decides a
+	// match. Position-in-list and substring heuristics were removed because
+	// they are not identity.
+	score := 0
 	for _, targetTitle := range targetTitles {
 		if targetTitle == "" {
 			continue
@@ -979,7 +1034,7 @@ func scoreProviderSearchOption(option SelectionOption, anime *Anime, query strin
 			score += 35
 		}
 	}
-	if anime.AnilistId != 0 && strings.Contains(option.Thumbnail, fmt.Sprintf("%d", anime.AnilistId)) {
+	if anime.AnilistId != 0 && thumbnailExactTokenMatch(option.Thumbnail, anime.AnilistId) {
 		score += 120
 	}
 	if anime.TotalEpisodes > 0 && strings.Contains(option.Label, fmt.Sprintf("(%d episodes)", anime.TotalEpisodes)) {
@@ -992,51 +1047,124 @@ func scoreProviderSearchOption(option SelectionOption, anime *Anime, query strin
 }
 
 func selectBestProviderSearchResult(options []SelectionOption, anime *Anime, query string) (SelectionOption, bool) {
-	if len(options) == 0 {
+	ranked := rankProviderSearchOptions(options, anime, query, nil)
+	if len(ranked) == 0 {
 		return SelectionOption{}, false
 	}
-
-	bestIndex := 0
-	bestScore := -1
-	for i, option := range options {
-		score := scoreProviderSearchOption(option, anime, query, i, len(options))
-		if score > bestScore {
-			bestScore = score
-			bestIndex = i
-		}
-	}
-
-	return options[bestIndex], true
+	return ranked[0], true
 }
 
-// confidentProviderSearchMatch auto-selects when title/thumbnail scoring clearly
-// identifies one provider result, e.g. AniList romaji query against AllAnime englishName.
-func confidentProviderSearchMatch(options []SelectionOption, anime *Anime, query string) (SelectionOption, bool) {
-	if len(options) == 0 {
-		return SelectionOption{}, false
+// rankProviderSearchOptions orders results by title/thumbnail signal for
+// display. Ranking never decides a match — identity checks do that.
+func rankProviderSearchOptions(options []SelectionOption, anime *Anime, query string, providerOrder []string) []SelectionOption {
+	ranked := append([]SelectionOption(nil), options...)
+	order := make(map[string]int, len(providerOrder))
+	for i, name := range providerOrder {
+		order[name] = i
 	}
+	providerRank := func(option SelectionOption) int {
+		if name, _, ok := ParseProviderQualifiedID(option.Key); ok {
+			if rank, exists := order[name]; exists {
+				return rank
+			}
+		}
+		return len(providerOrder)
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		scoreI := scoreProviderSearchOption(ranked[i], anime, query)
+		scoreJ := scoreProviderSearchOption(ranked[j], anime, query)
+		if scoreI != scoreJ {
+			return scoreI > scoreJ
+		}
+		return providerRank(ranked[i]) < providerRank(ranked[j])
+	})
+	return ranked
+}
 
-	bestIndex := 0
-	bestScore := -1
-	secondBestScore := -1
-	for i, option := range options {
-		score := scoreProviderSearchOption(option, anime, query, i, len(options))
-		if score > bestScore {
-			secondBestScore = bestScore
-			bestScore = score
-			bestIndex = i
-		} else if score > secondBestScore {
-			secondBestScore = score
+// thumbnailExactTokenMatch reports whether an AniList ID appears as a whole
+// numeric token in a thumbnail URL. A bare substring contains would match ID
+// 1 against nearly every URL, so tokens are compared for equality.
+func thumbnailExactTokenMatch(thumbnail string, anilistID int) bool {
+	want := strconv.Itoa(anilistID)
+	var token strings.Builder
+	flush := func() bool {
+		if token.Len() > 0 {
+			matched := token.String() == want
+			token.Reset()
+			return matched
+		}
+		return false
+	}
+	for _, r := range thumbnail {
+		if r >= '0' && r <= '9' {
+			token.WriteRune(r)
+			continue
+		}
+		if flush() {
+			return true
+		}
+	}
+	return flush()
+}
+
+// identityMatchProviderOption returns the provider-scoped ID of the option
+// that shares cross-system identity with anime: an exact MAL ID (key or
+// ExtraData), an exact AniList/senshi image ID, or one unique exact title
+// match. Anything else returns ok=false so playback never guesses a show.
+func identityMatchProviderOption(options []SelectionOption, anime *Anime, query string) (string, bool) {
+	for _, option := range options {
+		key := option.Key
+		if _, rawID, ok := ParseProviderQualifiedID(option.Key); ok {
+			key = rawID
+		}
+		if anime.MalId != 0 {
+			if key == strconv.Itoa(anime.MalId) {
+				return key, true
+			}
+			if malID := malIDFromProviderExtraData(option.ExtraData); malID != 0 && malID == anime.MalId {
+				return key, true
+			}
+		}
+		if anime.AnilistId != 0 && thumbnailExactAnilistMatch(option.Thumbnail, anime.AnilistId) {
+			return key, true
+		}
+		if anime.MalId != 0 && senshiPosterMatchesMalID(option.Thumbnail, anime.MalId) {
+			return key, true
 		}
 	}
 
-	if bestScore >= 120 {
-		return options[bestIndex], true
+	type candidate struct {
+		key string
 	}
-	if bestScore >= 100 && (len(options) == 1 || bestScore-secondBestScore >= 30) {
-		return options[bestIndex], true
+	candidates := make([]candidate, 0, 1)
+	for _, option := range options {
+		title := normalizeSearchTitle(option.Title)
+		if title == "" {
+			title = normalizeSearchTitle(option.Label)
+		}
+		if title == "" {
+			continue
+		}
+		for _, target := range []string{
+			normalizeSearchTitle(query),
+			normalizeSearchTitle(anime.Title.English),
+			normalizeSearchTitle(anime.Title.Romaji),
+			normalizeSearchTitle(anime.Title.Japanese),
+		} {
+			if target != "" && title == target {
+				key := option.Key
+				if _, rawID, ok := ParseProviderQualifiedID(option.Key); ok {
+					key = rawID
+				}
+				candidates = append(candidates, candidate{key: key})
+				break
+			}
+		}
 	}
-	return SelectionOption{}, false
+	if len(candidates) == 1 {
+		return candidates[0].key, true
+	}
+	return "", false
 }
 
 func findProviderIDForAnime(provider Provider, anime *Anime, mode string) (string, error) {
@@ -1054,13 +1182,16 @@ func findProviderIDForAnime(provider Provider, anime *Anime, mode string) (strin
 	if err != nil {
 		return "", err
 	}
-	option, ok := selectBestProviderSearchResult(options, anime, query)
-	if !ok {
+	if len(options) == 0 {
 		return "", fmt.Errorf("no %s search results for %q", provider.Name(), query)
 	}
-
-	Log(fmt.Sprintf("Mapped %q to provider %s id %s for %s fallback", query, provider.Name(), option.Key, mode))
-	return option.Key, nil
+	// Identity only: playback must never adopt a fuzzy title guess as the
+	// show. A miss here routes to the diagnosed recovery menu instead.
+	if id, ok := identityMatchProviderOption(options, anime, query); ok {
+		Log(fmt.Sprintf("Mapped %q to provider %s id %s for %s fallback", query, provider.Name(), id, mode))
+		return id, nil
+	}
+	return "", fmt.Errorf("no identity-matched %s result for %q", provider.Name(), query)
 }
 
 func audioFallbackPrompt(preferredMode, fallbackMode string) string {

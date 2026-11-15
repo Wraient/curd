@@ -338,7 +338,9 @@ func TestWriteTrackingBackupCreatesSnapshot(t *testing.T) {
 	}
 }
 
-func TestConfirmProviderMatchRequiresUserApproval(t *testing.T) {
+func TestProviderApprovalPathRequiresUserChoice(t *testing.T) {
+	// confirmProviderMatch is the explicit human approval gate: heuristic
+	// candidates are proposed, never silently adopted.
 	withPromptSelect(t, func(options []SelectionOption) (SelectionOption, error) {
 		if options[0].Key != "use" || options[1].Key != "manual" {
 			t.Fatalf("unexpected provider confirmation options: %+v", options)
@@ -348,6 +350,14 @@ func TestConfirmProviderMatchRequiresUserApproval(t *testing.T) {
 
 	if confirmProviderMatch(SelectionOption{Label: "Example"}, "title") {
 		t.Fatalf("manual selection should reject guessed provider match")
+	}
+
+	withPromptSelect(t, func(options []SelectionOption) (SelectionOption, error) {
+		return SelectionOption{Key: "use"}, nil
+	})
+
+	if !confirmProviderMatch(SelectionOption{Label: "Example"}, "title") {
+		t.Fatalf("explicit user approval should accept the proposed match")
 	}
 }
 
