@@ -343,8 +343,8 @@ func TestGetProviderNormalizesConfiguredProviderName(t *testing.T) {
 	CurrentProvider = nil
 	SetGlobalConfig(&CurdConfig{Provider: " AllAnime "})
 
-	if got := GetProvider().Name(); got != "senshi" {
-		t.Fatalf("expected senshi provider when allanime is disabled, got %q", got)
+	if got := GetProvider().Name(); got != "anipm" {
+		t.Fatalf("expected anipm provider when allanime is disabled, got %q", got)
 	}
 }
 
@@ -359,8 +359,8 @@ func TestGetProviderFallsBackWhenConfiguredProviderDisabled(t *testing.T) {
 	CurrentProvider = nil
 	SetGlobalConfig(&CurdConfig{Provider: " AnimePahe "})
 
-	if got := GetProvider().Name(); got != "senshi" {
-		t.Fatalf("expected senshi fallback for disabled provider, got %q", got)
+	if got := GetProvider().Name(); got != "anipm" {
+		t.Fatalf("expected anipm fallback for disabled provider, got %q", got)
 	}
 }
 

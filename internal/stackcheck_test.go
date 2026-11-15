@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-func TestDefaultStackIsSenshiAnipubAnikoto(t *testing.T) {
+func TestDefaultStackIsAnipmAnikotoAnipubSenshi(t *testing.T) {
 	got := defaultEnabledProviderStack()
-	want := []string{"senshi", "anipub", "anikoto"}
+	want := []string{"anipm", "anikoto", "anipub", "senshi"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("default stack = %v, want %v", got, want)
 	}

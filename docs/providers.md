@@ -334,6 +334,7 @@ Document the decision in a short ADR before building. The compile-time registry 
 | AllAnime | `internal/providers/allanime` | GraphQL search/episodes, parallel stream resolution, `HintResolver` |
 | Animepahe | `internal/providers/animepahe` | DDoS-Guard + rod browser, `IDResolver`, `DefaultDisabled`, `OptOutToken` |
 | Anikoto | `internal/providers/anikoto` | VRF-protected HTML/JSON catalog, native server selection, and MegaPlay AES/HMAC stream resolution |
+| AniPM | `internal/providers/anipm` | JSON search/series/playback-bootstrap APIs, Settlar embed session resolution, soft/hard sub + dub channels |
 
 Key host files:
 

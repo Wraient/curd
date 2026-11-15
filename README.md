@@ -408,7 +408,7 @@ If the browser reaches the localhost callback page but curd does not continue au
 | `SaveMpvSpeed`            | Boolean    | `true`, `false`                           | Retains the playback speed set in MPV for next episode.                                           |
 | `SkipFiller`              | Boolean    | `true`, `false`                           | Skips filler episodes when supported.                                                             |
 | `MenuOrder`               | String     | Comma-separated list                      | Controls which menu items appear and their order. Available options: `CURRENT`, `ALL`, `UNTRACKED`, `UPDATE`, `REMAP_PROVIDER`, `CONTINUE_LAST`, `PLANNING`, `COMPLETED`, `PAUSED`, `DROPPED`, `REWATCHING`, `TRACKER`, `PROVIDER`. Only listed items will be shown. Default: `CURRENT,ALL,UNTRACKED,UPDATE,REMAP_PROVIDER,CONTINUE_LAST,TRACKER,PROVIDER` |
-| `Provider`                | List       | `stacked`, `["anipub"]`, `["anineko"]`, `["allanime"]`, `["animepahe"]` | Sets the content-provider fallback list. `stacked` (default) uses the preferred order: senshi → anipub. anineko, allanime and animepahe are disabled by default (site down / anti-bot / Cloudflare) unless included in `Provider`. Default: `stacked` |
+| `Provider`                | List       | `stacked`, `["anipub"]`, `["anineko"]`, `["allanime"]`, `["animepahe"]` | Sets the content-provider fallback list. `stacked` (default) uses the preferred order: anipm → anikoto → anipub → senshi. anineko, allanime and animepahe are disabled by default (site down / anti-bot / Cloudflare) unless included in `Provider`. Default: `stacked` |
 | `ManualProviderSearch`    | Boolean    | `true`, `false`                           | Skip automatic provider matching and always show provider search results for manual selection. Displays a hint with the tracker title, format (TV/Movie/etc.), episode count, and sub/dub mode. Default: `false` |
 | `TrackingLocal`           | Boolean    | `true`                                    | Legacy compatibility flag. Local playback history is always enabled.                              |
 | `TrackingRemote`          | Enum       | `none`, `anilist`, `myanimelist`, `anilist+myanimelist` | Selects which remote tracker curd syncs with.                                           |
@@ -438,6 +438,7 @@ If the browser reaches the localhost callback page but curd does not continue au
 - [AniNeko Content](https://anineko.to/) - Alternative provider with soft/hard sub stream selection
 - [Animepahe Content](https://animepahe.pw/) - Alternative provider for 1080p streams
 - [Anikoto](https://anikototv.to/) - VRF-protected catalog with native MegaPlay stream resolution
+- [AniPM](https://ani.pm/) - Default provider with fast JSON APIs and Settlar HLS streams (soft/hard sub + dub)
 - [Jikan](https://jikan.moe/) - Get filler episode number
 
 ## Credits
