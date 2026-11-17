@@ -6,16 +6,33 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wraient/curd/internal/providers"
+	"github.com/wraient/curd/internal/providers/allanime"
+	"github.com/wraient/curd/internal/providers/anikoto"
 	"github.com/wraient/curd/internal/providers/animepahe"
+	"github.com/wraient/curd/internal/providers/anineko"
+	"github.com/wraient/curd/internal/providers/anipm"
+	"github.com/wraient/curd/internal/providers/anipub"
+	"github.com/wraient/curd/internal/providers/senshi"
 )
 
 var (
 	anilistThumbnailRE = regexp.MustCompile(`anilistcdn/media/anime/cover/(?:large|medium)/(?:bx)?(\d+)`)
 	senshiPosterIDRE   = regexp.MustCompile(`/posters/(\d+)(?:\.webp)?`)
+	trailingYearRE     = regexp.MustCompile(`\s+\d{4}$`)
 )
+
+// stripTrailingYear removes a catalog year suffix providers append to
+// display titles ("Hunter x Hunter (2011)" normalizes to a trailing year
+// token). It runs on already-normalized titles, so only a bare trailing
+// 4-digit token is stripped. The stripped form is only ever an *additional*
+// exact-match candidate alongside the full title.
+func stripTrailingYear(normalizedTitle string) string {
+	return strings.TrimSpace(trailingYearRE.ReplaceAllString(normalizedTitle, ""))
+}
 
 // thumbnailExactAnilistMatch reports whether a thumbnail URL embeds exactly
 // the given AniList ID (AniList CDN URLs carry it in the path).
@@ -417,22 +434,46 @@ func searchProviderWithTimeout(provider Provider, query, mode string) ([]Selecti
 }
 
 func searchAnimeWithProviders(providerNames []string, query, mode string) ([]SelectionOption, []ProviderSearchError, error) {
+	// Fan out across providers concurrently; a slow provider no longer
+	// stalls the rest. Results are merged back in configured stack order so
+	// ranking and display stay deterministic.
+	type providerResult struct {
+		index   int
+		options []SelectionOption
+		failure *ProviderSearchError
+	}
+	collected := make([]providerResult, len(providerNames))
+	var wg sync.WaitGroup
+	for i, providerName := range providerNames {
+		wg.Add(1)
+		go func(index int, name string) {
+			defer wg.Done()
+			provider, err := ProviderByName(name)
+			if err != nil {
+				collected[index] = providerResult{index: index, failure: &ProviderSearchError{Provider: name, Err: err.Error()}}
+				return
+			}
+			options, err := searchProviderWithTimeout(provider, query, mode)
+			if err != nil {
+				Log(fmt.Sprintf("Provider %s search failed for %q: %v", name, query, err))
+				collected[index] = providerResult{index: index, failure: &ProviderSearchError{Provider: name, Err: err.Error()}}
+				return
+			}
+			collected[index] = providerResult{index: index, options: options}
+		}(i, providerName)
+	}
+	wg.Wait()
+
 	results := make([]SelectionOption, 0)
 	seen := make(map[string]struct{})
 	failures := make([]ProviderSearchError, 0)
-	for _, providerName := range providerNames {
-		provider, err := ProviderByName(providerName)
-		if err != nil {
-			failures = append(failures, ProviderSearchError{Provider: providerName, Err: err.Error()})
+	for _, item := range collected {
+		providerName := providerNames[item.index]
+		if item.failure != nil {
+			failures = append(failures, *item.failure)
 			continue
 		}
-		options, err := searchProviderWithTimeout(provider, query, mode)
-		if err != nil {
-			Log(fmt.Sprintf("Provider %s search failed for %q: %v", providerName, query, err))
-			failures = append(failures, ProviderSearchError{Provider: providerName, Err: err.Error()})
-			continue
-		}
-		for _, option := range options {
+		for _, option := range item.options {
 			option = qualifySelectionOption(providerName, option)
 			if _, exists := seen[option.Key]; exists {
 				continue
@@ -634,10 +675,11 @@ func determineProviderTotalEpisodes(config *CurdConfig, query string, anime *Ani
 		}
 		// Identity only: totals must be read from a result proven to be the
 		// same show, never from a fuzzy best guess.
-		providerID, ok := identityMatchProviderOption(options, anime, searchQuery)
+		matched, ok := identityMatchProviderOption(options, anime, identityScope{query: searchQuery, episodes: anime.TotalEpisodes})
 		if !ok {
 			continue
 		}
+		providerID := rawProviderKey(matched.Key)
 		if strings.TrimSpace(providerID) == "" {
 			continue
 		}
@@ -1002,7 +1044,7 @@ func animeSearchTitle(anime *Anime) string {
 
 func normalizeSearchTitle(title string) string {
 	title = strings.ToLower(strings.TrimSpace(title))
-	replacer := strings.NewReplacer(":", "", "-", " ", "_", " ", ".", " ", "'", "", "\"", "", "!", "", "?", "", "(", " ", ")", " ")
+	replacer := strings.NewReplacer(":", "", "-", " ", "_", " ", ".", " ", "'", "", "\"", "", "!", "", "?", "", "(", " ", ")", " ", "/", " ", ";", " ")
 	title = replacer.Replace(title)
 	return strings.Join(strings.Fields(title), " ")
 }
@@ -1107,64 +1149,246 @@ func thumbnailExactTokenMatch(thumbnail string, anilistID int) bool {
 	return flush()
 }
 
-// identityMatchProviderOption returns the provider-scoped ID of the option
-// that shares cross-system identity with anime: an exact MAL ID (key or
-// ExtraData), an exact AniList/senshi image ID, or one unique exact title
-// match. Anything else returns ok=false so playback never guesses a show.
-func identityMatchProviderOption(options []SelectionOption, anime *Anime, query string) (string, bool) {
-	for _, option := range options {
-		key := option.Key
-		if _, rawID, ok := ParseProviderQualifiedID(option.Key); ok {
-			key = rawID
+// providerFacts carries identity signals extracted from a provider result's
+// ExtraData. Every field comes from the search response itself — gathering
+// facts never costs an extra network request.
+type providerFacts struct {
+	malID int
+	// episodes is the catalog episode count when the provider reports one.
+	episodes int
+	// typ is the release type (TV, Movie, ...) when the provider reports one.
+	typ string
+	// japanese is an alternate original-language title (anikoto data-jp).
+	japanese string
+}
+
+func providerFactsFromExtra(extra any) providerFacts {
+	switch item := extra.(type) {
+	case anipub.SearchItem:
+		return providerFacts{malID: item.MalID, episodes: item.Episodes}
+	case senshi.SearchItem:
+		return providerFacts{malID: item.MalID, episodes: item.Episodes, typ: item.Type}
+	case animepahe.SearchItem:
+		return providerFacts{episodes: item.Episodes, typ: item.Type}
+	case anipm.SearchItem:
+		return providerFacts{malID: item.MalID, episodes: item.Episodes, typ: item.Type}
+	case anikoto.SearchItem:
+		return providerFacts{japanese: item.JapaneseTitle}
+	case allanime.SearchItem:
+		return providerFacts{episodes: item.Episodes}
+	case anineko.SearchItem:
+		return providerFacts{typ: item.Type}
+	default:
+		return providerFacts{}
+	}
+}
+
+// normalizeReleaseType maps release-type spellings ("TV", "TV_SHORT",
+// "TV Short", "Movie") to one comparable form for exact matching.
+func normalizeReleaseType(raw string) string {
+	upper := strings.ToUpper(strings.TrimSpace(raw))
+	upper = strings.ReplaceAll(upper, "_", " ")
+	upper = strings.ReplaceAll(upper, "-", " ")
+	return strings.Join(strings.Fields(upper), " ")
+}
+
+// identityTargetTitles returns the normalized titles that identify the anime:
+// the search query plus every known tracker title.
+func identityTargetTitles(anime *Anime, query string) []string {
+	targets := make([]string, 0, 4)
+	for _, title := range []string{
+		query,
+		anime.Title.English,
+		anime.Title.Romaji,
+		anime.Title.Japanese,
+	} {
+		if normalized := normalizeSearchTitle(title); normalized != "" {
+			targets = append(targets, normalized)
 		}
+	}
+	return targets
+}
+
+func rawProviderKey(qualifiedKey string) string {
+	if _, rawID, ok := ParseProviderQualifiedID(qualifiedKey); ok {
+		return rawID
+	}
+	return qualifiedKey
+}
+
+// identityMatchProviderOption returns the provider-scoped ID of the option
+// that shares cross-system identity with anime, using only data already in
+// hand: an exact MAL ID (key or ExtraData), an exact AniList/senshi image
+// ID, an exact title plus matching episode count, an exact title plus
+// matching release type, or one unique exact title match. Anything else
+// returns ok=false so playback never guesses a show.
+// identityScope carries the tracker-known context used to disambiguate
+// same-title provider results. Episodes and format gate the multi-axis
+// rules; fetchEpisodes (nil = no fetching) enriches candidates that carry
+// no episode count by reading their existing episode lists, bounded so one
+// ambiguous match costs at most a few list fetches.
+type identityScope struct {
+	query    string
+	episodes int
+	format   string
+	mode     string
+	// provider names the single provider options came from when they
+	// carry unqualified keys (direct per-provider searches).
+	provider      string
+	fetchEpisodes func(providerName, rawID, mode string) ([]string, error)
+}
+
+func identityMatchProviderOption(options []SelectionOption, anime *Anime, scope identityScope) (SelectionOption, bool) {
+	query := scope.query
+	trackerEpisodes := scope.episodes
+	trackerFormat := scope.format
+	for _, option := range options {
+		key := rawProviderKey(option.Key)
 		if anime.MalId != 0 {
 			if key == strconv.Itoa(anime.MalId) {
-				return key, true
+				return option, true
 			}
 			if malID := malIDFromProviderExtraData(option.ExtraData); malID != 0 && malID == anime.MalId {
-				return key, true
+				return option, true
 			}
 		}
 		if anime.AnilistId != 0 && thumbnailExactAnilistMatch(option.Thumbnail, anime.AnilistId) {
-			return key, true
+			return option, true
 		}
 		if anime.MalId != 0 && senshiPosterMatchesMalID(option.Thumbnail, anime.MalId) {
-			return key, true
+			return option, true
 		}
 	}
 
-	type candidate struct {
-		key string
+	type titleHit struct {
+		option   SelectionOption
+		episodes int
+		typ      string
+		full     bool
 	}
-	candidates := make([]candidate, 0, 1)
+	targets := identityTargetTitles(anime, query)
+	var hits []titleHit
+	anyFull := false
 	for _, option := range options {
-		title := normalizeSearchTitle(option.Title)
-		if title == "" {
-			title = normalizeSearchTitle(option.Label)
+		facts := providerFactsFromExtra(option.ExtraData)
+		base := normalizeSearchTitle(option.Title)
+		if base == "" {
+			base = normalizeSearchTitle(option.Label)
 		}
-		if title == "" {
-			continue
+		type candidate struct {
+			title    string
+			verbatim bool
 		}
-		for _, target := range []string{
-			normalizeSearchTitle(query),
-			normalizeSearchTitle(anime.Title.English),
-			normalizeSearchTitle(anime.Title.Romaji),
-			normalizeSearchTitle(anime.Title.Japanese),
-		} {
-			if target != "" && title == target {
-				key := option.Key
-				if _, rawID, ok := ParseProviderQualifiedID(option.Key); ok {
-					key = rawID
+		candidates := []candidate{{title: base, verbatim: true}}
+		if stripped := stripTrailingYear(base); stripped != "" && stripped != base {
+			candidates = append(candidates, candidate{title: stripped})
+		}
+		if normalized := normalizeSearchTitle(facts.japanese); normalized != "" {
+			candidates = append(candidates, candidate{title: normalized, verbatim: true})
+			if stripped := stripTrailingYear(normalized); stripped != "" && stripped != normalized {
+				candidates = append(candidates, candidate{title: stripped})
+			}
+		}
+		matched, full := false, false
+		for _, optionTitle := range candidates {
+			if optionTitle.title == "" {
+				continue
+			}
+			for _, target := range targets {
+				if optionTitle.title == target {
+					matched = true
+					full = full || optionTitle.verbatim
+					break
 				}
-				candidates = append(candidates, candidate{key: key})
+			}
+			if matched {
 				break
 			}
 		}
+		if matched {
+			hits = append(hits, titleHit{option: option, episodes: facts.episodes, typ: facts.typ, full: full})
+			anyFull = anyFull || full
+		}
 	}
-	if len(candidates) == 1 {
-		return candidates[0].key, true
+	// A full exact title beats year-stripped variants: only fall back to
+	// stripped candidates when nothing matches verbatim.
+	if anyFull {
+		full := hits[:0]
+		for _, hit := range hits {
+			if hit.full {
+				full = append(full, hit)
+			}
+		}
+		hits = full
 	}
-	return "", false
+	if len(hits) == 0 {
+		return SelectionOption{}, false
+	}
+	// Same exact title on several entries (seasons, remakes, movies):
+	// disambiguate by exact episode count, then by exact release type.
+	// Either signal must be known on both sides to count, and a *known*
+	// contradiction vetoes: a candidate whose provider-reported data
+	// disagrees with the tracker can never auto-match, even alone.
+	// Candidates that carry no count are enriched via their existing
+	// episode lists (bounded).
+	if trackerEpisodes > 0 || normalizeReleaseType(trackerFormat) != "" {
+		kept := make([]titleHit, 0, len(hits))
+		fetches := 0
+		for _, hit := range hits {
+			episodes, typ := hit.episodes, hit.typ
+			if episodes == 0 && trackerEpisodes > 0 && scope.fetchEpisodes != nil && fetches < 3 {
+				name, _, _ := ParseProviderQualifiedID(hit.option.Key)
+				if name == "" {
+					// Unqualified keys from a direct per-provider search.
+					name = scope.provider
+				}
+				if name != "" {
+					if list, err := scope.fetchEpisodes(name, rawProviderKey(hit.option.Key), scope.mode); err == nil {
+						episodes = inferTotalEpisodesFromEpisodeList(list)
+					}
+					fetches++
+				}
+			}
+			if trackerEpisodes > 0 && episodes != 0 && episodes != trackerEpisodes {
+				continue
+			}
+			if normalized := normalizeReleaseType(trackerFormat); normalized != "" && typ != "" && normalizeReleaseType(typ) != normalized {
+				continue
+			}
+			hit.episodes = episodes
+			kept = append(kept, hit)
+		}
+		hits = kept
+	}
+	if len(hits) == 0 {
+		return SelectionOption{}, false
+	}
+	if trackerEpisodes > 0 {
+		var episodeHits []titleHit
+		for _, hit := range hits {
+			if hit.episodes == trackerEpisodes {
+				episodeHits = append(episodeHits, hit)
+			}
+		}
+		if len(episodeHits) == 1 {
+			return episodeHits[0].option, true
+		}
+	}
+	if normalized := normalizeReleaseType(trackerFormat); normalized != "" {
+		var typeHits []titleHit
+		for _, hit := range hits {
+			if hit.typ != "" && normalizeReleaseType(hit.typ) == normalized {
+				typeHits = append(typeHits, hit)
+			}
+		}
+		if len(typeHits) == 1 {
+			return typeHits[0].option, true
+		}
+	}
+	if len(hits) == 1 {
+		return hits[0].option, true
+	}
+	return SelectionOption{}, false
 }
 
 func findProviderIDForAnime(provider Provider, anime *Anime, mode string) (string, error) {
@@ -1187,7 +1411,19 @@ func findProviderIDForAnime(provider Provider, anime *Anime, mode string) (strin
 	}
 	// Identity only: playback must never adopt a fuzzy title guess as the
 	// show. A miss here routes to the diagnosed recovery menu instead.
-	if id, ok := identityMatchProviderOption(options, anime, query); ok {
+	// Ambiguous same-title candidates are disambiguated with their existing
+	// episode lists (bounded, no new endpoints).
+	playbackScope := identityScope{
+		query:    query,
+		episodes: anime.TotalEpisodes,
+		mode:     normalizeTranslationType(mode),
+		provider: provider.Name(),
+		fetchEpisodes: func(providerName, rawID, lookupMode string) ([]string, error) {
+			return EpisodesList(QualifyProviderID(providerName, rawID), lookupMode)
+		},
+	}
+	if matched, ok := identityMatchProviderOption(options, anime, playbackScope); ok {
+		id := rawProviderKey(matched.Key)
 		Log(fmt.Sprintf("Mapped %q to provider %s id %s for %s fallback", query, provider.Name(), id, mode))
 		return id, nil
 	}

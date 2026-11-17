@@ -122,6 +122,10 @@ func parseSearchOptions(body string) []providers.SelectionOption {
 			Label:     title,
 			Title:     title,
 			Thumbnail: thumbnail,
+			ExtraData: SearchItem{
+				Title:         title,
+				JapaneseTitle: japaneseTitle,
+			},
 		})
 	}
 	return options

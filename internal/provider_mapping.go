@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/wraient/curd/internal/providers/animepahe"
-	"github.com/wraient/curd/internal/providers/anipub"
-	"github.com/wraient/curd/internal/providers/senshi"
 )
 
 type ProviderMappingOutcome int
@@ -118,7 +116,9 @@ func truncateSearchQuery(query string) string {
 // stackedSearchWithExpansion runs one stacked search in the requested mode.
 // When the primary query returns nothing, it tries the alternate tracker
 // title (Romaji<->English) once and merges both result sets, deduplicated by
-// qualified key then by normalized title within a provider.
+// qualified key only — same-title variants from one provider are all kept,
+// since dropping them could hide the correct show from matching and the
+// picker.
 func stackedSearchWithExpansion(config *CurdConfig, anime *Anime, primaryQuery, mode string) ([]SelectionOption, []ProviderSearchError, error) {
 	results, failures, err := searchAnimeStack(config, primaryQuery, mode)
 	if len(results) > 0 {
@@ -280,45 +280,43 @@ func matchJikanThumbnail(anime *Anime, animeList []SelectionOption) bool {
 	return false
 }
 
+// mappingTargetScope returns the tracker-known episode count and release
+// format used to disambiguate same-title provider results. Zeros and empty
+// strings mean "unknown": that axis is skipped, never forced.
+func mappingTargetScope(anime *Anime, entry *Entry) (episodes int, format string) {
+	if entry != nil {
+		return entry.Media.Episodes, entry.Media.Format
+	}
+	if anime != nil {
+		return anime.TotalEpisodes, ""
+	}
+	return 0, ""
+}
+
 func autoMatchProviderListing(config *CurdConfig, anime *Anime, animeList []SelectionOption, userQuery string, anilistEntry *Entry) bool {
 	// Silent auto-match requires cross-system identity: a MAL ID, an exact
-	// image ID, or an exact animepahe meta tag. Title similarity only ranks
-	// the picker list and never decides here.
+	// image ID, an exact animepahe meta tag, an exact title plus a matching
+	// episode count or release type, or one unique exact title. Title
+	// similarity alone only ranks the picker list and never decides here.
 	if anime.MalId == 0 {
 		anime.MalId, _ = GetAnimeMalID(anime.AnilistId)
 	}
 
-	for i, option := range animeList {
-		Log(fmt.Sprintf("Checking option %d: Key='%s', Label='%s', Thumbnail='%s'", i, option.Key, option.Label, option.Thumbnail))
-
-		rawID := option.Key
-		if _, parsed, ok := ParseProviderQualifiedID(option.Key); ok {
-			rawID = parsed
-		}
-		if anime.MalId != 0 {
-			if rawID == strconv.Itoa(anime.MalId) {
-				anime.ProviderId = option.Key
-				Log(fmt.Sprintf("Found MAL ID provider key match! Setting ProviderId to: %s", anime.ProviderId))
-				return true
-			}
-			if malID := malIDFromProviderExtraData(option.ExtraData); malID != 0 && malID == anime.MalId {
-				anime.ProviderId = option.Key
-				Log(fmt.Sprintf("Found provider MAL ID extra-data match! Setting ProviderId to: %s", anime.ProviderId))
-				return true
-			}
-		}
-
-		if anime.AnilistId != 0 && thumbnailExactAnilistMatch(option.Thumbnail, anime.AnilistId) {
-			anime.ProviderId = option.Key
-			Log(fmt.Sprintf("Found Anilist Thumbnail match! Setting ProviderId to: %s", anime.ProviderId))
-			return true
-		}
-
-		if anime.MalId != 0 && senshiPosterMatchesMalID(option.Thumbnail, anime.MalId) {
-			anime.ProviderId = option.Key
-			Log(fmt.Sprintf("Found Senshi MAL poster match! Setting ProviderId to: %s", anime.ProviderId))
-			return true
-		}
+	trackerEpisodes, trackerFormat := mappingTargetScope(anime, anilistEntry)
+	fetchEpisodes := func(providerName, rawID, mode string) ([]string, error) {
+		return EpisodesList(QualifyProviderID(providerName, rawID), mode)
+	}
+	scope := identityScope{
+		query:         userQuery,
+		episodes:      trackerEpisodes,
+		format:        trackerFormat,
+		mode:          normalizeTranslationType(config.SubOrDub),
+		fetchEpisodes: fetchEpisodes,
+	}
+	if matched, ok := identityMatchProviderOption(animeList, anime, scope); ok {
+		anime.ProviderId = matched.Key
+		Log(fmt.Sprintf("Found identity match! Setting ProviderId to: %s (%s)", anime.ProviderId, matched.Label))
+		return true
 	}
 
 	if matchJikanThumbnail(anime, animeList) {
@@ -1154,12 +1152,5 @@ func handleUntrackedRecoveryAction(config *CurdConfig, state *providerMappingSea
 }
 
 func malIDFromProviderExtraData(extra any) int {
-	switch item := extra.(type) {
-	case anipub.SearchItem:
-		return item.MalID
-	case senshi.SearchItem:
-		return item.MalID
-	default:
-		return 0
-	}
+	return providerFactsFromExtra(extra).malID
 }

@@ -5,6 +5,14 @@ import (
 	"encoding/json"
 )
 
+// SearchItem is stored in SelectionOption.ExtraData for mapping hints.
+// Both the display title and the original Japanese title are kept so
+// identity matching can use either without extra fetches.
+type SearchItem struct {
+	Title         string
+	JapaneseTitle string
+}
+
 type ajaxHTMLResponse struct {
 	Status int    `json:"status"`
 	Result string `json:"result"`

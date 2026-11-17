@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -23,6 +24,12 @@ import (
 
 var animepaheCookiesBypassed bool
 var solveAnimepaheBrowserChallenge = solveAnimepaheBrowserChallengeWithRod
+
+// animepaheBypassMu serializes DDoS-Guard bypass attempts. Stacked searches
+// run providers concurrently, so without this two goroutines could pass the
+// bypassed check together and launch duplicate headless browsers while
+// racing on the cookie file.
+var animepaheBypassMu sync.Mutex
 
 func getCookieFilePath() string {
 	return filepath.Join(curdhost.StoragePath(), "animepahe_cookies.json")
@@ -121,6 +128,8 @@ func isAnimepaheChallengeBody(body []byte) bool {
 }
 
 func (p *Provider) ensureBypass() (err error) {
+	animepaheBypassMu.Lock()
+	defer animepaheBypassMu.Unlock()
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("failed to solve Animepahe DDoS-Guard challenge: %v", recovered)

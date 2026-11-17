@@ -6,6 +6,7 @@ type SearchItem struct {
 	MalID    int
 	RouteID  string
 	Title    string
+	Type     string
 	Episodes int
 	SubCount int
 	DubCount int

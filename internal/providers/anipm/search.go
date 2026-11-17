@@ -56,6 +56,7 @@ func searchAnime(query, mode string) ([]providers.SelectionOption, error) {
 				MalID:    item.MalID,
 				RouteID:  item.RouteID,
 				Title:    title,
+				Type:     item.Type,
 				Episodes: item.EpisodeCount,
 				SubCount: item.SubCount,
 				DubCount: item.DubCount,

@@ -22,6 +22,23 @@ type searchResponse struct {
 
 var slugFromPathRE = regexp.MustCompile(`/watch/([^/?#]+)`)
 
+var aninekoMetaTypeRE = regexp.MustCompile(`(?i)\b(TV|TV Short|Movie|OVA|ONA|Special|Music)\b`)
+
+// SearchItem is stored in SelectionOption.ExtraData for mapping hints.
+// Type comes straight from the result meta tag (e.g. "TV"); no extra fetch.
+type SearchItem struct {
+	Title string
+	Type  string
+}
+
+// searchItemType extracts a known release type from the result meta tag.
+func searchItemType(meta string) string {
+	if match := aninekoMetaTypeRE.FindString(meta); match != "" {
+		return match
+	}
+	return ""
+}
+
 func searchAnime(query, mode string) ([]providers.SelectionOption, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -57,6 +74,10 @@ func searchAnime(query, mode string) ([]providers.SelectionOption, error) {
 			Label:     label,
 			Title:     strings.TrimSpace(result.Title),
 			Thumbnail: absoluteURL(result.Image),
+			ExtraData: SearchItem{
+				Title: strings.TrimSpace(result.Title),
+				Type:  searchItemType(result.Meta),
+			},
 		})
 	}
 	if len(options) == 0 {

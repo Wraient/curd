@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/wraient/curd/internal/curdhost"
 	"github.com/wraient/curd/internal/providers"
@@ -17,6 +18,25 @@ type anime struct {
 	EnglishName       string      `json:"englishName"`
 	Thumbnail         string      `json:"thumbnail"`
 	AvailableEpisodes interface{} `json:"availableEpisodes"`
+}
+
+// SearchItem is stored in SelectionOption.ExtraData for mapping hints.
+type SearchItem struct {
+	ID       string
+	Title    string
+	Episodes int
+}
+
+// searchItemEpisodes extracts a plain episode count when the response carries
+// one (a bare number); map-shaped sub/dub counts stay unknown (0).
+func searchItemEpisodes(raw interface{}) int {
+	switch count := raw.(type) {
+	case float64:
+		if count > 0 {
+			return int(count)
+		}
+	}
+	return 0
 }
 
 type response struct {
@@ -166,6 +186,11 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]providers.Selection
 			Key:       anime.ID,
 			Label:     label,
 			Thumbnail: anime.Thumbnail,
+			ExtraData: SearchItem{
+				ID:       strings.TrimSpace(anime.ID),
+				Title:    displayName,
+				Episodes: searchItemEpisodes(anime.AvailableEpisodes),
+			},
 		})
 	}
 	return animeList, nil
