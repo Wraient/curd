@@ -36,9 +36,24 @@ type contractTransport struct {
 
 func (c contractTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	status, body := c.handler(req)
+	header := make(http.Header)
+	// Fixture progressive streams are prefixed so the probe can tell a
+	// video/mp4 apart from an HLS manifest without a headers channel.
+	if rest, ok := strings.CutPrefix(body, "FAKEMP4:"); ok {
+		header.Set("Content-Type", "video/mp4")
+		body = rest
+	}
+	// Fixture session cookies are prefixed so cookie-bound endpoints (the
+	// vhscdn getSources handshake) can be exercised offline.
+	if rest, ok := strings.CutPrefix(body, "SETCOOKIE:"); ok {
+		if line, remainder, found := strings.Cut(rest, "\n"); found {
+			header.Add("Set-Cookie", strings.TrimSpace(line)+"; Path=/")
+			body = remainder
+		}
+	}
 	return &http.Response{
 		StatusCode: status,
-		Header:     make(http.Header),
+		Header:     header,
 		Body:       io.NopCloser(strings.NewReader(body)),
 		Request:    req,
 	}, nil
@@ -138,6 +153,111 @@ func contractHappyHandler(req *http.Request) (int, string) {
 	case host == "embed.settlar.io" && path == "/api/embed/session":
 		return 200, `{"kind":"hls","source":"https://cdn.example/anipm/master.m3u8","audioLang":"ja","subtitles":[{"url":"https://cdn.example/anipm/en.vtt","assUrl":"https://cdn.example/anipm/en.ass","label":"English","srclang":"en","default":true}]}`
 
+	// --- anilight (JSON API + satella mp4) ---
+	case host == "api.anilight.live" && path == "/api/search":
+		return 200, `[{"id":156,"slug":"sousou-no-frieren","anilistId":154587,"idMal":52991,"title":{"romaji":"Sousou no Frieren","english":"Frieren: Beyond Journey's End","native":"葬送のフリーレン"},"coverImage":{"large":"https://cdn.example/frieren.jpg"},"format":"TV","seasonYear":2023,"episodes":28,"subEpisodes":28,"dubEpisodes":28}]`
+	case host == "api.anilight.live" && path == "/api/anime/sousou-no-frieren":
+		return 200, `{"id":156,"slug":"sousou-no-frieren","anilistId":154587,"idMal":52991,"episodes":28,"subEpisodes":28,"dubEpisodes":28}`
+	case host == "api.anilight.live" && path == "/api/sources/verify":
+		return 200, `{"sessionToken":"tok123","expiresAt":9999999999999}`
+	case host == "api.anilight.live" && path == "/api/sources":
+		// The fixture show has 28 episodes; anything beyond mirrors the
+		// real API and rejects the lookup.
+		if ep := req.URL.Query().Get("episode"); ep != "" && ep != "1" {
+			return 200, `{"error":"Invalid parameter format"}`
+		}
+		// The session token is mandatory: requests without the
+		// x-source-session handshake header are rejected like the real API.
+		if req.Header.Get("x-source-session") != "tok123" {
+			return 401, `{"error":"Missing source session token"}`
+		}
+		// The lookup is keyed on show, episode, and language: requests
+		// missing any of them are rejected like the real API.
+		query := req.URL.Query()
+		if query.Get("slug") == "" || query.Get("episode") == "" || query.Get("language") == "" {
+			return 400, `{"error":"missing required params"}`
+		}
+		// Sub and dub resolve to distinct files, mirroring the real API;
+		// the dub contract case below exercises the dub lookup end to end.
+		video, tracks := "vid123", `[{"id":"English","url":"sub123","kind":"captions","lang":"English","label":"English","default":true}]`
+		if query.Get("language") == "dub" {
+			video, tracks = "vid456", `[]`
+		}
+		return 200, `{"sources":[{"url":"` + video + `","quality":"1080p","type":"mp4"}],"tracks":` + tracks + `}`
+	case host == "media.satella.buzz" && path == "/e/vid123":
+		return 200, `FAKEMP4:videobytes`
+	case host == "media.satella.buzz" && path == "/e/vid456":
+		return 200, `FAKEMP4:videobytes`
+	case host == "media.satella.buzz" && path == "/e/sub123":
+		return 200, `WEBVTT
+
+00:00.000 --> 00:01.000
+Hi`
+
+	// --- animex (GraphQL + pp REST) ---
+	case host == "graphql.animex.one":
+		return 200, `{"data":{"catalogAnime":{"items":[{"id":"frieren-slug","anilistId":154587,"malId":52991,"titleRomaji":"Sousou no Frieren","titleEnglish":"Frieren: Beyond Journey's End","format":"TV","episodeCount":28,"seasonYear":2023,"coverImage":{"extraLarge":"https://cdn.example/frieren-xl.jpg","large":"https://cdn.example/frieren.jpg"}}]}}}`
+	case host == "pp.animex.one" && path == "/rest/api/episodes":
+		return 200, `[{"number":1,"hasSub":true,"hasDub":true},{"number":2,"hasSub":true,"hasDub":true}]`
+	case host == "pp.animex.one" && path == "/rest/api/servers":
+		return 200, `{"subProviders":[{"id":"nero","default":true}],"dubProviders":[{"id":"nero","default":true}]}`
+	case host == "pp.animex.one" && path == "/rest/api/sources":
+		// Server selection is mandatory: the query must name the show,
+		// episode, type, and provider, mirroring the real API.
+		query := req.URL.Query()
+		if query.Get("id") == "" || query.Get("epNum") == "" || query.Get("type") == "" || query.Get("providerId") == "" {
+			return 400, `{"error":"missing required params"}`
+		}
+		// The fixture show has 2 episodes; anything beyond mirrors the
+		// real API and reports no stream.
+		if ep := query.Get("epNum"); ep != "1" && ep != "2" {
+			return 200, `{"error":"episode not found"}`
+		}
+		// Sub and dub resolve to distinct streams, mirroring the real API;
+		// the dub contract case below exercises the dub lookup end to end.
+		playlist := "https://cdn.example/animex/master.m3u8"
+		if query.Get("type") == "dub" {
+			playlist = "https://cdn.example/animex/dub.m3u8"
+		}
+		return 200, `{"sources":[{"url":"` + playlist + `","type":"application/vnd.apple.mpegurl"}],"tracks":[]}`
+
+	// --- aniwaves (ajax HTML + vhscdn embed) ---
+	case host == "aniwaves.tv" && path == "/ajax/anime/search":
+		return 200, `{"status":200,"result":{"html":"<div class=\"scaff items\"><a class=\"item\" href=\"/watch/frieren-frieren-74575\"><div class=\"poster\"><span><img src=\"https://cdn.example/frieren.jpg\"/></span></div><div class=\"info\"><div class=\"name d-title\" data-jp=\"Sousou no Frieren\">Frieren: Beyond Journey's End</div><div class=\"meta\"><span class=\"dot\">TV</span></div></div></a></div>"}}`
+	case host == "aniwaves.tv" && strings.HasPrefix(path, "/ajax/episode/list/"):
+		return 200, `{"status":200,"result":"<li><a href=\"/watch/frieren-frieren-74575/ep-1\" data-num=\"1\" data-sub=\"1\" data-dub=\"1\">1</a></li><li><a href=\"/watch/frieren-frieren-74575/ep-2\" data-num=\"2\" data-sub=\"1\" data-dub=\"1\">2</a></li>"}`
+	case host == "aniwaves.tv" && path == "/ajax/server/list":
+		// Only episodes 1-2 exist in this fixture; anything else mirrors
+		// the real site and lists no servers.
+		if eps := req.URL.Query().Get("eps"); eps != "1" && eps != "2" {
+			return 200, `{"status":200,"result":"<div class=\"servers\"></div>"}`
+		}
+		// Sub and dub links live in their own sections and resolve to
+		// distinct embeds; the dub contract case proves the dub section
+		// drives the lookup instead of falling back to sub.
+		return 200, `{"status":200,"result":"<div class=\"servers\"><div class=\"type\" data-type=\"sub\"><ul><li data-link-id=\"a1b2c3d4e5\"></li></ul></div><div class=\"type\" data-type=\"dub\"><ul><li data-link-id=\"f6e5d4c3b2\"></li></ul></div></div>"}`
+	case host == "aniwaves.tv" && path == "/ajax/sources":
+		embed := "https://aniwaves.tv/embed-1/abc123"
+		if req.URL.Query().Get("id") == "f6e5d4c3b2" {
+			embed = "https://aniwaves.tv/embed-1/dub456"
+		}
+		return 200, `{"status":200,"result":{"url":"` + embed + `","server":4}}`
+	case host == "aniwaves.tv" && path == "/embed-1/abc123":
+		return 200, "SETCOOKIE:vh_session=sess123\n" + `<html><body data-id="abcdef123456"></body></html>`
+	case host == "aniwaves.tv" && path == "/embed-1/dub456":
+		return 200, "SETCOOKIE:vh_session=sess123\n" + `<html><body data-id="dub456data789"></body></html>`
+	case host == "aniwaves.tv" && path == "/embed-1/getSources":
+		// The embed session cookie is mandatory: the player page sets it
+		// and getSources rejects anonymous callers like the real CDN.
+		if cookie, err := req.Cookie("vh_session"); err != nil || cookie.Value == "" {
+			return 403, `{"error":"missing session"}`
+		}
+		playlist := "https://cdn.example/aniwaves/master.m3u8"
+		if req.URL.Query().Get("id") == "dub456data789" {
+			playlist = "https://cdn.example/aniwaves/dub.m3u8"
+		}
+		return 200, `{"sources":"` + playlist + `","tracks":[]}`
+
 	// --- stream CDNs: any playlist URL must be a playable HLS manifest ---
 	case strings.HasSuffix(path, ".m3u8"):
 		return 200, contractPlaylist
@@ -180,30 +300,43 @@ func probePlaylist(t *testing.T, client *http.Client, streamURL, referrer string
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("probe: %q returned status %d", streamURL, resp.StatusCode)
 	}
-	if !strings.Contains(string(body), "#EXTM3U") {
-		t.Fatalf("probe: %q is not an HLS playlist: %.120q", streamURL, string(body))
-	}
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
-			return // found a segment or variant line
+	if strings.Contains(string(body), "#EXTM3U") {
+		for _, line := range strings.Split(string(body), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				return // found a segment or variant line
+			}
 		}
+		t.Fatalf("probe: %q playlist has no segment/variant lines", streamURL)
 	}
-	t.Fatalf("probe: %q playlist has no segment/variant lines", streamURL)
+	// Non-HLS progressive streams (mp4) validate by content type.
+	if contentType := resp.Header.Get("Content-Type"); strings.HasPrefix(contentType, "video/") {
+		return
+	}
+	t.Fatalf("probe: %q is neither an HLS playlist nor a video stream: %.120q", streamURL, string(body))
 }
 
 // contractCase identifies one provider's canonical flow through the registry.
+// name labels the subtest; provider names the registered provider under
+// test (they differ for the repeated dub-mode cases).
 type contractCase struct {
-	name  string
-	query string
-	mode  string
+	name     string
+	provider string
+	query    string
+	mode     string
 }
 
 var contractCases = []contractCase{
-	{name: "senshi", query: "frieren", mode: "sub"},
-	{name: "anipub", query: "frieren", mode: "sub"},
-	{name: "anineko", query: "frieren", mode: "sub"},
-	{name: "anipm", query: "frieren", mode: "sub"},
+	{name: "senshi", provider: "senshi", query: "frieren", mode: "sub"},
+	{name: "anipub", provider: "anipub", query: "frieren", mode: "sub"},
+	{name: "anineko", provider: "anineko", query: "frieren", mode: "sub"},
+	{name: "anipm", provider: "anipm", query: "frieren", mode: "sub"},
+	{name: "anilight", provider: "anilight", query: "frieren", mode: "sub"},
+	{name: "animex", provider: "animex", query: "frieren", mode: "sub"},
+	{name: "aniwaves", provider: "aniwaves", query: "frieren", mode: "sub"},
+	{name: "anilight-dub", provider: "anilight", query: "frieren", mode: "dub"},
+	{name: "animex-dub", provider: "animex", query: "frieren", mode: "dub"},
+	{name: "aniwaves-dub", provider: "aniwaves", query: "frieren", mode: "dub"},
 }
 
 // runContractFlow executes Search -> Episodes -> Stream -> playlist probe
@@ -211,11 +344,11 @@ var contractCases = []contractCase{
 func runContractFlow(t *testing.T, client *http.Client, tc contractCase) string {
 	t.Helper()
 
-	provider, err := providers.New(tc.name)
+	provider, err := providers.New(tc.provider)
 	if err != nil {
 		t.Fatalf("%s: providers.New: %v", tc.name, err)
 	}
-	if provider.Name() != tc.name {
+	if provider.Name() != tc.provider {
 		t.Fatalf("%s: Name() = %q", tc.name, provider.Name())
 	}
 
@@ -274,7 +407,7 @@ func TestProviderContractOffline(t *testing.T) {
 }
 
 func TestProviderRegistryComplete(t *testing.T) {
-	want := []string{"allanime", "anikoto", "animepahe", "anineko", "anipm", "anipub", "senshi"}
+	want := []string{"allanime", "anikoto", "anilight", "animepahe", "animex", "anineko", "anipm", "anipub", "aniwaves", "senshi"}
 	got := providers.RegisteredNames()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("RegisteredNames = %v, want %v", got, want)
@@ -325,7 +458,7 @@ func TestProviderContractEdgeCases(t *testing.T) {
 				}
 				installContractHost(t, client)
 
-				provider, err := providers.New(tc.name)
+				provider, err := providers.New(tc.provider)
 				if err != nil {
 					t.Fatalf("New: %v", err)
 				}
@@ -347,7 +480,7 @@ func TestProviderContractEdgeCases(t *testing.T) {
 		t.Run(tc.name+"/episode_bounds", func(t *testing.T) {
 			client := &http.Client{Transport: contractTransport{handler: contractHappyHandler}}
 			installContractHost(t, client)
-			provider, err := providers.New(tc.name)
+			provider, err := providers.New(tc.provider)
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}

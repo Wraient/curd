@@ -248,7 +248,7 @@ func TestCompareVersionsOrdering(t *testing.T) {
 func TestConfiguredProviderNamesUsesStackedByDefault(t *testing.T) {
 	withAllProvidersEnabledForTest(t)
 	got := ConfiguredProviderNames(&CurdConfig{})
-	want := []string{"anipm", "anikoto", "anipub", "senshi", "anineko", "allanime", "animepahe"}
+	want := []string{"anipm", "anikoto", "anilight", "animex", "aniwaves", "anipub", "senshi", "anineko", "allanime", "animepahe"}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}

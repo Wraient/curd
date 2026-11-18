@@ -142,7 +142,7 @@ func TestHardAnimeBenchmark(t *testing.T) {
 		return SelectionOption{Key: "manual"}, nil
 	})
 
-	config := &CurdConfig{Provider: `["anipm","anikoto","anipub","senshi"]`, SubOrDub: "sub"}
+	config := &CurdConfig{Provider: `["anipm","anikoto","anilight","animex","aniwaves","anipub","senshi"]`, SubOrDub: "sub"}
 	results := make([]hardResult, 0, len(hardAnimeCases))
 
 	for _, tc := range hardAnimeCases {

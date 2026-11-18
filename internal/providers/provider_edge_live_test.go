@@ -12,8 +12,11 @@ import (
 	"github.com/wraient/curd/internal/curdhost"
 	_ "github.com/wraient/curd/internal/loadproviders"
 	"github.com/wraient/curd/internal/providers"
+	"github.com/wraient/curd/internal/providers/anilight"
+	"github.com/wraient/curd/internal/providers/animex"
 	"github.com/wraient/curd/internal/providers/anineko"
 	"github.com/wraient/curd/internal/providers/anipub"
+	"github.com/wraient/curd/internal/providers/aniwaves"
 	"github.com/wraient/curd/internal/providers/senshi"
 )
 
@@ -158,6 +161,42 @@ func edgeProviders() []edgeProvider {
 			},
 			streams: func(id string, cfg providers.PlaybackConfig, ep int) ([]string, map[string]providers.StreamPlaybackHint, error) {
 				return (&anineko.Provider{}).GetEpisodeURLForModeWithHints(cfg, id, ep, cfg.SubOrDub)
+			},
+		},
+		{
+			name: "anilight",
+			search: func(q, mode string) ([]providers.SelectionOption, error) {
+				return (&anilight.Provider{}).SearchAnime(q, mode)
+			},
+			episodes: func(id, mode string) ([]string, error) {
+				return (&anilight.Provider{}).EpisodesList(id, mode)
+			},
+			streams: func(id string, cfg providers.PlaybackConfig, ep int) ([]string, map[string]providers.StreamPlaybackHint, error) {
+				return (&anilight.Provider{}).GetEpisodeURLForModeWithHints(cfg, id, ep, cfg.SubOrDub)
+			},
+		},
+		{
+			name: "animex",
+			search: func(q, mode string) ([]providers.SelectionOption, error) {
+				return (&animex.Provider{}).SearchAnime(q, mode)
+			},
+			episodes: func(id, mode string) ([]string, error) {
+				return (&animex.Provider{}).EpisodesList(id, mode)
+			},
+			streams: func(id string, cfg providers.PlaybackConfig, ep int) ([]string, map[string]providers.StreamPlaybackHint, error) {
+				return (&animex.Provider{}).GetEpisodeURLForModeWithHints(cfg, id, ep, cfg.SubOrDub)
+			},
+		},
+		{
+			name: "aniwaves",
+			search: func(q, mode string) ([]providers.SelectionOption, error) {
+				return (&aniwaves.Provider{}).SearchAnime(q, mode)
+			},
+			episodes: func(id, mode string) ([]string, error) {
+				return (&aniwaves.Provider{}).EpisodesList(id, mode)
+			},
+			streams: func(id string, cfg providers.PlaybackConfig, ep int) ([]string, map[string]providers.StreamPlaybackHint, error) {
+				return (&aniwaves.Provider{}).GetEpisodeURLForModeWithHints(cfg, id, ep, cfg.SubOrDub)
 			},
 		},
 	}

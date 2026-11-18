@@ -335,6 +335,9 @@ Document the decision in a short ADR before building. The compile-time registry 
 | Animepahe | `internal/providers/animepahe` | DDoS-Guard + rod browser, `IDResolver`, `DefaultDisabled`, `OptOutToken` |
 | Anikoto | `internal/providers/anikoto` | VRF-protected HTML/JSON catalog, native server selection, and MegaPlay AES/HMAC stream resolution |
 | AniPM | `internal/providers/anipm` | JSON search/series/playback-bootstrap APIs, Settlar embed session resolution, soft/hard sub + dub channels |
+| AniLight | `internal/providers/anilight` | JSON search/episodes/sources APIs with session-token handshake, direct mp4 streams + VTT subs on the satella CDN |
+| AnimeX | `internal/providers/animex` | GraphQL catalog search plus REST episodes/servers/sources with direct HLS, per-episode sub/dub flags |
+| AniWaves | `internal/providers/aniwaves` | Ajax search/episode/server lists plus vhscdn embed resolution via getSources HLS |
 
 Key host files:
 

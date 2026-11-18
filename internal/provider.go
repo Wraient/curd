@@ -12,12 +12,26 @@ import (
 	"github.com/wraient/curd/internal/providers"
 	"github.com/wraient/curd/internal/providers/allanime"
 	"github.com/wraient/curd/internal/providers/anikoto"
+	"github.com/wraient/curd/internal/providers/anilight"
 	"github.com/wraient/curd/internal/providers/animepahe"
+	"github.com/wraient/curd/internal/providers/animex"
 	"github.com/wraient/curd/internal/providers/anineko"
 	"github.com/wraient/curd/internal/providers/anipm"
 	"github.com/wraient/curd/internal/providers/anipub"
+	"github.com/wraient/curd/internal/providers/aniwaves"
 	"github.com/wraient/curd/internal/providers/senshi"
 )
+
+// nonEmpty returns its non-blank trimmed arguments.
+func nonEmpty(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
 
 var (
 	anilistThumbnailRE = regexp.MustCompile(`anilistcdn/media/anime/cover/(?:large|medium)/(?:bx)?(\d+)`)
@@ -1158,8 +1172,9 @@ type providerFacts struct {
 	episodes int
 	// typ is the release type (TV, Movie, ...) when the provider reports one.
 	typ string
-	// japanese is an alternate original-language title (anikoto data-jp).
-	japanese string
+	// altTitles are alternate original-language titles (anikoto data-jp,
+	// anilight/animex romaji and native titles). They need no extra fetch.
+	altTitles []string
 }
 
 func providerFactsFromExtra(extra any) providerFacts {
@@ -1173,7 +1188,13 @@ func providerFactsFromExtra(extra any) providerFacts {
 	case anipm.SearchItem:
 		return providerFacts{malID: item.MalID, episodes: item.Episodes, typ: item.Type}
 	case anikoto.SearchItem:
-		return providerFacts{japanese: item.JapaneseTitle}
+		return providerFacts{altTitles: nonEmpty(item.JapaneseTitle)}
+	case anilight.SearchItem:
+		return providerFacts{malID: item.MalID, episodes: item.Episodes, typ: item.Type, altTitles: nonEmpty(item.Romaji, item.Native)}
+	case animex.SearchItem:
+		return providerFacts{malID: item.MalID, episodes: item.Episodes, typ: item.Type, altTitles: nonEmpty(item.Romaji)}
+	case aniwaves.SearchItem:
+		return providerFacts{typ: item.Type, altTitles: nonEmpty(item.JapaneseTitle)}
 	case allanime.SearchItem:
 		return providerFacts{episodes: item.Episodes}
 	case anineko.SearchItem:
@@ -1264,6 +1285,7 @@ func identityMatchProviderOption(options []SelectionOption, anime *Anime, scope 
 		option   SelectionOption
 		episodes int
 		typ      string
+		malID    int
 		full     bool
 	}
 	targets := identityTargetTitles(anime, query)
@@ -1283,10 +1305,12 @@ func identityMatchProviderOption(options []SelectionOption, anime *Anime, scope 
 		if stripped := stripTrailingYear(base); stripped != "" && stripped != base {
 			candidates = append(candidates, candidate{title: stripped})
 		}
-		if normalized := normalizeSearchTitle(facts.japanese); normalized != "" {
-			candidates = append(candidates, candidate{title: normalized, verbatim: true})
-			if stripped := stripTrailingYear(normalized); stripped != "" && stripped != normalized {
-				candidates = append(candidates, candidate{title: stripped})
+		for _, alt := range facts.altTitles {
+			if normalized := normalizeSearchTitle(alt); normalized != "" {
+				candidates = append(candidates, candidate{title: normalized, verbatim: true})
+				if stripped := stripTrailingYear(normalized); stripped != "" && stripped != normalized {
+					candidates = append(candidates, candidate{title: stripped})
+				}
 			}
 		}
 		matched, full := false, false
@@ -1306,7 +1330,7 @@ func identityMatchProviderOption(options []SelectionOption, anime *Anime, scope 
 			}
 		}
 		if matched {
-			hits = append(hits, titleHit{option: option, episodes: facts.episodes, typ: facts.typ, full: full})
+			hits = append(hits, titleHit{option: option, episodes: facts.episodes, typ: facts.typ, malID: facts.malID, full: full})
 			anyFull = anyFull || full
 		}
 	}
@@ -1331,7 +1355,7 @@ func identityMatchProviderOption(options []SelectionOption, anime *Anime, scope 
 	// disagrees with the tracker can never auto-match, even alone.
 	// Candidates that carry no count are enriched via their existing
 	// episode lists (bounded).
-	if trackerEpisodes > 0 || normalizeReleaseType(trackerFormat) != "" {
+	if trackerEpisodes > 0 || normalizeReleaseType(trackerFormat) != "" || anime.MalId != 0 {
 		kept := make([]titleHit, 0, len(hits))
 		fetches := 0
 		for _, hit := range hits {
@@ -1355,6 +1379,9 @@ func identityMatchProviderOption(options []SelectionOption, anime *Anime, scope 
 			if normalized := normalizeReleaseType(trackerFormat); normalized != "" && typ != "" && normalizeReleaseType(typ) != normalized {
 				continue
 			}
+			if anime.MalId != 0 && hit.malID != 0 && hit.malID != anime.MalId {
+				continue
+			}
 			hit.episodes = episodes
 			kept = append(kept, hit)
 		}
@@ -1362,6 +1389,20 @@ func identityMatchProviderOption(options []SelectionOption, anime *Anime, scope 
 	}
 	if len(hits) == 0 {
 		return SelectionOption{}, false
+	}
+	// Without a tracker MAL ID to anchor on, differing known MAL IDs prove
+	// different shows no matter how identical the titles look.
+	if anime.MalId == 0 {
+		seenMAL := map[int]struct{}{}
+		for _, hit := range hits {
+			if hit.malID == 0 {
+				continue
+			}
+			seenMAL[hit.malID] = struct{}{}
+			if len(seenMAL) > 1 {
+				return SelectionOption{}, false
+			}
+		}
 	}
 	if trackerEpisodes > 0 {
 		var episodeHits []titleHit
@@ -1372,6 +1413,33 @@ func identityMatchProviderOption(options []SelectionOption, anime *Anime, scope 
 		}
 		if len(episodeHits) == 1 {
 			return episodeHits[0].option, true
+		}
+		// Consensus: every remaining candidate shares the exact title AND
+		// the exact episode count, with no contradicting MAL ID or release
+		// type among them. That combination identifies one show; the
+		// candidates are the same catalog entry mirrored across providers,
+		// so the first (highest-priority provider) is safe to take.
+		// Single-episode entries are excluded: a bare title match on a
+		// movie or special stays with the picker.
+		if trackerEpisodes > 1 && len(episodeHits) > 1 {
+			unanimous := true
+			seenMAL := map[int]struct{}{}
+			seenType := map[string]struct{}{}
+			for _, hit := range episodeHits {
+				if hit.malID != 0 {
+					seenMAL[hit.malID] = struct{}{}
+				}
+				if hit.typ != "" {
+					seenType[normalizeReleaseType(hit.typ)] = struct{}{}
+				}
+				if len(seenMAL) > 1 || len(seenType) > 1 {
+					unanimous = false
+					break
+				}
+			}
+			if unanimous {
+				return episodeHits[0].option, true
+			}
 		}
 	}
 	if normalized := normalizeReleaseType(trackerFormat); normalized != "" {

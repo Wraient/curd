@@ -100,7 +100,7 @@ func filterEnabledProviders(names []string) []string {
 	return enabled
 }
 
-var preferredProviderOrder = []string{"anipm", "anikoto", "anipub", "senshi", "anineko", "allanime", "animepahe"}
+var preferredProviderOrder = []string{"anipm", "anikoto", "anilight", "animex", "aniwaves", "anipub", "senshi", "anineko", "allanime", "animepahe"}
 
 func defaultEnabledProviderStack() []string {
 	registered := providers.RegisteredNames()

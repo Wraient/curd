@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/wraient/curd/internal/providers/anikoto"
+	"github.com/wraient/curd/internal/providers/anilight"
 	"github.com/wraient/curd/internal/providers/animepahe"
+	"github.com/wraient/curd/internal/providers/animex"
 	"github.com/wraient/curd/internal/providers/anineko"
 	"github.com/wraient/curd/internal/providers/anipm"
 	"github.com/wraient/curd/internal/providers/anipub"
@@ -292,6 +294,80 @@ func TestIdentityMatchVetoesContradictingReleaseType(t *testing.T) {
 	if _, ok := identityMatchProviderOption(single, anime, identityScope{query: "your name", episodes: 1, format: "MOVIE"}); ok {
 		t.Fatal("a lone candidate with a contradicting release type must not auto-match")
 	}
+}
+
+func TestIdentityMatchConsensusPicksFirstAcrossProviders(t *testing.T) {
+	anime := &Anime{Title: AnimeTitle{Romaji: "86", English: "86"}}
+	options := []SelectionOption{
+		{Title: "86", Key: "anipm::eighty-six-1", ExtraData: anipm.SearchItem{Title: "86", Episodes: 23}},
+		{Title: "86", Key: "anilight::86", ExtraData: anilist_SearchItemForTest("86", 23)},
+		{Title: "86", Key: "animex::eighty-six-x", ExtraData: animex_SearchItemForTest("86", 23)},
+	}
+	matched, ok := identityMatchProviderOption(options, anime, identityScope{query: "86", episodes: 23})
+	if !ok || rawProviderKey(matched.Key) != "eighty-six-1" {
+		t.Fatalf("unanimous title+count must auto-match first provider, got %q %v", matched.Key, ok)
+	}
+}
+
+func TestIdentityMatchConsensusSkipsSingleEpisodeEntries(t *testing.T) {
+	anime := &Anime{Title: AnimeTitle{Romaji: "Your Name", English: "Your Name"}}
+	options := []SelectionOption{
+		{Title: "Your Name", Key: "anipm::yn-1", ExtraData: anipm.SearchItem{Title: "Your Name", Episodes: 1}},
+		{Title: "Your Name", Key: "anilight::yn", ExtraData: anilist_SearchItemForTest("Your Name", 1)},
+	}
+	if _, ok := identityMatchProviderOption(options, anime, identityScope{query: "your name", episodes: 1}); ok {
+		t.Fatal("single-episode title collisions must stay with the picker")
+	}
+}
+
+func anilist_SearchItemForTest(title string, episodes int) anilight.SearchItem {
+	return anilight.SearchItem{Title: title, Episodes: episodes, Type: "TV"}
+}
+
+func animex_SearchItemForTest(title string, episodes int) animex.SearchItem {
+	return animex.SearchItem{Title: title, Episodes: episodes, Type: "TV"}
+}
+
+func TestIdentityMatchVetoesConflictingMalID(t *testing.T) {
+	anime := &Anime{MalId: 1111, Title: AnimeTitle{English: "Kaiju No. 8", Romaji: "Kaiju No. 8"}}
+	options := []SelectionOption{
+		{Title: "Kaiju No. 8", Key: "anipub::1", ExtraData: anipub.SearchItem{Name: "Kaiju No. 8", Episodes: 12, MalID: 2222}},
+		{Title: "Kaiju No. 8", Key: "anipub::2", ExtraData: anipub.SearchItem{Name: "Kaiju No. 8", Episodes: 12, MalID: 1111}},
+	}
+	matched, ok := identityMatchProviderOption(options, anime, identityScope{query: "kaiju no. 8", episodes: 12})
+	if !ok || rawProviderKey(matched.Key) != "2" {
+		t.Fatalf("contradicting MAL must be vetoed, matching entry picked, got %q %v", matched.Key, ok)
+	}
+}
+
+func TestIdentityMatchDistinctMalIDsBlockWithoutTrackerMal(t *testing.T) {
+	anime := &Anime{Title: AnimeTitle{English: "Kaiju No. 8", Romaji: "Kaiju No. 8"}}
+	options := []SelectionOption{
+		{Title: "Kaiju No. 8", Key: "anipub::1", ExtraData: anipub.SearchItem{Name: "Kaiju No. 8", Episodes: 12, MalID: 1111}},
+		{Title: "Kaiju No. 8", Key: "anipm::2", ExtraData: anipm.SearchItem{Title: "Kaiju No. 8", Episodes: 12, MalID: 2222}},
+	}
+	if _, ok := identityMatchProviderOption(options, anime, identityScope{query: "kaiju no. 8", episodes: 12}); ok {
+		t.Fatal("differing known MAL IDs prove different shows; must not auto-match")
+	}
+}
+
+func TestIdentityMatchConsensusRejectsDifferingTypes(t *testing.T) {
+	anime := &Anime{Title: AnimeTitle{English: "Ghost Stories", Romaji: "Ghost Stories"}}
+	options := []SelectionOption{
+		{Title: "Ghost Stories", Key: "anipm::1", ExtraData: anipm.SearchItem{Title: "Ghost Stories", Episodes: 20, Type: "TV"}},
+		{Title: "Ghost Stories", Key: "anilight::2", ExtraData: anilight_SearchItemForTest("Ghost Stories", 20, "Movie")},
+	}
+	if _, ok := identityMatchProviderOption(options, anime, identityScope{query: "ghost stories", episodes: 20}); ok {
+		t.Fatal("differing known types with unknown tracker format must not auto-match")
+	}
+}
+
+func anilight_SearchItemForTest(title string, episodes int, typ ...string) anilight.SearchItem {
+	item := anilight.SearchItem{Title: title, Episodes: episodes}
+	if len(typ) > 0 {
+		item.Type = typ[0]
+	}
+	return item
 }
 
 func TestNormalizeReleaseType(t *testing.T) {
