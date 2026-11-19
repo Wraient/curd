@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -41,26 +40,6 @@ func TestEpisodeLabelMarksCurrentAndFiller(t *testing.T) {
 	preferredDub := c.episodeLabel(1, "dub")
 	if strings.Contains(preferredDub, "(DUB)") {
 		t.Fatalf("preferred dub row should not add (DUB): %q", preferredDub)
-	}
-}
-
-func TestEpisodeIndexFindsAlternateModeSlot(t *testing.T) {
-	c := &MPVPlaylistController{
-		slots: []playlistSlot{
-			{Episode: 1, Mode: "sub"},
-			{Episode: 2, Mode: "sub"},
-			{Episode: 2, Mode: "dub"},
-			{Episode: 3, Mode: "sub"},
-		},
-	}
-	if got := c.episodeIndex(2, "dub"); got != 2 {
-		t.Fatalf("dub slot index=%d want 2", got)
-	}
-	if got := c.episodeIndex(2, "sub"); got != 1 {
-		t.Fatalf("sub slot index=%d want 1", got)
-	}
-	if got := c.episodeIndex(9, "sub"); got != 8 {
-		t.Fatalf("fallback index for ep9=%d want 8", got)
 	}
 }
 
@@ -196,78 +175,6 @@ func TestPlaceholderIsLongLivedAndUniquePerEpisode(t *testing.T) {
 	}
 }
 
-func TestPromptPlaylistPlusOneAutoNoMenu(t *testing.T) {
-	prev := promptSelectOrdered
-	t.Cleanup(func() { promptSelectOrdered = prev })
-	called := false
-	promptSelectOrdered = func(options []SelectionOption) (SelectionOption, error) {
-		called = true
-		return options[0], nil
-	}
-
-	// +1 early → no remote mark, no menu
-	action, err := defaultPromptPlaylistEpisodeLeave(40, 41, 11, 85)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if action != playlistLeaveNone {
-		t.Fatalf("+1 early → %s want none", action)
-	}
-	if called {
-		t.Fatal("+1 must not open a menu")
-	}
-
-	// +1 nearly done → auto mark left
-	action, err = defaultPromptPlaylistEpisodeLeave(40, 41, 90, 85)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if action != playlistLeaveMarkLeft {
-		t.Fatalf("+1 nearly done → %s want mark", action)
-	}
-}
-
-func TestPromptPlaylistJumpOffersUpstreamOptions(t *testing.T) {
-	prev := promptSelectOrdered
-	t.Cleanup(func() { promptSelectOrdered = prev })
-
-	var keys []string
-	promptSelectOrdered = func(options []SelectionOption) (SelectionOption, error) {
-		keys = nil
-		for _, o := range options {
-			keys = append(keys, o.Key)
-		}
-		return options[0], nil
-	}
-
-	action, err := defaultPromptPlaylistEpisodeLeave(40, 39, 11, 85)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if action != playlistLeaveNone { // first option for early jump
-		t.Fatalf("jump early default=%s want none", action)
-	}
-	want := map[string]bool{"none": true, "mark": true, "setwatch": true, "cancel": true}
-	for _, k := range keys {
-		delete(want, k)
-	}
-	if len(want) != 0 {
-		t.Fatalf("missing options %v (got %v)", want, keys)
-	}
-
-	// Nearly done jump leads with mark
-	action, err = defaultPromptPlaylistEpisodeLeave(40, 10, 90, 85)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if action != playlistLeaveMarkLeft {
-		t.Fatalf("jump nearly-done default=%s want mark", action)
-	}
-	if keys[0] != "mark" {
-		t.Fatalf("first option=%s want mark", keys[0])
-	}
-}
-
 func TestResolvePlaylistLeaveDefaultNeverRegressesOnRewind(t *testing.T) {
 	// Backward jump → never touch AniList/MAL, regardless of watch percentage.
 	if action := resolvePlaylistLeaveDefault(40, 39, 11, 85); action != playlistLeaveNone {
@@ -296,33 +203,6 @@ func TestResolvePlaylistLeaveDefaultNeverPrompts(t *testing.T) {
 	// Forward skip (>+1) → none (deferred to session end).
 	if action := resolvePlaylistLeaveDefault(40, 45, 90, 85); action != playlistLeaveNone {
 		t.Fatalf("forward skip → %s want none", action)
-	}
-}
-
-func TestPromptPlaylistJumpCancelAndPromptError(t *testing.T) {
-	prev := promptSelectOrdered
-	t.Cleanup(func() { promptSelectOrdered = prev })
-
-	promptSelectOrdered = func(options []SelectionOption) (SelectionOption, error) {
-		return SelectionOption{Key: "cancel"}, nil
-	}
-	action, err := defaultPromptPlaylistEpisodeLeave(40, 10, 10, 85)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if action != playlistLeaveCancel {
-		t.Fatalf("cancel → %s", action)
-	}
-
-	promptSelectOrdered = func(options []SelectionOption) (SelectionOption, error) {
-		return SelectionOption{}, fmt.Errorf("tty busy")
-	}
-	action, err = defaultPromptPlaylistEpisodeLeave(40, 10, 10, 85)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if action != playlistLeaveNone {
-		t.Fatalf("prompt error → %s want none (still play target)", action)
 	}
 }
 

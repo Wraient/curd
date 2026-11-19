@@ -398,7 +398,11 @@ func main() {
 				internal.Log(anime)
 
 				// if filler episode or recap episode and skip is enabled
-				if (anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap) {
+				// Not while the playlist controller drives: its queue was
+				// built with the same skip rule and a second advancer here
+				// would race it (the controller keeps a late-discovered
+				// filler playing rather than tearing down playback).
+				if ((anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap)) && !internal.MPVPlaylistActive() {
 					if anime.Ep.IsFiller && userCurdConfig.SkipFiller {
 						internal.CurdOut(fmt.Sprint("Filler Episode, starting next episode: ", anime.Ep.Number+1))
 						internal.Log("Filler episode detected")
@@ -639,6 +643,23 @@ func main() {
 					if err != nil {
 						internal.Log("Error getting playback time: " + err.Error())
 
+						// The playlist controller owns advancement while active:
+						// its own watcher already handles episode ends, so the
+						// monitor must not advance, prompt, or exit underneath
+						// it. The only monitor duty left is noticing a dead
+						// player (the gated prompt can no longer quit for us).
+						if internal.MPVPlaylistActive() {
+							if !internal.IsMPVRunning(anime.Ep.Player.SocketPath) {
+								time.Sleep(2 * time.Second)
+								if !internal.IsMPVRunning(anime.Ep.Player.SocketPath) {
+									internal.Log("MPV exited while playlist controller active; exiting")
+									internal.ExitCurd(nil)
+									return
+								}
+							}
+							continue
+						}
+
 						// For CLI mode with next episode prompt, let the continuous prompt handle everything
 						if userCurdConfig.NextEpisodePrompt && !userCurdConfig.RofiSelection {
 							continue
@@ -675,6 +696,11 @@ func main() {
 							internal.Log(fmt.Sprint(anime.Ep.Player.PlaybackTime))
 							internal.Log(fmt.Sprint(anime.Ep.Duration))
 							internal.Log(fmt.Sprint(userCurdConfig.PercentageToMarkComplete))
+							// Controller already advanced (or is advancing) past
+							// this end: completing here would double-advance.
+							if internal.MPVPlaylistActive() {
+								continue
+							}
 							anime.Ep.IsCompleted = true
 							if !userCurdConfig.NextEpisodePrompt {
 								internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)
@@ -786,6 +812,20 @@ func main() {
 						if err != nil {
 							internal.Log("Error checking playback status: " + err.Error())
 						} else if !hasPlayback {
+							// Controller owns advancement while active; only
+							// notice a dead player (see time-pos branch).
+							if internal.MPVPlaylistActive() {
+								if !internal.IsMPVRunning(anime.Ep.Player.SocketPath) {
+									time.Sleep(2 * time.Second)
+									if !internal.IsMPVRunning(anime.Ep.Player.SocketPath) {
+										internal.Log("MPV exited while playlist controller active; exiting")
+										internal.ExitCurd(nil)
+										return
+									}
+								}
+								continue
+							}
+
 							// For CLI mode with next episode prompt, let the continuous prompt handle everything
 							if userCurdConfig.NextEpisodePrompt && !userCurdConfig.RofiSelection {
 								continue
@@ -811,6 +851,12 @@ func main() {
 								// fall through
 							}
 
+							// Controller already advanced (or is advancing)
+							// past this end: completing here would
+							// double-advance.
+							if internal.MPVPlaylistActive() {
+								continue
+							}
 							anime.Ep.IsCompleted = true
 							if !userCurdConfig.NextEpisodePrompt {
 								internal.StartNextEpisode(&anime, &userCurdConfig, databaseFile, user.Token)

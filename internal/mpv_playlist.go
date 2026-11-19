@@ -66,6 +66,41 @@ func MPVPlaylistIsSwitching() bool {
 	return mpvPlaylistSwitching.Load()
 }
 
+// activePlaylistController tracks the currently driving playlist controller,
+// if any. While it is set, episode advancement belongs exclusively to the
+// controller (continuous playback, no per-episode prompts): the TUI prompt
+// loop and the monitor auto-advance paths must stand down. It is cleared
+// when the controller finishes (series end, unrecoverable stream, shutdown)
+// so the TUI takes over exactly once.
+var activePlaylistController atomic.Pointer[MPVPlaylistController]
+
+// MPVPlaylistActive reports whether a playlist controller currently owns
+// episode advancement.
+func MPVPlaylistActive() bool {
+	return activePlaylistController.Load() != nil
+}
+
+func setPlaylistControllerActive(c *MPVPlaylistController) {
+	activePlaylistController.Store(c)
+}
+
+// clearPlaylistControllerActive releases advancement ownership, but only if
+// the caller still owns it: a newer controller started since must keep it.
+func clearPlaylistControllerActive(c *MPVPlaylistController) {
+	activePlaylistController.CompareAndSwap(c, nil)
+}
+
+// yieldPlaylistToTUI permanently hands episode advancement back to the TUI
+// prompt and monitor flows: series end, unresolvable stream, or an unreadable
+// queue. The watcher loop exits on its next tick via yielded; run's deferred
+// clear is then a no-op. Safe to call repeatedly; only the first call logs.
+func (c *MPVPlaylistController) yieldPlaylistToTUI(reason string) {
+	if c.yielded.CompareAndSwap(false, true) {
+		Log(fmt.Sprintf("MPV playlist: yielding advancement to TUI (%s)", reason))
+	}
+	clearPlaylistControllerActive(c)
+}
+
 func beginMPVPlaylistSwitch() {
 	mpvPlaylistSwitching.Store(true)
 }
@@ -99,11 +134,14 @@ type MPVPlaylistController struct {
 	lastPos        int
 	built          bool
 	preferredMode  string
-	hasAlternate   bool
-	alternateMode  string
 	currentPlaying int // episode number currently intended
 	currentMode    string
 	episodeNums    []int // provider episode list (sorted), preferred mode
+	// yielded hands advancement back to the TUI exactly once (series end,
+	// unresolvable stream/queue). Only the watcher goroutine mutates the
+	// plain fields below; cross-goroutine state uses atomics.
+	yielded             atomic.Bool
+	unresolvableStrikes int // consecutive unresolvable picks; yield at threshold
 }
 
 // StartMPVPlaylistController waits until playback is stable, then builds the
@@ -131,7 +169,6 @@ func StartMPVPlaylistController(config *CurdConfig, anime *Anime, socket string,
 		c.preferredMode = "sub"
 	}
 	c.currentMode = c.preferredMode
-	c.alternateMode = alternateTranslationType(c.preferredMode)
 
 	go c.run()
 }
@@ -146,6 +183,9 @@ func (c *MPVPlaylistController) closed() bool {
 }
 
 func (c *MPVPlaylistController) run() {
+	// Ownership is released on every exit path so the TUI prompt loop can
+	// take over exactly once (CompareAndSwap: a newer controller keeps it).
+	defer clearPlaylistControllerActive(c)
 	if !c.waitUntilIdleStable() {
 		return
 	}
@@ -157,18 +197,17 @@ func (c *MPVPlaylistController) run() {
 	// beyond append/insert of titled placeholders (one EpisodesList fetch).
 	if err := c.buildEpisodePlaylist(); err != nil {
 		Log(fmt.Sprintf("MPV playlist build failed: %v", err))
-		// Still watch in case a partial list exists.
+		// Still watch in case a partial list exists, but never claim
+		// advancement ownership on a broken build: the TUI stays in charge.
 	} else {
 		c.built = true
+		setPlaylistControllerActive(c)
 		Log(fmt.Sprintf("MPV episode playlist ready (%d episodes)", len(c.episodeNums)))
 	}
 
 	if c.closed() {
 		return
 	}
-
-	// Probe alternate audio only for the *current* episode — never blocks first frame.
-	c.probeAndAttachAlternateAudio()
 
 	c.watchPlaylistSelection()
 }
@@ -319,6 +358,35 @@ func (c *MPVPlaylistController) buildEpisodePlaylist() error {
 		c.episodeNums = episodes
 	}
 
+	// Skip filler rows when configured, but never the episode actually
+	// playing: the user explicitly started it. Skipped numbers are logged
+	// loudly since wrong filler metadata would otherwise hide episodes.
+	if c.config != nil && c.config.SkipFiller && len(c.anime.FillerEpisodes) > 0 {
+		kept := episodes[:0]
+		for _, ep := range episodes {
+			if ep != currentEp && IsEpisodeFiller(c.anime.FillerEpisodes, ep) {
+				Log(fmt.Sprintf("MPV playlist: skipping filler ep %d (SkipFiller)", ep))
+				continue
+			}
+			kept = append(kept, ep)
+		}
+		episodes = kept
+		// The filter runs in place on the same backing array already stored
+		// in c.episodeNums; refresh the header so the length matches. Every
+		// value left in the array is either kept (in filtered) or removed,
+		// so diffing against filtered still reports exactly the removed eps.
+		filtered := filterSkippedEpisodes(episodes, currentEp, c.anime.FillerEpisodes, true)
+		for _, ep := range episodes {
+			if !containsInt(filtered, ep) {
+				Log(fmt.Sprintf("MPV playlist: skipping filler ep %d (SkipFiller)", ep))
+			}
+		}
+		episodes = filtered
+		c.episodeNums = episodes
+	}
+
+	countBefore, _ := c.playlistCount()
+
 	c.suppress.Store(true)
 	defer c.suppress.Store(false)
 
@@ -376,14 +444,23 @@ func (c *MPVPlaylistController) buildEpisodePlaylist() error {
 	c.currentPlaying = currentEp
 	c.mu.Unlock()
 
-	wantPos := len(before)
-	c.lastPos = wantPos
-	if pos, err := c.playlistPos(); err == nil {
-		c.lastPos = pos
-		if pos != wantPos {
-			Log(fmt.Sprintf("MPV playlist-pos=%d want=%d (leaving as-is to avoid stutter)", pos, wantPos))
-		}
+	// Verify-once: the queue must be exactly [before..., current, after...].
+	// A partial append or a failed move would desync slots from mpv and send
+	// future jumps to the wrong episode, so any mismatch fails the build and
+	// leaves advancement with the TUI instead of claiming a broken queue.
+	wantCount := countBefore + len(after) + len(before)
+	if count, err := c.playlistCount(); err != nil {
+		return fmt.Errorf("verify playlist count: %w", err)
+	} else if count != wantCount {
+		return fmt.Errorf("playlist count=%d want=%d (before=%d after=%d)", count, wantCount, countBefore, len(before)+len(after))
 	}
+	wantPos := len(before)
+	if pos, err := c.playlistPos(); err != nil {
+		return fmt.Errorf("verify playlist pos: %w", err)
+	} else if pos != wantPos {
+		return fmt.Errorf("playlist-pos=%d want=%d (current ep %d not where slots say)", pos, wantPos, currentEp)
+	}
+	c.lastPos = wantPos
 	return nil
 }
 
@@ -420,11 +497,13 @@ func (c *MPVPlaylistController) loadTitledPlaceholders(slots []playlistSlot, mov
 
 	// Move the newly appended block to the front, preserving relative order.
 	// Start: [current, ..., NEW0, NEW1, ...] → [NEW0, NEW1, ..., current, ...]
+	// A failed move desyncs slots from mpv (wrong-episode jumps), so it is
+	// fatal to the caller instead of log-and-continue.
 	for i := 0; i < added; i++ {
 		from := beforeCount + i // shifts as we insert earlier
 		to := i
 		if _, err := MPVSendCommand(c.socket, []interface{}{"playlist-move", from, to}); err != nil {
-			Log(fmt.Sprintf("playlist-move %d→%d: %v", from, to, err))
+			return fmt.Errorf("playlist-move %d→%d: %w", from, to, err)
 		}
 	}
 	return nil
@@ -501,80 +580,6 @@ func (c *MPVPlaylistController) playlistCount() (int, error) {
 	return int(mpvNumber(v) + 0.5), nil
 }
 
-// probeAndAttachAlternateAudio checks whether the opposite sub/dub mode has a
-// stream for the *current* episode only (one resolve — not every episode).
-func (c *MPVPlaylistController) probeAndAttachAlternateAudio() {
-	if c.closed() || c.anime == nil {
-		return
-	}
-	alt := c.alternateMode
-	cfg := *c.config
-	cfg.SubOrDub = alt
-
-	// Background resolve — does not touch MPV until we know a stream exists.
-	result, err := ResolveEpisodeURL(cfg, c.anime, c.currentPlaying)
-	if err != nil || len(result.Links) == 0 {
-		Log(fmt.Sprintf("MPV playlist: no %s stream for ep %d (%v)", alt, c.currentPlaying, err))
-		c.hasAlternate = false
-		return
-	}
-	c.hasAlternate = true
-
-	c.suppress.Store(true)
-	defer c.suppress.Store(false)
-
-	c.mu.Lock()
-	curIdx := c.episodeIndexLocked(c.currentPlaying, c.currentMode)
-	if curIdx < 0 {
-		curIdx = 0
-	}
-	label := c.episodeLabel(c.currentPlaying, alt)
-	insertAt := curIdx + 1
-	c.mu.Unlock()
-
-	slot := playlistSlot{Episode: c.currentPlaying, Mode: alt, Label: label}
-	if err := c.insertTitledPlaceholderAt(insertAt, slot); err != nil {
-		Log(fmt.Sprintf("MPV playlist: failed to add %s entry: %v", alt, err))
-		return
-	}
-
-	c.mu.Lock()
-	if insertAt >= len(c.slots) {
-		c.slots = append(c.slots, slot)
-	} else {
-		c.slots = append(c.slots[:insertAt], append([]playlistSlot{slot}, c.slots[insertAt:]...)...)
-	}
-	c.mu.Unlock()
-	Log(fmt.Sprintf("MPV playlist: added %s option for ep %d", alt, c.currentPlaying))
-}
-
-// insertTitledPlaceholderAt appends a single titled M3U entry then moves it to index.
-func (c *MPVPlaylistController) insertTitledPlaceholderAt(index int, slot playlistSlot) error {
-	countBefore, _ := c.playlistCount()
-	if err := c.loadTitledPlaceholders([]playlistSlot{slot}, false); err != nil {
-		return err
-	}
-	countAfter, err := c.playlistCount()
-	if err != nil {
-		return err
-	}
-	if countAfter <= countBefore {
-		return fmt.Errorf("placeholder not added")
-	}
-	from := countAfter - 1
-	if from == index {
-		return nil
-	}
-	if index < 0 {
-		index = 0
-	}
-	if index > from {
-		index = from
-	}
-	_, err = MPVSendCommand(c.socket, []interface{}{"playlist-move", from, index})
-	return err
-}
-
 func (c *MPVPlaylistController) watchPlaylistSelection() {
 	// Detect selection primarily via path: when the user picks another playlist
 	// row, mpv loads our unique lavfi placeholder. Polling playlist-pos alone
@@ -589,7 +594,9 @@ func (c *MPVPlaylistController) watchPlaylistSelection() {
 	lastHeartbeat := time.Time{}
 
 	for {
-		if c.closed() {
+		// A yield (series end, unresolvable stream/queue) ends watching: the
+		// TUI owns advancement from here. run's deferred clear is a no-op.
+		if c.closed() || c.yielded.Load() {
 			return
 		}
 		if !IsMPVRunning(c.socket) {
@@ -649,6 +656,10 @@ func (c *MPVPlaylistController) watchPlaylistSelection() {
 			if slotErr != nil {
 				Log(fmt.Sprintf("MPV playlist: placeholder pick unresolvable at pos %d: %v", targetPos, slotErr))
 				c.lastPos = targetPos
+				c.noteUnresolvablePick("placeholder")
+				if c.yielded.Load() {
+					return
+				}
 				continue
 			}
 
@@ -682,11 +693,11 @@ func (c *MPVPlaylistController) watchPlaylistSelection() {
 			slot, slotErr := c.resolveSlotAt(targetPos)
 			if slotErr != nil {
 				Log(fmt.Sprintf("MPV playlist: resolve pos %d failed: %v", targetPos, slotErr))
-				// Still try path / slots fallback inside handlePlaylistJump.
-				beginMPVPlaylistSwitch()
-				_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "pause", true})
 				c.lastPos = targetPos
-				c.handlePlaylistJump(targetPos)
+				c.noteUnresolvablePick("pos")
+				if c.yielded.Load() {
+					return
+				}
 				continue
 			}
 
@@ -719,8 +730,23 @@ func (c *MPVPlaylistController) watchPlaylistSelection() {
 			continue
 		}
 
-		if path != "" {
-
+		// --- Natural end without auto-advance (idle tail) ---
+		// With --idle, after the last queued entry eof-reached stays true and
+		// nothing auto-advances (the queue was collapsed to the live stream by
+		// loadfile replace, or the series really ended). Drive the next
+		// episode explicitly; when the list is exhausted hand back to the
+		// TUI finish flow. Guarded on a stable pos so a mid-jump eof blip
+		// cannot double-advance: placeholders take the branch above first.
+		if !isPlaceholderPath(path) && posErr == nil && pos == c.lastPos {
+			// A paused player at the last frame (reading credits) is not an
+			// unattended end: wait for resume instead of advancing away.
+			if !mpvBoolProperty(c.socket, "pause") && mpvBoolProperty(c.socket, "eof-reached") {
+				c.advancePastNaturalEnd()
+				if c.yielded.Load() {
+					return
+				}
+				continue
+			}
 		}
 		time.Sleep(poll)
 	}
@@ -769,21 +795,28 @@ func (c *MPVPlaylistController) handlePlaylistJumpSlot(slot playlistSlot, curEp 
 		if err2 := c.playSlot(playlistSlot{Episode: curEp, Mode: curMode, Label: c.episodeLabel(curEp, curMode)}); err2 != nil {
 			Log(fmt.Sprintf("MPV playlist: recovery play failed: %v", err2))
 			endMPVPlaylistSwitch()
+			// Neither the target nor the previous episode plays: staying
+			// active would spin on an unwatchable queue, so hand back to
+			// the TUI recovery flow with its fresh resolve attempt.
+			c.yieldPlaylistToTUI(fmt.Sprintf("ep %d unplayable (%v)", slot.Episode, err))
 		}
 		return
 	}
 
 	c.finalizePlaylistEpisodeChange(leftEp, slot.Episode, slot.Mode, leaveAction)
 
-	go func() {
-		time.Sleep(mpvPlaylistIdleDelay)
-		if c.closed() {
-			return
-		}
-		if err := c.rebuildPlaylistAroundCurrent(); err != nil {
-			Log(fmt.Sprintf("MPV playlist rebuild after switch: %v", err))
-		}
-	}()
+	// The jump landed on a live stream: earlier unreadable picks were
+	// transient (or healed by the loadfile collapse), so reset the counter.
+	c.unresolvableStrikes = 0
+
+	// Synchronously rebuild the frozen queue: loadfile replace collapsed it
+	// to the live stream. The old async rebuild raced watcher reads and
+	// produced drifting queues (the wrong-episode bug). On rebuild failure
+	// the queue is still consistent (live entry only) and natural ends keep
+	// advancing via nextEpisodeNumber, so log loudly and continue.
+	if err := c.rebuildPlaylistAroundCurrent(); err != nil {
+		Log(fmt.Sprintf("MPV playlist: rebuild after switch to ep %d failed (live-only queue): %v", slot.Episode, err))
+	}
 }
 
 // playlistLeaveAction is the user's choice when leaving an episode via playlist.
@@ -795,79 +828,6 @@ const (
 	playlistLeaveSetWatch playlistLeaveAction = "setwatch" // set remote progress to toEp-1
 	playlistLeaveCancel   playlistLeaveAction = "cancel"   // stay on current episode
 )
-
-// promptPlaylistEpisodeLeave asks how to handle progress when changing episodes.
-// Overridable in tests. +1 (next) is auto; other jumps prompt.
-var promptPlaylistEpisodeLeave = defaultPromptPlaylistEpisodeLeave
-
-func defaultPromptPlaylistEpisodeLeave(fromEp, toEp int, percentageWatched float64, threshold int) (playlistLeaveAction, error) {
-	// Same episode (mode toggle only) — nothing to ask.
-	if toEp == fromEp {
-		return playlistLeaveNone, nil
-	}
-
-	nearlyDone := int(percentageWatched) >= threshold && percentageWatched > 0
-	pctLabel := fmt.Sprintf("%.0f%%", percentageWatched)
-	if percentageWatched <= 0 {
-		pctLabel = "just started"
-	}
-
-	// Sequential next episode (+1): no menu — same spirit as normal "next ep".
-	if toEp == fromEp+1 {
-		if nearlyDone {
-			CurdOut(fmt.Sprintf("Next episode %d · marking %d watched (was %s)", toEp, fromEp, pctLabel))
-			return playlistLeaveMarkLeft, nil
-		}
-		CurdOut(fmt.Sprintf("Next episode %d · last played updated", toEp))
-		return playlistLeaveNone, nil
-	}
-
-	// Non-linear jump — ask what to do with upstream progress.
-	CurdOut(fmt.Sprintf("Jump: episode %d (%s) → episode %d", fromEp, pctLabel, toEp))
-
-	options := []SelectionOption{
-		{Key: "none", Label: fmt.Sprintf("▶ Play episode %d only (don’t change AniList/MAL)", toEp)},
-		{Key: "mark", Label: fmt.Sprintf("✓ Mark episode %d watched, then play %d", fromEp, toEp)},
-		{Key: "setwatch", Label: fmt.Sprintf("📌 Set progress to %d (watching %d), play %d", maxInt(0, toEp-1), toEp, toEp)},
-		{Key: "cancel", Label: fmt.Sprintf("↩ Cancel — stay on episode %d", fromEp)},
-	}
-	// If they were almost done, put "mark left" first.
-	if nearlyDone {
-		options = []SelectionOption{
-			{Key: "mark", Label: fmt.Sprintf("✓ Mark episode %d watched (you were %s), play %d", fromEp, pctLabel, toEp)},
-			{Key: "none", Label: fmt.Sprintf("▶ Play episode %d only (don’t change AniList/MAL)", toEp)},
-			{Key: "setwatch", Label: fmt.Sprintf("📌 Set progress to %d (watching %d), play %d", maxInt(0, toEp-1), toEp, toEp)},
-			{Key: "cancel", Label: fmt.Sprintf("↩ Cancel — stay on episode %d", fromEp)},
-		}
-	}
-
-	selected, err := promptSelectOrdered(options)
-	if err != nil {
-		// User already picked a row in MPV — never cancel back to the old episode.
-		Log(fmt.Sprintf("playlist jump prompt failed (%v); playing %d without remote update", err, toEp))
-		return playlistLeaveNone, nil
-	}
-	if selected.Key == "cancel" || SelectionMeansQuit(selected) || SelectionMeansBack(selected) {
-		return playlistLeaveCancel, nil
-	}
-	switch selected.Key {
-	case "mark":
-		return playlistLeaveMarkLeft, nil
-	case "setwatch":
-		return playlistLeaveSetWatch, nil
-	case "none", "switch":
-		return playlistLeaveNone, nil
-	default:
-		return playlistLeaveNone, nil
-	}
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
 
 // resolvePlaylistLeaveDefault decides what to do with upstream progress after an
 // MPV-playlist episode pick WITHOUT prompting mid-playback. Rules:
@@ -893,27 +853,25 @@ func resolvePlaylistLeaveDefault(fromEp, toEp int, percentageWatched float64, th
 
 // resolveSlotAt figures out which episode the user selected at playlist index pos.
 // Order: placeholder filename encode → title → our slots map.
-// Never re-query playlist-pos here — caller freezes the index.
+// Never re-query playlist-pos here - caller freezes the index. Resolution
+// itself is slots-first (see resolveSlot): the frozen order wins and titles
+// are display-only, since trusting a stale title previously sent playback
+// to the wrong episode.
 func (c *MPVPlaylistController) resolveSlotAt(pos int) (playlistSlot, error) {
 	filename, title := c.playlistEntryMeta(pos)
-	Log(fmt.Sprintf("MPV playlist: resolve pos=%d filename=%q title=%q", pos, truncateForLog(filename, 60), title))
-
-	if title != "" {
-		if ep, mode, ok := parsePlaylistEpisodeTitle(title, c.preferredMode); ok {
-			Log(fmt.Sprintf("MPV playlist: pos %d title %q → ep %d (%s)", pos, title, ep, mode))
-			return playlistSlot{Episode: ep, Mode: mode, Label: title}, nil
-		}
-		Log(fmt.Sprintf("MPV playlist: pos %d title %q (unparsed) file=%q", pos, title, truncateForLog(filename, 40)))
-	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if pos < 0 || pos >= len(c.slots) {
-		return playlistSlot{}, fmt.Errorf("playlist pos %d out of range (slots=%d)", pos, len(c.slots))
+	slots := append([]playlistSlot(nil), c.slots...)
+	c.mu.Unlock()
+
+	if slot, source := resolveSlot(slots, pos, title); source == slotOrder {
+		Log(fmt.Sprintf("MPV playlist: pos %d frozen slot → ep %d (%s)", pos, slot.Episode, slot.Mode))
+		return slot, nil
+	} else if source == slotTitleFallback {
+		Log(fmt.Sprintf("MPV playlist: pos %d out of range, title %q → ep %d (fallback: queue drifted)", pos, title, slot.Episode))
+		return slot, nil
 	}
-	slot := c.slots[pos]
-	Log(fmt.Sprintf("MPV playlist: pos %d slots fallback → ep %d", pos, slot.Episode))
-	return slot, nil
+	return playlistSlot{}, fmt.Errorf("playlist pos %d unresolvable (slots %d, title %q, file %q)", pos, len(slots), title, truncateForLog(filename, 40))
 }
 
 func (c *MPVPlaylistController) playlistEntryMeta(pos int) (filename, title string) {
@@ -960,23 +918,81 @@ func parsePlaylistEpisodeTitle(title, preferredMode string) (ep int, mode string
 	return n, mode, true
 }
 
-func (c *MPVPlaylistController) handlePlaylistJump(pos int) {
-	curEp := c.currentPlaying
+// unresolvableThreshold caps consecutive unreadable picks (transient IPC
+// blips) before the controller admits the queue is broken and yields.
+const unresolvableThreshold = 5
 
-	slot, err := c.resolveSlotAt(pos)
-	if err != nil {
-		Log(fmt.Sprintf("MPV playlist: resolve slot at %d: %v", pos, err))
-		// Path may still be a placeholder — try path-based parse of active media.
-		if ep, ok := parseEpisodeFromPlaceholder(mpvStringProperty(c.socket, "path")); ok {
-			slot = playlistSlot{Episode: ep, Mode: c.preferredMode, Label: c.episodeLabel(ep, c.preferredMode)}
-			c.handlePlaylistJumpSlot(slot, curEp)
-			return
-		}
-		_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "pause", false})
-		endMPVPlaylistSwitch()
+// noteUnresolvablePick records one pick the frozen queue could not explain.
+// A few in a row mean mpv's queue drifted beyond recognition (or reads keep
+// failing); staying active would gate the TUI forever on a dead controller,
+// so hand back instead. Resets on every successful jump.
+func (c *MPVPlaylistController) noteUnresolvablePick(where string) {
+	c.unresolvableStrikes++
+	Log(fmt.Sprintf("MPV playlist: unresolvable %s pick %d/%d", where, c.unresolvableStrikes, unresolvableThreshold))
+	if c.unresolvableStrikes < unresolvableThreshold {
 		return
 	}
+	_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "pause", false})
+	endMPVPlaylistSwitch()
+	c.yieldPlaylistToTUI(fmt.Sprintf("queue unresolvable after %d picks", c.unresolvableStrikes))
+}
 
+// mpvBoolProperty reads a boolean mpv property, false on any error.
+func mpvBoolProperty(socket, name string) bool {
+	v, err := MPVSendCommand(socket, []interface{}{"get_property", name})
+	if err != nil || v == nil {
+		return false
+	}
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return false
+}
+
+// advancePastNaturalEnd drives the next episode after a natural end that mpv
+// did not auto-advance past (idle tail). The next number comes from the same
+// frozen episode list and filler rules as the queue, so this agrees with
+// what the OSD would have advanced to. Nothing after current means series
+// end: yield so the TUI finish flow takes over.
+func (c *MPVPlaylistController) advancePastNaturalEnd() {
+	if c.anime == nil {
+		c.yieldPlaylistToTUI("no anime state for natural end")
+		return
+	}
+	curEp := c.currentPlaying
+	mode := c.currentMode
+	if mode == "" {
+		mode = c.preferredMode
+	}
+	filler := c.anime.FillerEpisodes
+	total := c.anime.TotalEpisodes
+	skipFiller := false
+	if c.config != nil {
+		skipFiller = c.config.SkipFiller
+	}
+	next, ok := nextEpisodeNumber(curEp, c.episodeNums, total, filler, skipFiller)
+	if !ok {
+		// The frozen list may be stale (airing show, provider renumbered):
+		// one cheap EpisodesList refresh before declaring series end.
+		// nextEpisodeNumber re-applies the filler rule to the fresh list.
+		if refreshed := c.fetchEpisodeNumbers(); len(refreshed) > 0 {
+			Log(fmt.Sprintf("MPV playlist: episode list refreshed at ep %d (%d entries)", curEp, len(refreshed)))
+			c.episodeNums = refreshed
+			next, ok = nextEpisodeNumber(curEp, refreshed, c.anime.TotalEpisodes, filler, skipFiller)
+		}
+	}
+	if !ok {
+		Log(fmt.Sprintf("MPV playlist: series complete at ep %d (list=%d total=%d)", curEp, len(c.episodeNums), c.anime.TotalEpisodes))
+		CurdOut(fmt.Sprintf("Series complete at episode %d.", curEp))
+		_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "pause", false})
+		c.yieldPlaylistToTUI(fmt.Sprintf("series complete at ep %d", curEp))
+		return
+	}
+	Log(fmt.Sprintf("MPV playlist: natural end of ep %d, advancing to ep %d", curEp, next))
+	slot := playlistSlot{Episode: next, Mode: mode, Label: c.episodeLabel(next, mode)}
+	beginMPVPlaylistSwitch()
+	_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "pause", true})
+	_, _ = MPVSendCommand(c.socket, []interface{}{"show-text", fmt.Sprintf("Loading episode %d…", next), 5000})
 	c.handlePlaylistJumpSlot(slot, curEp)
 }
 
@@ -1190,31 +1206,6 @@ func (c *MPVPlaylistController) prefetchAfterPlaylistSwitch(currentEp int) {
 	Log(fmt.Sprintf("MPV playlist: prefetched episode %d", nextEp))
 }
 
-func (c *MPVPlaylistController) episodeIndex(ep int, mode string) int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.episodeIndexLocked(ep, mode)
-}
-
-func (c *MPVPlaylistController) episodeIndexLocked(ep int, mode string) int {
-	mode = normalizeTranslationType(mode)
-	for i, s := range c.slots {
-		if s.Episode == ep && normalizeTranslationType(s.Mode) == mode {
-			return i
-		}
-	}
-	// Fallback: first slot with that episode number.
-	for i, s := range c.slots {
-		if s.Episode == ep {
-			return i
-		}
-	}
-	if ep > 0 {
-		return ep - 1
-	}
-	return 0
-}
-
 func (c *MPVPlaylistController) playSlot(slot playlistSlot) error {
 	// Caller (handlePlaylistJump) already called beginMPVPlaylistSwitch.
 	// We clear it only after the new stream is stably playing (or on error paths
@@ -1337,15 +1328,10 @@ func (c *MPVPlaylistController) playSlot(slot playlistSlot) error {
 	c.mu.Lock()
 	c.currentPlaying = targetEp
 	c.currentMode = mode
-	// The alternate is always the *other* mode from what is now playing, so after
-	// a sub→dub switch the offered extra row is sub (not dub again). Recompute
-	// here so probeAndAttachAlternateAudio stays symmetric in both directions.
-	c.alternateMode = alternateTranslationType(mode)
-	alreadyAlt := normalizeTranslationType(slot.Mode) == c.alternateMode
-	// After loadfile replace the playlist is a single entry at index 0.
+	// After loadfile replace the playlist is a single entry at index 0; the
+	// caller rebuilds the frozen queue synchronously around it.
 	c.lastPos = 0
 	c.slots = []playlistSlot{{Episode: targetEp, Mode: mode, Label: title}}
-	c.hasAlternate = false
 	c.mu.Unlock()
 
 	// Stream is live — safe for the main loop again.
@@ -1363,16 +1349,6 @@ func (c *MPVPlaylistController) playSlot(slot playlistSlot) error {
 			}
 		}
 	}(targetEp)
-
-	// Re-probe alternate for the new episode only after placeholders are rebuilt.
-	go func() {
-		time.Sleep(mpvPlaylistIdleDelay + time.Second)
-		if c.closed() || alreadyAlt {
-			return
-		}
-		c.hasAlternate = false
-		c.probeAndAttachAlternateAudio()
-	}()
 
 	CurdOut(fmt.Sprintf("Playing episode %d (%s)", targetEp, mode))
 	return nil
@@ -1533,6 +1509,15 @@ func (c *MPVPlaylistController) rebuildPlaylistAroundCurrent() error {
 		mode = c.preferredMode
 	}
 
+	// Same filler rule as the initial build so every queue in a session has
+	// the same shape (never exclude the episode actually playing).
+	if c.config != nil && c.config.SkipFiller && len(c.anime.FillerEpisodes) > 0 {
+		episodes = filterSkippedEpisodes(episodes, currentEp, c.anime.FillerEpisodes, true)
+		c.episodeNums = episodes
+	}
+
+	countBefore, _ := c.playlistCount()
+
 	c.suppress.Store(true)
 	defer c.suppress.Store(false)
 	beginMPVPlaylistSwitch()
@@ -1552,15 +1537,47 @@ func (c *MPVPlaylistController) rebuildPlaylistAroundCurrent() error {
 	_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "force-media-title", curLabel})
 	_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "title", curLabel})
 
+	// fail marks a partial rebuild; the queue then keeps only the live entry
+	// reflected in slots, never a half-moved order that would misresolve.
+	// lastPos syncs to mpv's actual pos so later picks go out-of-range
+	// (strikes, then yield) instead of resolving against a stale index.
+	fail := func(err error) error {
+		Log(fmt.Sprintf("MPV playlist: rebuild around ep %d failed: %v", currentEp, err))
+		lastPos := 0
+		if pos, posErr := c.playlistPos(); posErr == nil && pos >= 0 {
+			lastPos = pos
+		}
+		c.mu.Lock()
+		c.slots = []playlistSlot{{Episode: currentEp, Mode: mode, Label: curLabel}}
+		c.lastPos = lastPos
+		c.mu.Unlock()
+		return err
+	}
+
 	if len(after) > 0 {
 		if err := c.loadTitledPlaceholders(after, false); err != nil {
-			Log(fmt.Sprintf("rebuild append future: %v", err))
+			return fail(err)
 		}
 	}
 	if len(before) > 0 {
 		if err := c.loadTitledPlaceholders(before, true); err != nil {
-			Log(fmt.Sprintf("rebuild insert previous: %v", err))
+			return fail(err)
 		}
+	}
+
+	// Verify the queue holds exactly what was appended: a short append or a
+	// half-moved block must not be recorded as the full frozen order. The
+	// playing file must also sit at len(before) — if mpv did not track it
+	// across the moves, our index map is wrong and must not be trusted.
+	if count, err := c.playlistCount(); err != nil {
+		return fail(err)
+	} else if want := countBefore + len(after) + len(before); count != want {
+		return fail(fmt.Errorf("playlist count=%d want=%d", count, want))
+	}
+	if pos, err := c.playlistPos(); err != nil {
+		return fail(err)
+	} else if pos != len(before) {
+		return fail(fmt.Errorf("playlist-pos=%d want=%d (ep %d not where slots say)", pos, len(before), currentEp))
 	}
 
 	slots := make([]playlistSlot, 0, len(before)+1+len(after))

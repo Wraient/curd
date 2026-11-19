@@ -1599,6 +1599,14 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 			continue
 		}
 
+		// While the MPV playlist controller owns advancement it already
+		// plays every next episode (continuous playback, no per-episode
+		// prompt): stand down until it yields (series end or failure).
+		if MPVPlaylistActive() {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
 		// Show the next episode number that will be started
 		nextEpisodeNum := anime.Ep.Number + 1
 		isLastKnownEpisode := anime.TotalEpisodes > 0 && anime.Ep.Number >= anime.TotalEpisodes
