@@ -2,6 +2,7 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,9 @@ type stackStubProvider struct {
 	searchCalls      []string
 	calls            []string
 	episodeListCalls []string
+	// linkRotator, when set, returns the links for the n-th stream
+	// resolution instead of the static episodeResults map.
+	linkRotator func(call int) []string
 }
 
 func (s *stackStubProvider) Name() string { return s.name }
@@ -46,6 +50,9 @@ func (s *stackStubProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 func (s *stackStubProvider) GetEpisodeURLForMode(config CurdConfig, id string, epNo int, mode string) ([]string, error) {
 	mode = normalizeTranslationType(mode)
 	s.calls = append(s.calls, s.name+":"+mode)
+	if s.linkRotator != nil {
+		return s.linkRotator(len(s.calls)), nil
+	}
 	if byID, ok := s.episodeErrors[id]; ok {
 		if err := byID[mode]; err != nil {
 			return nil, err
@@ -98,6 +105,14 @@ func (s *stackStubProviderBridge) GetEpisodeURLForMode(config providers.Playback
 func TestProviderNoPrefetchMetadata(t *testing.T) {
 	if !providerNoPrefetch("anikoto") {
 		t.Fatal("expected Anikoto to disable next-episode prefetch")
+	}
+	// anipm (settlar) and aniwaves (vhscdn) hand out short-lived signed
+	// URLs: prefetched next-episode links die before the current episode
+	// ends, so they must resolve at play time instead.
+	for _, name := range []string{"anipm", "aniwaves"} {
+		if !providerNoPrefetch(name) {
+			t.Fatalf("expected %s to disable next-episode prefetch", name)
+		}
 	}
 	if providerNoPrefetch("senshi") {
 		t.Fatal("expected Senshi to keep next-episode prefetch")
@@ -519,6 +534,40 @@ func TestResolveEpisodeURLAlternateModeWithPromptRequiresApproval(t *testing.T) 
 	}
 	if result.Mode != "dub" || result.Links[0] != "allanime-dub" {
 		t.Fatalf("expected dub fallback, got %#v", result)
+	}
+}
+
+// Signed stream URLs expire within minutes, so the dub links probed to
+// decide whether to offer the fallback must not be the ones handed to mpv:
+// accepting the prompt has to resolve fresh links.
+func TestResolveEpisodeURLAlternateModeWithPromptRefreshesLinksOnAccept(t *testing.T) {
+	stub := &stackStubProvider{
+		name: "allanime",
+		linkRotator: func(call int) []string {
+			return []string{fmt.Sprintf("allanime-dub-%d", call)}
+		},
+	}
+	withProviderFactories(t, stub)
+
+	cfg := CurdConfig{Provider: `["allanime"]`, SubOrDub: "sub"}
+	anime := &Anime{
+		Title:        AnimeTitle{Romaji: "Example"},
+		ProviderName: "allanime",
+		ProviderId:   "allanime-id",
+	}
+
+	withPromptSelect(t, func(options []SelectionOption) (SelectionOption, error) {
+		return SelectionOption{Key: "play"}, nil
+	})
+	result, err := ResolveEpisodeURLAlternateModeWithPrompt(cfg, anime, 1, nil)
+	if err != nil {
+		t.Fatalf("accepted alternate mode returned error: %v", err)
+	}
+	if len(stub.calls) != 2 {
+		t.Fatalf("expected probe + fresh resolution, got calls %#v", stub.calls)
+	}
+	if len(result.Links) != 1 || result.Links[0] != "allanime-dub-2" {
+		t.Fatalf("expected freshly resolved links, got %#v", result.Links)
 	}
 }
 

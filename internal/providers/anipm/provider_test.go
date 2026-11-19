@@ -130,6 +130,47 @@ func TestGetEpisodeStreamsSoftSub(t *testing.T) {
 	}
 }
 
+type refererRecorder struct {
+	rt       http.RoundTripper
+	referers []string
+}
+
+func (r *refererRecorder) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(req.URL.Path, ".m3u8") {
+		r.referers = append(r.referers, req.Header.Get("Referer"))
+	}
+	if r.rt != nil {
+		return r.rt.RoundTrip(req)
+	}
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+// The mpv hint must carry the same referer the validator sends: the
+// settlar embed origin the browser plays from, not the catalog site.
+// A mismatch passes validation yet fails in mpv.
+func TestStreamHintReferrerMatchesValidationReferrer(t *testing.T) {
+	f := newFixture(t)
+
+	recorder := &refererRecorder{rt: f.server.Client().Transport}
+	withAnipmTestClient(t, &http.Client{Transport: recorder})
+
+	links, hints, err := getEpisodeStreamsForMode("6351", providers.PlaybackConfig{SubOrDub: "dub"}, 1)
+	if err != nil || len(links) != 1 {
+		t.Fatalf("getEpisodeStreamsForMode dub: %v %#v", err, links)
+	}
+	if len(recorder.referers) == 0 {
+		t.Fatal("expected the validator to fetch the playlist")
+	}
+	for _, validated := range recorder.referers {
+		if hints[links[0]].Referrer != validated {
+			t.Fatalf("hint referer %q != validation referer %q", hints[links[0]].Referrer, validated)
+		}
+	}
+	if hints[links[0]].Referrer != embedBaseURL+"/" {
+		t.Fatalf("hint referer must be the embed origin, got %q", hints[links[0]].Referrer)
+	}
+}
+
 func TestGetEpisodeStreamsHardSubUsesSubhardChannel(t *testing.T) {
 	f := newFixture(t)
 

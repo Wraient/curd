@@ -84,6 +84,14 @@ elements default to absent, never to the previous episode's value.
   `expiresAt-5min`). Never handshake per episode.
 - **Never hold a mutex across network I/O** (anilight audit finding): check
   the cache under lock, release, fetch, re-lock to store.
+- **Signed stream URLs expire fast — never hand mpv a pre-prompt URL.**
+  Resolve to *check* availability, prompt, then re-resolve on accept
+  (`ResolveEpisodeURLAlternateModeWithPrompt` does this; keep it).
+  Mark short-TTL providers `NoPrefetch: true` (anipm/settlar, aniwaves/vhscdn):
+  prefetched next-episode links die mid-episode. The mpv hint `Referrer` must
+  equal the referer validation used — the embed/playback origin the browser
+  sends, never the catalog site (anipm lesson: validated with the embed
+  origin, handed mpv the site origin, playback died while probes passed).
 - Reuse `curdhost.HTTPClient()`; never construct clients with their own
   timeouts. Spoof a browser UA + site `Referer` — several CDNs reject Go's
   default UA.

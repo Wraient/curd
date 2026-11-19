@@ -790,6 +790,16 @@ func GetEpisodeURLForPlayback(config CurdConfig, id string, epNo int) ([]string,
 		return nil, preferredMode, nil
 	}
 
+	// The fallback links above were resolved before the prompt: signed
+	// stream URLs expire within minutes, so re-resolve now and hand mpv
+	// links that are seconds old. If the fresh lookup fails, keep the
+	// probed links rather than failing an approved playback.
+	if freshLinks, freshErr := GetEpisodeURL(fallbackConfig, id, epNo); freshErr == nil && len(freshLinks) > 0 {
+		fallbackLinks = freshLinks
+	} else if freshErr != nil {
+		Log(fmt.Sprintf("fallback re-resolution failed, keeping probed links: %v", freshErr))
+	}
+
 	return fallbackLinks, fallbackMode, nil
 }
 
@@ -949,6 +959,16 @@ func ResolveEpisodeURLAlternateModeWithPrompt(config CurdConfig, anime *Anime, e
 	}
 	if selected.Key != "play" {
 		return ProviderEpisodeResult{}, fmt.Errorf("%s unavailable and %s fallback declined", preferredMode, fallbackMode)
+	}
+
+	// The probe links above were resolved before the prompt: signed stream
+	// URLs expire within minutes, so re-resolve now and hand mpv links that
+	// are seconds old. If the fresh lookup fails, keep the probed links
+	// rather than failing an approved playback.
+	if fresh, freshErr := episodeModeResultWithProviders(config, probeAnime, epNo, fallbackMode, providerNames); freshErr == nil && len(fresh.Links) > 0 {
+		fallbackResult = fresh
+	} else if freshErr != nil {
+		Log(fmt.Sprintf("fallback re-resolution failed, keeping probed links: %v", freshErr))
 	}
 
 	if anime != nil {

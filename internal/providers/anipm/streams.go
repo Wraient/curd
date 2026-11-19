@@ -94,7 +94,9 @@ func getEpisodeStreamsForMode(showID string, config providers.PlaybackConfig, ep
 
 	hints := map[string]providers.StreamPlaybackHint{
 		streamURL: {
-			Referrer: baseURL + "/",
+			// The browser plays from the settlar embed page: hand mpv the
+			// same referer the validator uses, not the catalog site.
+			Referrer: embedBaseURL + "/",
 			Subtitle: subtitle,
 		},
 	}
