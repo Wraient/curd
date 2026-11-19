@@ -105,8 +105,7 @@ func decryptTobeparsedPlain(blob string) ([]byte, error) {
 
 func decodeProviderID(encoded string) string {
 	// Split the string into pairs of characters (.. equivalent of 'sed s/../&\n/g')
-	re := regexp.MustCompile("..")
-	pairs := re.FindAllString(encoded, -1)
+	pairs := allanimePairSplitter.FindAllString(encoded, -1)
 
 	// Mapping for the replacements
 	replacements := map[string]string{
@@ -319,8 +318,8 @@ func extractFilemoonLinks(videoData map[string]interface{}) []string {
 	collected := make([]qualityLink, 0)
 	seen := make(map[string]struct{})
 
-	reURLFirst := regexp.MustCompile(`"url":"([^"]+)".*?"height":([0-9]+)`)
-	reHeightFirst := regexp.MustCompile(`"height":([0-9]+).*?"url":"([^"]+)"`)
+	reURLFirst := filemoonURLFirstPattern
+	reHeightFirst := filemoonHeightFirstPattern
 
 	for _, match := range reURLFirst.FindAllStringSubmatch(decoded, -1) {
 		if len(match) != 3 {
@@ -436,7 +435,7 @@ func fetchEpisodeSourcesForMode(id, mode string, epNo int) ([]allanimeSource, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to send persisted query request: %w", err)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	resp.Body.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read persisted query response: %w", err)
@@ -482,7 +481,7 @@ func fetchEpisodeSourcesForMode(id, mode string, epNo int) ([]allanimeSource, er
 		}
 		defer resp.Body.Close()
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response body: %w", err)
 		}
@@ -525,6 +524,12 @@ func findNamedAllanimeSource(sourceUrls []allanimeSource, providerName string) (
 }
 
 var wixstaticURLSetPattern = regexp.MustCompile(`^(https://video\.wixstatic\.com/video/[^/,]+/),([^/]*),/mp4/file\.mp4`)
+
+var (
+	allanimePairSplitter = regexp.MustCompile("..")
+	filemoonURLFirstPattern = regexp.MustCompile(`"url":"([^"]+)".*?"height":([0-9]+)`)
+	filemoonHeightFirstPattern = regexp.MustCompile(`"height":([0-9]+).*?"url":"([^"]+)"`)
+)
 
 func expandWixmpLinks(link string) []string {
 	normalized := strings.TrimSpace(link)

@@ -6,9 +6,16 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/wraient/curd/internal/providers"
 )
+
+// maxConcurrentAnikotoResolutions bounds how many server candidates resolve
+// at once. Each candidate chain is independent (server lookup, embed page,
+// getSources), so they run concurrently and the results are reassembled in
+// candidate order below.
+const maxConcurrentAnikotoResolutions = 6
 
 var anikotoListItemPattern = regexp.MustCompile(`(?is)<li\b[^>]*>.*?</li>`)
 
@@ -34,29 +41,35 @@ func getEpisodeStreamsForMode(showID string, epNo int, mode string) ([]string, m
 	if err != nil {
 		return nil, nil, err
 	}
+	outcomes := make([]candidateOutcome, len(candidates))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxConcurrentAnikotoResolutions)
+	for index, candidate := range candidates {
+		wg.Add(1)
+		go func(index int, candidate serverCandidate) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			outcomes[index] = resolveCandidateChain(candidate, referer, mode)
+		}(index, candidate)
+	}
+	wg.Wait()
+
 	links := make([]string, 0, len(candidates))
 	hints := make(map[string]providers.StreamPlaybackHint)
 	seen := make(map[string]struct{})
 	var resolutionErrors []error
-	for _, candidate := range candidates {
-		embedURL, err := resolveServerCandidate(candidate.ID, referer)
-		if err != nil {
-			resolutionErrors = append(resolutionErrors, fmt.Errorf("%s: %w", candidate.Name, err))
+	for index, candidate := range candidates {
+		outcome := outcomes[index]
+		if outcome.skipped {
 			continue
 		}
-		var stream resolvedStream
-		switch {
-		case isMegaPlayURL(embedURL):
-			stream, err = resolveMegaPlay(embedURL, mode)
-		case isDirectM3U8(embedURL):
-			stream = resolvedStream{URL: embedURL, Referrer: baseURL + "/"}
-		default:
+		if outcome.err != nil {
+			resolutionErrors = append(resolutionErrors, fmt.Errorf("%s: %w", candidate.Name, outcome.err))
 			continue
 		}
-		if err != nil || strings.TrimSpace(stream.URL) == "" {
-			if err != nil {
-				resolutionErrors = append(resolutionErrors, fmt.Errorf("%s: %w", candidate.Name, err))
-			}
+		stream := outcome.stream
+		if strings.TrimSpace(stream.URL) == "" {
 			continue
 		}
 		if _, exists := seen[stream.URL]; exists {
@@ -73,6 +86,38 @@ func getEpisodeStreamsForMode(showID string, epNo int, mode string) ([]string, m
 		return nil, nil, fmt.Errorf("no playable Anikoto %s streams found for episode %d", mode, epNo)
 	}
 	return prioritizePlayableStreams(links, hints), hints, nil
+}
+
+// candidateOutcome is the result of resolving one server candidate. skipped
+// mirrors the sequential loop's silent `continue` for unsupported embeds and
+// empty URLs, so parallel resolution yields byte-identical links and errors.
+type candidateOutcome struct {
+	stream  resolvedStream
+	err     error
+	skipped bool
+}
+
+func resolveCandidateChain(candidate serverCandidate, referer, mode string) candidateOutcome {
+	embedURL, err := resolveServerCandidate(candidate.ID, referer)
+	if err != nil {
+		return candidateOutcome{err: err}
+	}
+	var stream resolvedStream
+	switch {
+	case isMegaPlayURL(embedURL):
+		stream, err = resolveMegaPlay(embedURL, mode)
+	case isDirectM3U8(embedURL):
+		stream = resolvedStream{URL: embedURL, Referrer: baseURL + "/"}
+	default:
+		return candidateOutcome{skipped: true}
+	}
+	if err != nil {
+		return candidateOutcome{err: err}
+	}
+	if strings.TrimSpace(stream.URL) == "" {
+		return candidateOutcome{skipped: true}
+	}
+	return candidateOutcome{stream: stream}
 }
 
 func fetchServerCandidates(episodeIDs, referer, mode string) ([]serverCandidate, error) {

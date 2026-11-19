@@ -84,6 +84,11 @@ elements default to absent, never to the previous episode's value.
   `expiresAt-5min`). Never handshake per episode.
 - **Never hold a mutex across network I/O** (anilight audit finding): check
   the cache under lock, release, fetch, re-lock to store.
+- **Background goroutines must never share mutable playback state.**
+  Prefetch/next-episode workers publish through a dedicated mutex; readers
+  take it too, and nothing reads `*anime` after spawning a worker that
+  writes to it. Fire-and-forget + shared struct = a race the detector
+  finds only under load (prefetch NextEpisode lesson).
 - **Signed stream URLs expire fast — never hand mpv a pre-prompt URL.**
   Resolve to *check* availability, prompt, then re-resolve on accept
   (`ResolveEpisodeURLAlternateModeWithPrompt` does this; keep it).

@@ -366,13 +366,17 @@ func TestEscapeMPVOptionValueQuotes(t *testing.T) {
 func TestFinalizePlaylistEpisodeChangeUpdatesLocalHistory(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "curd_history.txt")
+	// anikoto is NoPrefetch: the fire-and-forget next-episode prefetch
+	// spawned by finalizePlaylistEpisodeChange exits before any network,
+	// so it cannot leak into later tests and race their HTTP hooks.
+	// These tests assert history/filler bookkeeping, not prefetch results.
 	anime := &Anime{
-		AnilistId:    269,
-		ProviderId:   "269",
-		ProviderName: "senshi",
-		Title:        AnimeTitle{English: "Bleach"},
+		AnilistId:      269,
+		ProviderId:     "269",
+		ProviderName:   "anikoto",
+		Title:          AnimeTitle{English: "Bleach"},
 		FillerEpisodes: []int{33},
-		Ep:           Episode{Number: 40},
+		Ep:             Episode{Number: 40},
 	}
 	c := &MPVPlaylistController{
 		config:        &CurdConfig{StoragePath: dir, SubOrDub: "sub"},
@@ -413,10 +417,12 @@ func TestFinalizePlaylistEpisodeChangeUpdatesLocalHistory(t *testing.T) {
 
 func TestFinalizePlaylistMarksFillerFromList(t *testing.T) {
 	dir := t.TempDir()
+	// anikoto is NoPrefetch: see above — these tests assert filler
+	// bookkeeping, and must not leak background network into later tests.
 	anime := &Anime{
 		AnilistId:      1,
 		ProviderId:     "x",
-		ProviderName:   "senshi",
+		ProviderName:   "anikoto",
 		Title:          AnimeTitle{English: "Demo"},
 		FillerEpisodes: []int{5},
 		Ep:             Episode{Number: 1},

@@ -66,7 +66,7 @@ func getAllAnimeEpisodesList(showID, mode string) ([]string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		curdhost.Log(fmt.Sprint("Error reading response body:", err))
 		return nil, err

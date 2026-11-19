@@ -108,30 +108,62 @@ func (p *senshiProxy) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, contentType, status, err := fetchSenshiResource(upstream)
+	// Segments (and subtitles/keys) are byte-identical either way, but
+	// buffering the whole body delays mpv's first byte by a full upstream
+	// fetch. Only playlists need the full body (decrypt + rewrite), so
+	// everything else streams straight through.
+	if !isSenshiPlaylistURL(upstream) {
+		streamSenshiResource(w, upstream)
+		return
+	}
+
+	body, _, status, err := fetchSenshiResource(upstream)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
-	if isSenshiPlaylistURL(upstream) {
-		playlist, err := decryptSenshiPlaylist(body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		playlist = filterSenshiAudioRenditions(playlist, session.audioRendition)
-		playlist = p.rewritePlaylist(sessionID, upstream, playlist)
-		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		_, _ = io.WriteString(w, playlist)
+	// Only playlists reach here: every other upstream URL streams straight
+	// through above, so the non-playlist buffered path is gone by
+	// construction, not by an unchecked condition.
+	playlist, err := decryptSenshiPlaylist(body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	if contentType != "" {
+	playlist = filterSenshiAudioRenditions(playlist, session.audioRendition)
+	playlist = p.rewritePlaylist(sessionID, upstream, playlist)
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	_, _ = io.WriteString(w, playlist)
+}
+
+// streamSenshiResource proxies one non-playlist upstream URL (segment,
+// subtitle, key) to mpv without buffering: same request headers, status
+// mapping, and Content-Type handling as the buffered path, but the first
+// byte reaches mpv as soon as it arrives upstream.
+func streamSenshiResource(w http.ResponseWriter, rawURL string) {
+	req, err := newRequest(http.MethodGet, rawURL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Header.Set("Origin", baseURL)
+	resp, err := curdhost.HTTPClient().Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		http.Error(w, fmt.Sprintf("Senshi upstream returned status %d", resp.StatusCode), http.StatusBadGateway)
+		return
+	}
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
-	if strings.HasSuffix(strings.ToLower(parsed.Path), ".jpg") {
+	if parsed, parseErr := url.Parse(rawURL); parseErr == nil && strings.HasSuffix(strings.ToLower(parsed.Path), ".jpg") {
 		w.Header().Set("Content-Type", "video/mp2t")
 	}
-	_, _ = w.Write(body)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func fetchSenshiResource(rawURL string) ([]byte, string, int, error) {

@@ -8,6 +8,7 @@ import (
 
 var (
 	dataVideoRE      = regexp.MustCompile(`data-video="([^"]+)"`)
+	langMarkerRE     = regexp.MustCompile(`data-id="(hsub|sub|dub)"`)
 	subtitleRE       = regexp.MustCompile(`[?&](?:sub|caption_1|c1_file)=([^&"]+)`)
 	embedSubtitleRE  = regexp.MustCompile(`const subtitle = "([^"]+)"`)
 	embedTrackFileRE = regexp.MustCompile(`file:\s*"([^"]+\.(?:vtt|ass|srt))"`)
@@ -19,7 +20,7 @@ func extractLangEmbedURLs(html string) map[string][]string {
 		"sub":  {},
 		"dub":  {},
 	}
-	markers := regexp.MustCompile(`data-id="(hsub|sub|dub)"`).FindAllStringSubmatchIndex(html, -1)
+	markers := langMarkerRE.FindAllStringSubmatchIndex(html, -1)
 	for i, marker := range markers {
 		if len(marker) < 4 {
 			continue

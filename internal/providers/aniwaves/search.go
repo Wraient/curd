@@ -93,17 +93,21 @@ func searchAnime(query, mode string) ([]providers.SelectionOption, error) {
 	return options, nil
 }
 
+// htmlEscaper is hoisted to package level so bulk search HTML decoding and
+// per-field decoding share one compiled replacer instead of rebuilding it on
+// every htmlUnescape call (once per search plus twice per result block).
+var htmlEscaper = strings.NewReplacer(
+	`&#039;`, "'",
+	`&quot;`, "\"",
+	`&amp;`, "&",
+	`&lt;`, "<",
+	`&gt;`, ">",
+	`\/`, "/",
+)
+
 // htmlUnescape unescapes the HTML entities the ajax endpoint escapes.
 func htmlUnescape(s string) string {
-	replacer := strings.NewReplacer(
-		`&#039;`, "'",
-		`&quot;`, "\"",
-		`&amp;`, "&",
-		`&lt;`, "<",
-		`&gt;`, ">",
-		`\/`, "/",
-	)
-	return replacer.Replace(s)
+	return htmlEscaper.Replace(s)
 }
 
 // showNumericID extracts the trailing numeric show id from a watch slug

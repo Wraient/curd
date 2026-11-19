@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/wraient/curd/internal/providers"
 )
@@ -24,19 +26,69 @@ type stackStubProvider struct {
 	// linkRotator, when set, returns the links for the n-th stream
 	// resolution instead of the static episodeResults map.
 	linkRotator func(call int) []string
+	// resolveDelay, when positive, stalls stream resolution to simulate a
+	// slow provider in concurrency tests.
+	resolveDelay time.Duration
+	// mu guards the call logs: the stacked resolve fan-out drives one
+	// provider per goroutine, so appends race without it.
+	mu sync.Mutex
+}
+
+// callsSnapshot returns the recorded stream-resolution calls. Use it
+// instead of reading calls directly whenever another goroutine may still
+// be resolving.
+func (s *stackStubProvider) callsSnapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.calls...)
+}
+
+// searchCallsSnapshot is the same guard for the search log.
+func (s *stackStubProvider) searchCallsSnapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.searchCalls...)
+}
+
+// episodeListCallsSnapshot is the same guard for the episode-list log.
+func (s *stackStubProvider) episodeListCallsSnapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.episodeListCalls...)
+}
+
+// waitForStubCalls polls until the stub recorded at least n calls or the
+// timeout lapses, returning whatever was recorded. Resolved losers can
+// still be in flight when the winner returns, so exact-count assertions
+// on shared stubs must wait instead of reading once.
+func waitForStubCalls(stub *stackStubProvider, n int) []string {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if got := stub.callsSnapshot(); len(got) >= n {
+			return got
+		}
+		if time.Now().After(deadline) {
+			return stub.callsSnapshot()
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (s *stackStubProvider) Name() string { return s.name }
 
 func (s *stackStubProvider) SearchAnime(query, mode string) ([]SelectionOption, error) {
 	mode = normalizeTranslationType(mode)
+	s.mu.Lock()
 	s.searchCalls = append(s.searchCalls, s.name+":"+mode+":"+query)
+	s.mu.Unlock()
 	return s.searchResults[mode], nil
 }
 
 func (s *stackStubProvider) EpisodesList(showID, mode string) ([]string, error) {
 	mode = normalizeTranslationType(mode)
+	s.mu.Lock()
 	s.episodeListCalls = append(s.episodeListCalls, s.name+":"+mode+":"+showID)
+	s.mu.Unlock()
 	if s.episodeListErr != nil {
 		return nil, s.episodeListErr
 	}
@@ -49,9 +101,15 @@ func (s *stackStubProvider) GetEpisodeURL(config CurdConfig, id string, epNo int
 
 func (s *stackStubProvider) GetEpisodeURLForMode(config CurdConfig, id string, epNo int, mode string) ([]string, error) {
 	mode = normalizeTranslationType(mode)
+	s.mu.Lock()
 	s.calls = append(s.calls, s.name+":"+mode)
+	call := len(s.calls)
+	s.mu.Unlock()
+	if s.resolveDelay > 0 {
+		time.Sleep(s.resolveDelay)
+	}
 	if s.linkRotator != nil {
-		return s.linkRotator(len(s.calls)), nil
+		return s.linkRotator(call), nil
 	}
 	if byID, ok := s.episodeErrors[id]; ok {
 		if err := byID[mode]; err != nil {
@@ -128,10 +186,10 @@ func TestPrefetchNextUntrackedEpisodeSkipsNoPrefetchProvider(t *testing.T) {
 		Ep:           Episode{Number: 1},
 	}
 
-	prefetchNextUntrackedEpisode(&CurdConfig{}, anime)
+	prefetchNextUntrackedEpisode(&CurdConfig{}, anime, *anime)
 
-	if len(provider.calls) != 0 {
-		t.Fatalf("no-prefetch provider was called: %#v", provider.calls)
+	if got := provider.callsSnapshot(); len(got) != 0 {
+		t.Fatalf("no-prefetch provider was called: %#v", got)
 	}
 	if anime.Ep.NextEpisode.Number != 0 || len(anime.Ep.NextEpisode.Links) != 0 {
 		t.Fatalf("unexpected prefetched episode: %#v", anime.Ep.NextEpisode)
@@ -163,10 +221,11 @@ func TestPrefetchNextUntrackedEpisodeDiscardsNoPrefetchFallback(t *testing.T) {
 		Ep:           Episode{Number: 1},
 	}
 
-	prefetchNextUntrackedEpisode(config, anime)
+	prefetchNextUntrackedEpisode(config, anime, *anime)
 
-	if len(senshi.calls) == 0 || len(anikoto.calls) == 0 {
-		t.Fatalf("expected stack fallback during prefetch: senshi=%#v anikoto=%#v", senshi.calls, anikoto.calls)
+	senshiCalls, anikotoCalls := waitForStubCalls(senshi, 1), waitForStubCalls(anikoto, 1)
+	if len(senshiCalls) == 0 || len(anikotoCalls) == 0 {
+		t.Fatalf("expected stack fallback during prefetch: senshi=%#v anikoto=%#v", senshiCalls, anikotoCalls)
 	}
 	if anime.Ep.NextEpisode.Number != 0 || len(anime.Ep.NextEpisode.Links) != 0 {
 		t.Fatalf("no-prefetch fallback was cached: %#v", anime.Ep.NextEpisode)
@@ -559,15 +618,218 @@ func TestResolveEpisodeURLAlternateModeWithPromptRefreshesLinksOnAccept(t *testi
 	withPromptSelect(t, func(options []SelectionOption) (SelectionOption, error) {
 		return SelectionOption{Key: "play"}, nil
 	})
+	previousMaxAge := fallbackRefetchMaxAge
+	fallbackRefetchMaxAge = 0
+	t.Cleanup(func() { fallbackRefetchMaxAge = previousMaxAge })
 	result, err := ResolveEpisodeURLAlternateModeWithPrompt(cfg, anime, 1, nil)
 	if err != nil {
 		t.Fatalf("accepted alternate mode returned error: %v", err)
 	}
-	if len(stub.calls) != 2 {
-		t.Fatalf("expected probe + fresh resolution, got calls %#v", stub.calls)
+	if got := stub.callsSnapshot(); len(got) != 2 {
+		t.Fatalf("expected probe + fresh resolution, got calls %#v", got)
 	}
 	if len(result.Links) != 1 || result.Links[0] != "allanime-dub-2" {
 		t.Fatalf("expected freshly resolved links, got %#v", result.Links)
+	}
+}
+
+// Fresh probe links must be handed to mpv as-is: re-resolving seconds-old
+// signed URLs only adds latency without freshness gain.
+func TestResolveEpisodeURLAlternateModeWithPromptSkipsRefreshWhenFresh(t *testing.T) {
+	stub := &stackStubProvider{
+		name: "allanime",
+		linkRotator: func(call int) []string {
+			return []string{fmt.Sprintf("allanime-dub-%d", call)}
+		},
+	}
+	withProviderFactories(t, stub)
+
+	cfg := CurdConfig{Provider: `["allanime"]`, SubOrDub: "sub"}
+	anime := &Anime{
+		Title:        AnimeTitle{Romaji: "Example"},
+		ProviderName: "allanime",
+		ProviderId:   "allanime-id",
+	}
+
+	withPromptSelect(t, func(options []SelectionOption) (SelectionOption, error) {
+		return SelectionOption{Key: "play"}, nil
+	})
+	previousMaxAge := fallbackRefetchMaxAge
+	fallbackRefetchMaxAge = time.Hour
+	t.Cleanup(func() { fallbackRefetchMaxAge = previousMaxAge })
+	result, err := ResolveEpisodeURLAlternateModeWithPrompt(cfg, anime, 1, nil)
+	if err != nil {
+		t.Fatalf("accepted alternate mode returned error: %v", err)
+	}
+	if got := stub.callsSnapshot(); len(got) != 1 {
+		t.Fatalf("expected probe only, no re-resolution, got calls %#v", got)
+	}
+	if len(result.Links) != 1 || result.Links[0] != "allanime-dub-1" {
+		t.Fatalf("expected probed links, got %#v", result.Links)
+	}
+}
+
+func TestEpisodeModeResultPicksFirstStackOrderConcurrently(t *testing.T) {
+	slow := &stackStubProvider{
+		name:         "allanime",
+		resolveDelay: 300 * time.Millisecond,
+		searchResults: map[string][]SelectionOption{
+			"dub": {{Title: "Example", Key: "show-id"}},
+		},
+		episodeResults: map[string]map[string][]string{
+			"show-id": {"dub": {"slow-dub"}},
+		},
+	}
+	fast := &stackStubProvider{
+		name: "animepahe",
+		searchResults: map[string][]SelectionOption{
+			"dub": {{Title: "Example", Key: "show-id"}},
+		},
+		episodeResults: map[string]map[string][]string{
+			"show-id": {"dub": {"fast-dub"}},
+		},
+	}
+	withProviderFactories(t, slow, fast)
+
+	cfg := CurdConfig{Provider: `["allanime","animepahe"]`, SubOrDub: "dub"}
+	anime := &Anime{Title: AnimeTitle{Romaji: "Example"}}
+
+	// The fast provider provably finishes first, yet the slow first-in-stack
+	// provider must still win; fast being attempted at all proves the race.
+	start := time.Now()
+	result, err := episodeModeResultWithProviders(cfg, anime, 1, "dub", []string{"allanime", "animepahe"})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("concurrent resolve: %v", err)
+	}
+	if result.ProviderName != "allanime" || len(result.Links) != 1 || result.Links[0] != "slow-dub" {
+		t.Fatalf("expected first-stack-order winner, got %#v", result)
+	}
+	if elapsed < 250*time.Millisecond {
+		t.Fatalf("expected the winner to be awaited, returned in %v", elapsed)
+	}
+	// The loser may still be resolving when the winner returns; wait for
+	// its attempt to land (bounded: the stub has no I/O, only the delay).
+	fastAttempted := false
+	for i := 0; i < 100 && !fastAttempted; i++ {
+		if len(fast.callsSnapshot()) > 0 {
+			fastAttempted = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !fastAttempted {
+		t.Fatal("expected the fast provider to be attempted concurrently")
+	}
+	if result.ResolvedAt.IsZero() {
+		t.Fatal("expected ResolvedAt to be stamped")
+	}
+	if anime.ProviderName != "allanime" {
+		t.Fatalf("expected live mapping to follow the winner, got %q", anime.ProviderName)
+	}
+}
+
+func TestEpisodeModeResultTimeoutFallsBackToCompletedSuccess(t *testing.T) {
+	previousTimeout := providerResolveTimeout
+	providerResolveTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { providerResolveTimeout = previousTimeout })
+
+	slow := &stackStubProvider{
+		name:         "allanime",
+		resolveDelay: 2 * time.Second,
+		searchResults: map[string][]SelectionOption{
+			"dub": {{Title: "Example", Key: "show-id"}},
+		},
+		episodeResults: map[string]map[string][]string{
+			"show-id": {"dub": {"slow-dub"}},
+		},
+	}
+	fast := &stackStubProvider{
+		name: "animepahe",
+		searchResults: map[string][]SelectionOption{
+			"dub": {{Title: "Example", Key: "show-id"}},
+		},
+		episodeResults: map[string]map[string][]string{
+			"show-id": {"dub": {"fast-dub"}},
+		},
+	}
+	withProviderFactories(t, slow, fast)
+
+	cfg := CurdConfig{Provider: `["allanime","animepahe"]`, SubOrDub: "dub"}
+	anime := &Anime{Title: AnimeTitle{Romaji: "Example"}}
+
+	// No wall-clock assertion: under -race and full-suite load, scheduling
+	// delays are unbounded. Correctness is fully pinned by the winner: the
+	// sequential walk (and any no-timeout variant) returns the slow head
+	// provider after ~2s, so a fast win proves the deadline cut in.
+	result, err := episodeModeResultWithProviders(cfg, anime, 1, "dub", []string{"allanime", "animepahe"})
+	if err != nil {
+		t.Fatalf("timeout should fall back to the completed success: %v", err)
+	}
+	if result.ProviderName != "animepahe" || len(result.Links) != 1 || result.Links[0] != "fast-dub" {
+		t.Fatalf("expected completed fallback winner, got %#v (slow calls=%v fast calls=%v)", result, slow.callsSnapshot(), fast.callsSnapshot())
+	}
+	if anime.ProviderName != "animepahe" {
+		t.Fatalf("expected live mapping to follow the winner, got %q", anime.ProviderName)
+	}
+}
+
+func TestEpisodeModeResultTimeoutReportsPendingProviders(t *testing.T) {
+	previousTimeout := providerResolveTimeout
+	providerResolveTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { providerResolveTimeout = previousTimeout })
+
+	slow := &stackStubProvider{
+		name:         "allanime",
+		resolveDelay: 2 * time.Second,
+		searchResults: map[string][]SelectionOption{
+			"dub": {{Title: "Example", Key: "show-id"}},
+		},
+		episodeResults: map[string]map[string][]string{
+			"show-id": {"dub": {"slow-dub"}},
+		},
+	}
+	withProviderFactories(t, slow)
+
+	cfg := CurdConfig{Provider: `["allanime"]`, SubOrDub: "dub"}
+	anime := &Anime{Title: AnimeTitle{Romaji: "Example"}}
+
+	_, err := episodeModeResultWithProviders(cfg, anime, 1, "dub", []string{"allanime"})
+	if err == nil || !strings.Contains(err.Error(), "timed out waiting for allanime") {
+		t.Fatalf("expected timeout naming the hung provider, got %v", err)
+	}
+}
+
+func TestEpisodeModeResultSkipsFailedProviderConcurrently(t *testing.T) {
+	broken := &stackStubProvider{
+		name: "allanime",
+		searchResults: map[string][]SelectionOption{
+			"dub": {{Title: "Example", Key: "show-id"}},
+		},
+		episodeErrors: map[string]map[string]error{
+			"show-id": {"dub": errors.New("no dub here")},
+		},
+	}
+	good := &stackStubProvider{
+		name: "animepahe",
+		searchResults: map[string][]SelectionOption{
+			"dub": {{Title: "Example", Key: "show-id"}},
+		},
+		episodeResults: map[string]map[string][]string{
+			"show-id": {"dub": {"good-dub"}},
+		},
+	}
+	withProviderFactories(t, broken, good)
+
+	cfg := CurdConfig{Provider: `["allanime","animepahe"]`, SubOrDub: "dub"}
+	anime := &Anime{Title: AnimeTitle{Romaji: "Example"}}
+
+	result, err := episodeModeResultWithProviders(cfg, anime, 1, "dub", []string{"allanime", "animepahe"})
+	if err != nil {
+		t.Fatalf("concurrent resolve: %v", err)
+	}
+	if result.ProviderName != "animepahe" || len(result.Links) != 1 || result.Links[0] != "good-dub" {
+		t.Fatalf("expected fallback winner, got %#v", result)
 	}
 }
 
@@ -614,9 +876,9 @@ func TestResolveEpisodeURLForPlaybackTriesAllPreferredProvidersBeforeAudioFallba
 	if result.ProviderName != "animepahe" || result.Mode != "dub" || result.Links[0] != "animepahe-dub" {
 		t.Fatalf("expected animepahe dub before sub fallback, got %#v", result)
 	}
-	for _, call := range allanime.calls {
+	for _, call := range allanime.callsSnapshot() {
 		if call == "allanime:sub" {
-			t.Fatalf("allanime sub fallback was tried before animepahe dub: %#v", allanime.calls)
+			t.Fatalf("allanime sub fallback was tried before animepahe dub: %#v", call)
 		}
 	}
 }
@@ -690,10 +952,10 @@ func TestResolveEpisodeURLForPlaybackAcceptingAnimepaheUsesPreferredBeforeSubFal
 	if !strings.Contains(string(contents), `Provider=["allanime","animepahe"]`) {
 		t.Fatalf("config file missing Animepahe fallback:\n%s", string(contents))
 	}
-	if got := strings.Join(allanime.calls, ","); got != "allanime:dub" {
+	if got := strings.Join(allanime.callsSnapshot(), ","); got != "allanime:dub" {
 		t.Fatalf("expected one AllAnime dub attempt before Animepahe, got %s", got)
 	}
-	if got := strings.Join(animepahe.calls, ","); got != "animepahe:dub" {
+	if got := strings.Join(animepahe.callsSnapshot(), ","); got != "animepahe:dub" {
 		t.Fatalf("expected Animepahe dub before sub fallback, got %s", got)
 	}
 }
@@ -753,6 +1015,11 @@ func TestResolveEpisodeURLForPlaybackDecliningAnimepaheFallsBackToAllanimeSub(t 
 		ProviderName: "allanime",
 		ProviderId:   "shared-id",
 	}
+	// Force the stale-link refresh so the re-resolution path is exercised
+	// deterministically regardless of wall-clock timing.
+	previousMaxAge := fallbackRefetchMaxAge
+	fallbackRefetchMaxAge = 0
+	t.Cleanup(func() { fallbackRefetchMaxAge = previousMaxAge })
 	result, err := ResolveEpisodeURLForPlayback(*config, anime, 155)
 	if err != nil {
 		t.Fatalf("ResolveEpisodeURLForPlayback returned error: %v", err)
@@ -773,11 +1040,14 @@ func TestResolveEpisodeURLForPlaybackDecliningAnimepaheFallsBackToAllanimeSub(t 
 	if !strings.Contains(string(contents), `Provider=["allanime","no-animepahe"]`) {
 		t.Fatalf("config file missing opt out:\n%s", string(contents))
 	}
-	if len(animepahe.searchCalls) != 0 || len(animepahe.calls) != 0 {
-		t.Fatalf("Animepahe should not be touched after opt out, search=%#v episode=%#v", animepahe.searchCalls, animepahe.calls)
+	animepaheSearch, animepaheCalls := animepahe.searchCallsSnapshot(), animepahe.callsSnapshot()
+	if len(animepaheSearch) != 0 || len(animepaheCalls) != 0 {
+		t.Fatalf("Animepahe should not be touched after opt out, search=%#v episode=%#v", animepaheSearch, animepaheCalls)
 	}
-	if got := strings.Join(allanime.calls, ","); got != "allanime:dub,allanime:sub" {
-		t.Fatalf("expected AllAnime dub then AllAnime sub after declining Animepahe, got %s", got)
+	// Preferred lookup, fallback probe, then a fresh fallback resolution
+	// on accept: signed URLs may expire while the prompt is on screen.
+	if got := strings.Join(waitForStubCalls(allanime, 3), ","); got != "allanime:dub,allanime:sub,allanime:sub" {
+		t.Fatalf("expected AllAnime dub, probe, then fresh sub after declining Animepahe, got %s", got)
 	}
 }
 
@@ -831,6 +1101,11 @@ func TestResolveEpisodeURLForPlaybackNoAnimepaheSkipsConsentAndOffersAllanimeSub
 		ProviderName: "animepahe",
 		ProviderId:   "pahe-id",
 	}
+	// Force the stale-link refresh so the re-resolution path is exercised
+	// deterministically regardless of wall-clock timing.
+	previousMaxAge := fallbackRefetchMaxAge
+	fallbackRefetchMaxAge = 0
+	t.Cleanup(func() { fallbackRefetchMaxAge = previousMaxAge })
 	result, err := ResolveEpisodeURLForPlayback(*config, anime, 155)
 	if err != nil {
 		t.Fatalf("ResolveEpisodeURLForPlayback returned error: %v", err)
@@ -841,10 +1116,13 @@ func TestResolveEpisodeURLForPlaybackNoAnimepaheSkipsConsentAndOffersAllanimeSub
 	if !sawSubPrompt {
 		t.Fatalf("expected prompt before playing sub fallback")
 	}
-	if len(animepahe.searchCalls) != 0 || len(animepahe.calls) != 0 {
-		t.Fatalf("Animepahe should not be touched with no-animepahe, search=%#v episode=%#v", animepahe.searchCalls, animepahe.calls)
+	animepaheSearch, animepaheCalls := animepahe.searchCallsSnapshot(), animepahe.callsSnapshot()
+	if len(animepaheSearch) != 0 || len(animepaheCalls) != 0 {
+		t.Fatalf("Animepahe should not be touched with no-animepahe, search=%#v episode=%#v", animepaheSearch, animepaheCalls)
 	}
-	if got := strings.Join(allanime.calls, ","); got != "allanime:dub,allanime:sub" {
-		t.Fatalf("expected AllAnime dub then AllAnime sub with no-animepahe, got %s", got)
+	// Preferred lookup, fallback probe, then a fresh fallback resolution
+	// on accept: signed URLs may expire while the prompt is on screen.
+	if got := strings.Join(waitForStubCalls(allanime, 3), ","); got != "allanime:dub,allanime:sub,allanime:sub" {
+		t.Fatalf("expected AllAnime dub, probe, then fresh sub with no-animepahe, got %s", got)
 	}
 }

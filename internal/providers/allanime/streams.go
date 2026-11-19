@@ -31,6 +31,7 @@ var (
 	allanimeClockSubtitlePattern = regexp.MustCompile(`"subtitles":\[\{"lang":"en","label":"English","default":"default","src":"([^"]+)"`)
 	allanimeStreamResolutionPattern = regexp.MustCompile(`RESOLUTION=(\d+)x(\d+)`)
 	allanimeStreamBandwidthPattern  = regexp.MustCompile(`BANDWIDTH=(\d+)`)
+	allanimeQualityDigitsPattern    = regexp.MustCompile(`(\d{3,4})`)
 )
 
 func getAllanimeEpisodeStreamsForMode(id, mode string, epNo int) ([]string, map[string]providers.StreamPlaybackHint, error) {
@@ -197,6 +198,12 @@ func resolveAllanimeClockProvider(providerName, providerPath string) ([]allanime
 		return nil, fmt.Errorf("no links field in Allanime extractor response")
 	}
 
+	type allanimeLinkTask struct {
+		url   string
+		score int
+	}
+
+	tasks := make([]allanimeLinkTask, 0, len(linksInterface))
 	for _, linkInterface := range linksInterface {
 		linkMap, ok := linkInterface.(map[string]interface{})
 		if !ok {
@@ -210,15 +217,48 @@ func resolveAllanimeClockProvider(providerName, providerPath string) ([]allanime
 
 		resolutionScore := allanimeResolutionScore(linkMap["resolutionStr"])
 		if linkURL, ok := linkMap["link"].(string); ok && strings.TrimSpace(linkURL) != "" {
-			streams = append(streams, resolveAllanimeLinkURL(linkURL, referrer, subtitleURL, resolutionScore)...)
+			tasks = append(tasks, allanimeLinkTask{url: strings.TrimSpace(linkURL), score: resolutionScore})
 			continue
 		}
 
 		if hlsMap, ok := linkMap["hls"].(map[string]interface{}); ok {
 			if hlsURL, ok := hlsMap["url"].(string); ok && strings.TrimSpace(hlsURL) != "" {
-				streams = append(streams, resolveAllanimeLinkURL(hlsURL, referrer, subtitleURL, resolutionScore)...)
+				tasks = append(tasks, allanimeLinkTask{url: strings.TrimSpace(hlsURL), score: resolutionScore})
 			}
 		}
+	}
+
+	// Master-playlist variant fetches are independent of each other, so run
+	// them concurrently; results stay indexed so the flattened order (and the
+	// stable quality sort below) matches the serial visit order exactly.
+	variants := make([][]allanimeResolvedStream, len(tasks))
+	var variantsWG sync.WaitGroup
+	for i, task := range tasks {
+		if !allanimeNeedsVariantFetch(task.url) {
+			continue
+		}
+		variantsWG.Add(1)
+		go func(idx int, task allanimeLinkTask) {
+			defer variantsWG.Done()
+			if fetched, err := fetchAllanimeM3U8VariantStreams(task.url, referrer, subtitleURL); err == nil && len(fetched) > 0 {
+				variants[idx] = fetched
+			}
+		}(i, task)
+	}
+	variantsWG.Wait()
+
+	for i, task := range tasks {
+		if variants[i] != nil {
+			streams = append(streams, variants[i]...)
+			continue
+		}
+		if allanimeNeedsVariantFetch(task.url) {
+			// Variant fetch already failed above; fall back to the master
+			// URL itself exactly as the serial path does on fetch error.
+			streams = append(streams, plainAllanimeLinkStream(task.url, referrer, subtitleURL, task.score)...)
+			continue
+		}
+		streams = append(streams, resolveAllanimeLinkURL(task.url, referrer, subtitleURL, task.score)...)
 	}
 
 	if len(streams) == 0 {
@@ -245,7 +285,7 @@ func fetchAllanimeClockResponse(providerPath string) ([]byte, map[string]interfa
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -277,6 +317,17 @@ func resolveAllanimeLinkURL(linkURL, referrer, subtitleURL string, resolutionSco
 		}
 	}
 
+	return plainAllanimeLinkStream(linkURL, referrer, subtitleURL, resolutionScore)
+}
+
+// allanimeNeedsVariantFetch mirrors the fetch branch inside
+// resolveAllanimeLinkURL: a master.m3u8 URL gets its variant playlist
+// fetched, unless the wixmp branch takes precedence for it.
+func allanimeNeedsVariantFetch(linkURL string) bool {
+	return strings.Contains(linkURL, "master.m3u8") && !strings.Contains(linkURL, "repackager.wixmp.com")
+}
+
+func plainAllanimeLinkStream(linkURL, referrer, subtitleURL string, resolutionScore int) []allanimeResolvedStream {
 	qualityScore := resolutionScore
 	if qualityScore == 0 {
 		qualityScore = wixmpQualityScore(linkURL)
@@ -304,7 +355,7 @@ func fetchAllanimeM3U8VariantStreams(masterURL, referrer, subtitleURL string) ([
 	if err != nil {
 		return nil, err
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	resp.Body.Close()
 	if err != nil {
 		return nil, err
@@ -414,7 +465,7 @@ func allanimeResolutionScore(value interface{}) int {
 	if score := wixmpQualityScore(text); score > 0 {
 		return score
 	}
-	if digits := regexp.MustCompile(`(\d{3,4})`).FindStringSubmatch(text); len(digits) == 2 {
+	if digits := allanimeQualityDigitsPattern.FindStringSubmatch(text); len(digits) == 2 {
 		if score, err := strconv.Atoi(digits[1]); err == nil {
 			return score
 		}

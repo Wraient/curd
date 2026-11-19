@@ -13,6 +13,11 @@ import (
 
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+// maxBodyBytes caps every response body read: search, series, bootstrap,
+// session, embed page, and error bodies all fit comfortably in kilobytes.
+// Capping bounds worst-case stalls on huge upstream error pages.
+const maxBodyBytes = 4 << 20
+
 var (
 	baseURL      = "https://ani.pm"
 	embedBaseURL = "https://embed.settlar.io"
@@ -66,7 +71,7 @@ func fetch(rawURL, referer string, cookies []*http.Cookie) ([]byte, []*http.Cook
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
 		return nil, nil, err
 	}

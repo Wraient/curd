@@ -17,8 +17,8 @@ func getEpisodeStreamsForMode(showID string, config providers.PlaybackConfig, ep
 		return nil, nil, fmt.Errorf("invalid episode number %d", epNo)
 	}
 
-	var details detailsResponse
-	if err := fetchJSON(detailsURL(showID), baseURL+"/", &details); err != nil {
+	details, err := fetchDetails(showID)
+	if err != nil {
 		return nil, nil, err
 	}
 

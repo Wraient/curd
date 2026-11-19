@@ -86,14 +86,14 @@ func decodeSearchResults(raw []byte) ([]searchResult, error) {
 func fetchSearchInfos(results []searchResult) []infoResponse {
 	infos := make([]infoResponse, len(results))
 	var wg sync.WaitGroup
-	wg.Add(len(results))
 	for i, item := range results {
+		if item.ID <= 0 {
+			continue
+		}
 		i, item := i, item
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if item.ID <= 0 {
-				return
-			}
 			var info infoResponse
 			if err := fetchJSON(infoURL(strconv.Itoa(item.ID)), baseURL+"/", &info); err == nil {
 				infos[i] = info

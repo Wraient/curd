@@ -3,6 +3,7 @@ package anineko
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/wraient/curd/internal/providers"
 )
@@ -31,23 +32,39 @@ func getEpisodeStreamsForMode(slug string, config providers.PlaybackConfig, epNo
 		return nil, nil, fmt.Errorf("no %s streams found for episode %d", mode, epNo)
 	}
 
-	for _, embedURL := range embedURLs {
-		var (
-			stream resolvedStream
-			err    error
-		)
-		switch resolveEmbedHost(embedURL) {
-		case "bibiemb":
-			stream, err = resolveBibiemb(embedURL)
-		case "vibeplayer":
-			stream, err = resolveVibeplayer(embedURL)
-		default:
+	// Embed candidates are independent: resolving them concurrently cuts
+	// tail latency from the sum of per-embed attempts to roughly the
+	// slowest one. Results are picked in list order below, so the winner
+	// is identical to the sequential first-success walk.
+	type embedResult struct {
+		stream resolvedStream
+		err    error
+	}
+	results := make([]embedResult, len(embedURLs))
+	var wg sync.WaitGroup
+	for i, embedURL := range embedURLs {
+		wg.Add(1)
+		go func(idx int, url string) {
+			defer wg.Done()
+			var result embedResult
+			switch resolveEmbedHost(url) {
+			case "bibiemb":
+				result.stream, result.err = resolveBibiemb(url)
+			case "vibeplayer":
+				result.stream, result.err = resolveVibeplayer(url)
+			default:
+				result.err = fmt.Errorf("unknown embed host for %q", url)
+			}
+			results[idx] = result
+		}(i, embedURL)
+	}
+	wg.Wait()
+
+	for _, result := range results {
+		if result.err != nil {
 			continue
 		}
-		if err != nil {
-			continue
-		}
-		return singleStreamResult(stream)
+		return singleStreamResult(result.stream)
 	}
 
 	return nil, nil, fmt.Errorf("no playable streams resolved for episode %d", epNo)

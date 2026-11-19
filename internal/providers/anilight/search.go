@@ -45,6 +45,12 @@ func searchAnime(query, mode string) ([]providers.SelectionOption, error) {
 		if item.Episodes > 0 {
 			label += fmt.Sprintf(" · %d eps", item.Episodes)
 		}
+		// The search payload already carries per-mode episode totals, so
+		// remember them: a following EpisodesList for this slug can skip
+		// its detail request. Same values, zero extra round trips.
+		if slug := strings.TrimSpace(item.Slug); slug != "" {
+			storeEpisodeCounts(slug, item.SubEpisodes, item.DubEpisodes)
+		}
 		options = append(options, providers.SelectionOption{
 			Key:       strings.TrimSpace(item.Slug),
 			Label:     label,

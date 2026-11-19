@@ -104,7 +104,13 @@ func getEpisodeStreamsForMode(showID string, config providers.PlaybackConfig, ep
 }
 
 // fetchEmbedSession exchanges the one-time embed URL for the actual HLS
-// source. The embed page sets session cookies that the session API needs.
+// source. The embed page historically set session cookies that the session
+// API needs, so the legacy sequence fetched the page first. Live probes
+// show the page currently sets no cookies and its body is discarded, so
+// the fast path resolves the session API directly and saves a full round
+// trip. If the fast path fails (stale auth, rotated cookie binding,
+// truncated body), fall back to the page-for-cookies sequence and retry
+// exactly once before surfacing the error.
 func fetchEmbedSession(embedURL string) (*embedSessionResponse, error) {
 	parsed, err := url.Parse(embedURL)
 	if err != nil {
@@ -114,13 +120,20 @@ func fetchEmbedSession(embedURL string) (*embedSessionResponse, error) {
 	if token == "" {
 		return nil, fmt.Errorf("anipm embed url has no session token")
 	}
+	sessionURL := fmt.Sprintf("%s/api/embed/session?t=%s", embedBaseURL, url.QueryEscape(token))
+
+	if body, _, err := fetch(sessionURL, embedURL, nil); err == nil {
+		var fast embedSessionResponse
+		if err := json.Unmarshal(body, &fast); err == nil && fast.Error == "" {
+			return &fast, nil
+		}
+	}
 
 	_, cookies, err := fetch(embedURL, baseURL+"/", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	sessionURL := fmt.Sprintf("%s/api/embed/session?t=%s", embedBaseURL, url.QueryEscape(token))
 	body, _, err := fetch(sessionURL, embedURL, cookies)
 	if err != nil {
 		return nil, err

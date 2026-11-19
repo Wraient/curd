@@ -29,6 +29,12 @@ type fixture struct {
 	mu          sync.Mutex
 	lastChannel string
 	server      *httptest.Server
+	// failSession controls the /api/embed/session handler: "ok" always
+	// succeeds, "failFirst" rejects the first call with 401 then succeeds,
+	// "failAlways" rejects every call with 401.
+	failSession  string
+	sessionCalls int
+	pageHits     int
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -51,10 +57,23 @@ func newFixture(t *testing.T) *fixture {
 		_, _ = io.WriteString(w, `{"embedUrl":"`+f.server.URL+`/embed/v1?t=tok123"}`)
 	})
 	mux.HandleFunc("/embed/v1", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.pageHits++
+		f.mu.Unlock()
 		http.SetCookie(w, &http.Cookie{Name: "session", Value: "abc", Path: "/"})
 		_, _ = io.WriteString(w, `<html>player</html>`)
 	})
 	mux.HandleFunc("/api/embed/session", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.sessionCalls++
+		n := f.sessionCalls
+		mode := f.failSession
+		f.mu.Unlock()
+		if (mode == "failFirst" && n == 1) || mode == "failAlways" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"error":"session expired"}`)
+			return
+		}
 		_, _ = io.WriteString(w, `{"kind":"hls","source":"`+f.server.URL+`/master.m3u8","audioLang":"ja","subtitles":[{"url":"`+f.server.URL+`/en.vtt","assUrl":"`+f.server.URL+`/en.ass","label":"English","srclang":"en","default":true}]}`)
 	})
 	mux.HandleFunc("/master.m3u8", func(w http.ResponseWriter, r *http.Request) {
@@ -214,5 +233,70 @@ func TestGetEpisodeStreamsRejectsBadInput(t *testing.T) {
 	}
 	if _, _, err := getEpisodeStreamsForMode("no-such-show", providers.PlaybackConfig{SubOrDub: "sub"}, 1); err == nil {
 		t.Fatal("unknown show id must error")
+	}
+}
+
+// The fast path resolves the session API directly without the embed page.
+// When the session API rejects the first attempt (stale auth, rotated
+// cookie binding), the lookup must fall back to the page-for-cookies
+// sequence and retry exactly once.
+func TestGetEpisodeStreamsFallsBackToCookiePage(t *testing.T) {
+	f := newFixture(t)
+	f.failSession = "failFirst"
+
+	links, hints, err := getEpisodeStreamsForMode("6351", providers.PlaybackConfig{SubOrDub: "sub", SubStyle: "soft"}, 1)
+	if err != nil {
+		t.Fatalf("getEpisodeStreamsForMode with fallback: %v", err)
+	}
+	if len(links) != 1 || !strings.HasSuffix(links[0], "/master.m3u8") {
+		t.Fatalf("unexpected links %#v", links)
+	}
+	if !strings.HasSuffix(hints[links[0]].Subtitle, "/en.ass") {
+		t.Fatalf("expected ASS subtitle hint, got %q", hints[links[0]].Subtitle)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sessionCalls != 2 {
+		t.Fatalf("expected exactly one session retry, got %d calls", f.sessionCalls)
+	}
+	if f.pageHits != 1 {
+		t.Fatalf("expected exactly one cookie-page fetch, got %d", f.pageHits)
+	}
+}
+
+// The fast path skips the embed page entirely when the session API
+// answers directly: same stream, no cookie-page round trip.
+func TestGetEpisodeStreamsSkipsCookiePageOnFastPath(t *testing.T) {
+	f := newFixture(t)
+
+	links, _, err := getEpisodeStreamsForMode("6351", providers.PlaybackConfig{SubOrDub: "dub"}, 1)
+	if err != nil {
+		t.Fatalf("getEpisodeStreamsForMode dub: %v", err)
+	}
+	if len(links) != 1 {
+		t.Fatalf("unexpected links %#v", links)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sessionCalls != 1 {
+		t.Fatalf("expected one session call, got %d", f.sessionCalls)
+	}
+	if f.pageHits != 0 {
+		t.Fatalf("expected no cookie-page fetch on the fast path, got %d", f.pageHits)
+	}
+}
+
+// A persistently rejecting session API surfaces the same error the legacy
+// page-first sequence produced: the retry fails and its error is returned.
+func TestGetEpisodeStreamsSurfacesPersistentSessionError(t *testing.T) {
+	f := newFixture(t)
+	f.failSession = "failAlways"
+
+	_, _, err := getEpisodeStreamsForMode("6351", providers.PlaybackConfig{SubOrDub: "sub"}, 1)
+	if err == nil {
+		t.Fatal("expected a session error, got success")
+	}
+	if !strings.Contains(err.Error(), "401") {
+		t.Fatalf("expected the 401 session error, got %v", err)
 	}
 }

@@ -135,7 +135,7 @@ func searchAnimeByMode(query, mode, preferredMode string) ([]providers.Selection
 	defer resp.Body.Close()
 
 	// Read the response body
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		curdhost.Log(fmt.Sprintf("Error reading response body: %v", err))
 		return animeList, err

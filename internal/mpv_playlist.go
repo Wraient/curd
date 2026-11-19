@@ -687,7 +687,7 @@ func (c *MPVPlaylistController) watchPlaylistSelection() {
 				_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "pause", true})
 				c.lastPos = targetPos
 				c.handlePlaylistJump(targetPos)
-					continue
+				continue
 			}
 
 			c.mu.Lock()
@@ -706,7 +706,7 @@ func (c *MPVPlaylistController) watchPlaylistSelection() {
 					beginMPVPlaylistSwitch()
 					_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "pause", true})
 					c.handlePlaylistJumpSlot(slot, curEp)
-						}
+				}
 				time.Sleep(poll)
 				continue
 			}
@@ -999,7 +999,7 @@ func (c *MPVPlaylistController) finalizePlaylistEpisodeChange(fromEp, toEp int, 
 	}
 
 	// Clear stale next-episode prefetch from the previous number.
-	anime.Ep.NextEpisode = NextEpisode{}
+	publishPrefetchedNextEpisode(anime, NextEpisode{})
 	anime.Ep.IsCompleted = false
 	anime.Ep.LastWasSkipped = false
 	anime.Ep.Resume = false
@@ -1076,12 +1076,16 @@ func (c *MPVPlaylistController) finalizePlaylistEpisodeChange(fromEp, toEp int, 
 		CurdOut(fmt.Sprintf("Playing episode %d · last played updated (no upstream change)", toEp))
 	}
 
+	// Compute the title before spawning the prefetch below: the background
+	// goroutine publishes into anime.Ep.NextEpisode, so nothing here may
+	// read *anime afterwards without synchronization.
+	title := fmt.Sprintf("%s - Episode %d", GetAnimeName(*anime), toEp)
+
 	// Prefetch next episode links in preferred mode (no audio prompts).
 	go c.prefetchAfterPlaylistSwitch(toEp)
 
 	// Discord will pick up the new title/position on the next presence tick once
 	// duration is known; force a soft title refresh for the window.
-	title := fmt.Sprintf("%s - Episode %d", GetAnimeName(*anime), toEp)
 	_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "force-media-title", title})
 	_, _ = MPVSendCommand(c.socket, []interface{}{"set_property", "title", title})
 }
@@ -1112,6 +1116,46 @@ func writeLastPlayedAnimeID(storagePath string, anilistID int) {
 	}
 }
 
+// nextEpisodeMu serializes publication of prefetched next-episode links:
+// prefetch resolves in a background goroutine while playback setup and
+// episode advance read anime.Ep.NextEpisode. Both sides hold this lock.
+var nextEpisodeMu sync.Mutex
+
+func publishPrefetchedNextEpisode(anime *Anime, entry NextEpisode) {
+	if anime == nil {
+		return
+	}
+	nextEpisodeMu.Lock()
+	anime.Ep.NextEpisode = entry
+	nextEpisodeMu.Unlock()
+}
+
+// consumePrefetchedNextEpisode atomically adopts prefetched links when they
+// match the current episode, returning false when a fresh lookup is needed.
+// When clear is set the entry is consumed (localTracking semantics);
+// otherwise it is left in place (curd playback semantics).
+func consumePrefetchedNextEpisode(anime *Anime, clear bool) bool {
+	if anime == nil {
+		return false
+	}
+	nextEpisodeMu.Lock()
+	defer nextEpisodeMu.Unlock()
+	if anime.Ep.NextEpisode.Number != anime.Ep.Number || len(anime.Ep.NextEpisode.Links) == 0 {
+		return false
+	}
+	anime.Ep.Links = anime.Ep.NextEpisode.Links
+	anime.Ep.StreamReferrer = ""
+	anime.Ep.SubtitleURL = ""
+	if anime.Ep.NextEpisode.ProviderName != "" {
+		anime.ProviderName = anime.Ep.NextEpisode.ProviderName
+		anime.ProviderId = anime.Ep.NextEpisode.ProviderId
+	}
+	if clear {
+		anime.Ep.NextEpisode = NextEpisode{}
+	}
+	return true
+}
+
 func (c *MPVPlaylistController) prefetchAfterPlaylistSwitch(currentEp int) {
 	if c == nil || c.config == nil || c.anime == nil {
 		return
@@ -1124,7 +1168,7 @@ func (c *MPVPlaylistController) prefetchAfterPlaylistSwitch(currentEp int) {
 	cfg.SubOrDub = c.preferredMode
 	next := *c.anime
 	if providerNoPrefetch(CurrentAnimeProviderName(&next)) {
-		c.anime.Ep.NextEpisode = NextEpisode{}
+		publishPrefetchedNextEpisode(c.anime, NextEpisode{})
 		return
 	}
 	result, err := ResolveEpisodeURL(cfg, &next, nextEp)
@@ -1133,16 +1177,16 @@ func (c *MPVPlaylistController) prefetchAfterPlaylistSwitch(currentEp int) {
 		return
 	}
 	if providerNoPrefetch(result.ProviderName) {
-		c.anime.Ep.NextEpisode = NextEpisode{}
+		publishPrefetchedNextEpisode(c.anime, NextEpisode{})
 		return
 	}
-	c.anime.Ep.NextEpisode = NextEpisode{
+	publishPrefetchedNextEpisode(c.anime, NextEpisode{
 		Number:       nextEp,
 		Links:        result.Links,
 		ProviderName: result.ProviderName,
 		ProviderId:   result.ProviderID,
 		Mode:         result.Mode,
-	}
+	})
 	Log(fmt.Sprintf("MPV playlist: prefetched episode %d", nextEp))
 }
 
@@ -1198,7 +1242,7 @@ func (c *MPVPlaylistController) playSlot(slot playlistSlot) error {
 	anime.Ep.IsCompleted = false
 	anime.Ep.Number = targetEp
 	anime.Ep.Links = nil
-	anime.Ep.NextEpisode = NextEpisode{}
+	publishPrefetchedNextEpisode(anime, NextEpisode{})
 	anime.Ep.StreamReferrer = ""
 	anime.Ep.SubtitleURL = ""
 	anime.Ep.SkipTimes = SkipTimes{}
@@ -1532,4 +1576,3 @@ func (c *MPVPlaylistController) rebuildPlaylistAroundCurrent() error {
 	Log(fmt.Sprintf("MPV playlist rebuilt around ep %d (%d entries)", currentEp, len(slots)))
 	return nil
 }
-

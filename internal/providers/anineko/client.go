@@ -11,6 +11,10 @@ import (
 
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+// maxBodyBytes caps every body read so a pathological upstream response
+// cannot stall playback resolution on an unbounded download.
+const maxBodyBytes = 4 << 20
+
 var baseURL = "https://anineko.to"
 
 func newRequest(method, rawURL, referer string) (*http.Request, error) {
@@ -36,7 +40,7 @@ func fetchString(rawURL, referer string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
 		return "", err
 	}
@@ -57,7 +61,7 @@ func fetchBytes(rawURL, referer string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
 		return nil, err
 	}

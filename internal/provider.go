@@ -80,6 +80,25 @@ type ProviderEpisodeResult struct {
 	ProviderName string
 	ProviderID   string
 	Mode         string
+	// ResolvedAt records when the links were produced. Signed stream URLs
+	// expire within minutes, so fallback-accept paths only hand mpv links
+	// fresher than fallbackRefetchMaxAge and re-resolve older ones.
+	ResolvedAt time.Time
+}
+
+// fallbackRefetchMaxAge bounds how old probed fallback links may be when
+// the user accepts the fallback prompt. Younger probes are handed to mpv
+// as-is; older ones are re-resolved first because short-TTL signed URLs
+// may already be dead. mpv-start failure retry remains the backstop.
+var fallbackRefetchMaxAge = 60 * time.Second
+
+// fallbackLinksFresh reports whether probed links were resolved recently
+// enough to hand to mpv without another lookup.
+func fallbackLinksFresh(resolvedAt time.Time) bool {
+	if resolvedAt.IsZero() {
+		return false
+	}
+	return time.Since(resolvedAt) <= fallbackRefetchMaxAge
 }
 
 const providerIDSeparator = "::"
@@ -88,8 +107,27 @@ const providerIDSeparator = "::"
 // search so one slow provider cannot stall the whole lookup.
 const providerSearchTimeout = 15 * time.Second
 
-// Global variable to keep the current provider
-var CurrentProvider Provider
+// providerResolveTimeout bounds one stacked episode-resolve pass so a hung
+// provider cannot stall playback forever; the old sequential walk had no
+// bound at all. On expiry the best completed outcome wins (first stack-order
+// success, else the completed failures plus a timeout note).
+var providerResolveTimeout = 30 * time.Second
+
+// Global variable to keep the current provider. Guarded by
+// currentProviderMu: the stacked resolve fan-out reads it from several
+// goroutines while config changes reset it.
+var (
+	CurrentProvider   Provider
+	currentProviderMu sync.Mutex
+)
+
+// resetCurrentProvider drops the cached default provider so the next lookup
+// re-reads the (possibly just changed) configuration.
+func resetCurrentProvider() {
+	currentProviderMu.Lock()
+	CurrentProvider = nil
+	currentProviderMu.Unlock()
+}
 
 func normalizeProviderName(providerName string) string {
 	return providers.NormalizeName(providerName)
@@ -268,6 +306,8 @@ func ProviderByName(providerName string) (Provider, error) {
 }
 
 func GetProvider() Provider {
+	currentProviderMu.Lock()
+	defer currentProviderMu.Unlock()
 	if CurrentProvider != nil {
 		return CurrentProvider
 	}
@@ -574,7 +614,7 @@ func appendProviderName(providerNames []string, providerName string) []string {
 func updateProviderConfig(config *CurdConfig, providerNames []string, animepaheDeclined bool) error {
 	providerValue := formatProviderConfigValue(providerNames, animepaheDeclined)
 	config.Provider = providerValue
-	CurrentProvider = nil
+	resetCurrentProvider()
 
 	if strings.TrimSpace(GlobalConfigPath) == "" {
 		return nil
@@ -764,6 +804,7 @@ func GetEpisodeURLForPlayback(config CurdConfig, id string, epNo int) ([]string,
 	fallbackMode := alternateTranslationType(preferredMode)
 	fallbackConfig := config
 	fallbackConfig.SubOrDub = fallbackMode
+	probeTime := time.Now()
 	fallbackLinks, fallbackErr := GetEpisodeURL(fallbackConfig, id, epNo)
 	if fallbackErr != nil || len(fallbackLinks) == 0 {
 		if preferredErr != nil {
@@ -791,13 +832,16 @@ func GetEpisodeURLForPlayback(config CurdConfig, id string, epNo int) ([]string,
 	}
 
 	// The fallback links above were resolved before the prompt: signed
-	// stream URLs expire within minutes, so re-resolve now and hand mpv
-	// links that are seconds old. If the fresh lookup fails, keep the
-	// probed links rather than failing an approved playback.
-	if freshLinks, freshErr := GetEpisodeURL(fallbackConfig, id, epNo); freshErr == nil && len(freshLinks) > 0 {
-		fallbackLinks = freshLinks
-	} else if freshErr != nil {
-		Log(fmt.Sprintf("fallback re-resolution failed, keeping probed links: %v", freshErr))
+	// stream URLs expire within minutes, so re-resolve links older than
+	// the freshness bound and hand mpv links that are seconds old. If the
+	// fresh lookup fails, keep the probed links rather than failing an
+	// approved playback.
+	if !fallbackLinksFresh(probeTime) {
+		if freshLinks, freshErr := GetEpisodeURL(fallbackConfig, id, epNo); freshErr == nil && len(freshLinks) > 0 {
+			fallbackLinks = freshLinks
+		} else if freshErr != nil {
+			Log(fmt.Sprintf("fallback re-resolution failed, keeping probed links: %v", freshErr))
+		}
 	}
 
 	return fallbackLinks, fallbackMode, nil
@@ -849,42 +893,149 @@ func episodeModeResultWithProviders(config CurdConfig, anime *Anime, epNo int, m
 		providerNames = []string{firstEnabledProviderName()}
 	}
 
-	var errors []string
-	for _, providerName := range providerNames {
-		provider, err := ProviderByName(providerName)
-		if err != nil {
-			errors = append(errors, err.Error())
-			continue
-		}
-
-		providerID, err := findProviderIDForAnime(provider, anime, mode)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s lookup: %v", providerName, err))
-			continue
-		}
-
-		links, linkHints, err := getProviderEpisodeURLForModeWithHints(provider, config, providerID, epNo, mode)
-		if err != nil || len(links) == 0 {
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("%s episode: %v", providerName, err))
-			} else {
-				errors = append(errors, fmt.Sprintf("%s episode: no links", providerName))
+	// Resolve across the stack concurrently: every provider attempt is
+	// independent, and the sequential fallback walk made total latency the
+	// sum of per-provider attempts. Results are picked in stack order
+	// below, so the winner is identical to the sequential walk — only
+	// faster. Interactive prompts inside resolution serialize on promptMu.
+	outcomes := make([]providerOutcome, len(providerNames))
+	completed := make(chan int, len(providerNames))
+	// Snapshot once up front: goroutines map against immutable copies while
+	// the live anime is updated only for the winner below. Sharing the
+	// original pointer would race late goroutines against that update.
+	var snapshot Anime
+	hasAnime := anime != nil
+	if hasAnime {
+		snapshot = *anime
+	}
+	for i, providerName := range providerNames {
+		go func(index int, name string) {
+			// Each attempt maps against its own copy of the snapshot;
+			// the live anime mapping is updated only for the winner.
+			var attempt *Anime
+			if hasAnime {
+				cp := snapshot
+				attempt = &cp
 			}
-			continue
-		}
+			finish := func(outcome providerOutcome) {
+				outcomes[index] = outcome
+				completed <- index
+			}
+			provider, err := ProviderByName(name)
+			if err != nil {
+				finish(providerOutcome{failure: err.Error()})
+				return
+			}
 
-		anime.ProviderName = providerName
-		anime.ProviderId = providerID
-		return ProviderEpisodeResult{
-			Links:        links,
-			LinkHints:    linkHints,
-			ProviderName: providerName,
-			ProviderID:   providerID,
-			Mode:         mode,
-		}, nil
+			providerID, err := findProviderIDForAnime(provider, attempt, mode)
+			if err != nil {
+				finish(providerOutcome{failure: fmt.Sprintf("%s lookup: %v", name, err)})
+				return
+			}
+
+			links, linkHints, err := getProviderEpisodeURLForModeWithHints(provider, config, providerID, epNo, mode)
+			if err != nil || len(links) == 0 {
+				if err != nil {
+					finish(providerOutcome{failure: fmt.Sprintf("%s episode: %v", name, err)})
+					return
+				}
+				finish(providerOutcome{failure: fmt.Sprintf("%s episode: no links", name)})
+				return
+			}
+
+			finish(providerOutcome{
+				result: ProviderEpisodeResult{
+					Links:        links,
+					LinkHints:    linkHints,
+					ProviderName: name,
+					ProviderID:   providerID,
+					Mode:         mode,
+					ResolvedAt:   time.Now(),
+				},
+				succeeded: true,
+			})
+		}(i, providerName)
 	}
 
-	return ProviderEpisodeResult{}, fmt.Errorf("no %s episode links found across providers %s for %q episode %d: %s", mode, strings.Join(providerNames, ","), animeSearchTitle(anime), epNo, strings.Join(errors, "; "))
+	// Take the first success in stack order, waiting for earlier providers
+	// even when a later one finished first. Failures aggregate in stack
+	// order exactly as the sequential walk reported them. The overall
+	// deadline keeps one hung provider from stalling playback forever.
+	ready := make(map[int]bool, len(providerNames))
+	var failures []string
+	deadline := time.NewTimer(providerResolveTimeout)
+	defer deadline.Stop()
+	applyWinner := func(outcome providerOutcome) (ProviderEpisodeResult, bool) {
+		if !outcome.succeeded {
+			return ProviderEpisodeResult{}, false
+		}
+		if anime != nil {
+			anime.ProviderName = outcome.result.ProviderName
+			anime.ProviderId = outcome.result.ProviderID
+		}
+		return outcome.result, true
+	}
+	for next := 0; next < len(providerNames); next++ {
+		for !ready[next] {
+			select {
+			case idx := <-completed:
+				ready[idx] = true
+			case <-deadline.C:
+				return resolveOnTimeout(anime, mode, providerNames, epNo, outcomes, ready, next, failures)
+			}
+		}
+		outcome := outcomes[next]
+		if result, ok := applyWinner(outcome); ok {
+			return result, nil
+		}
+		failures = append(failures, outcome.failure)
+	}
+
+	return ProviderEpisodeResult{}, fmt.Errorf("no %s episode links found across providers %s for %q episode %d: %s", mode, strings.Join(providerNames, ","), animeSearchTitle(anime), epNo, strings.Join(failures, "; "))
+}
+
+// providerOutcome is one stacked-resolve attempt: either a playable result
+// or the failure that ruled that provider out.
+type providerOutcome struct {
+	result    ProviderEpisodeResult
+	failure   string
+	succeeded bool
+}
+
+// resolveOnTimeout settles a stacked resolve pass whose deadline fired
+// before every provider reported: the earliest stack-order success among
+// the completed attempts wins (with the live mapping updated), otherwise
+// the completed failures are reported along with a timeout note naming
+// the providers that never reported.
+func resolveOnTimeout(anime *Anime, mode string, providerNames []string, epNo int, outcomes []providerOutcome, ready map[int]bool, drained int, failures []string) (ProviderEpisodeResult, error) {
+	var pending []string
+	for i, name := range providerNames {
+		if !ready[i] {
+			pending = append(pending, name)
+			continue
+		}
+		if outcomes[i].succeeded {
+			if anime != nil {
+				anime.ProviderName = outcomes[i].result.ProviderName
+				anime.ProviderId = outcomes[i].result.ProviderID
+			}
+			return outcomes[i].result, nil
+		}
+		// A completed failure past the drain point was never appended:
+		// include it so the error reflects every provider that reported.
+		// Slots before drained are already in failures; skip them to
+		// avoid double-counting.
+		if i >= drained {
+			failures = append(failures, outcomes[i].failure)
+		}
+	}
+	details := strings.Join(failures, "; ")
+	if timeoutNote := "timed out waiting for " + strings.Join(pending, ", "); details != "" {
+		details += "; " + timeoutNote
+	} else {
+		details = timeoutNote
+	}
+	return ProviderEpisodeResult{}, fmt.Errorf("no %s episode links found across providers %s for %q episode %d: %s", mode, strings.Join(providerNames, ","), animeSearchTitle(anime), epNo, details)
 }
 
 func filterExcludedProviders(providerNames []string, exclude []string) []string {
@@ -962,13 +1113,16 @@ func ResolveEpisodeURLAlternateModeWithPrompt(config CurdConfig, anime *Anime, e
 	}
 
 	// The probe links above were resolved before the prompt: signed stream
-	// URLs expire within minutes, so re-resolve now and hand mpv links that
-	// are seconds old. If the fresh lookup fails, keep the probed links
-	// rather than failing an approved playback.
-	if fresh, freshErr := episodeModeResultWithProviders(config, probeAnime, epNo, fallbackMode, providerNames); freshErr == nil && len(fresh.Links) > 0 {
-		fallbackResult = fresh
-	} else if freshErr != nil {
-		Log(fmt.Sprintf("fallback re-resolution failed, keeping probed links: %v", freshErr))
+	// URLs expire within minutes, so re-resolve links older than the
+	// freshness bound and hand mpv links that are seconds old. If the
+	// fresh lookup fails, keep the probed links rather than failing an
+	// approved playback.
+	if !fallbackLinksFresh(fallbackResult.ResolvedAt) {
+		if fresh, freshErr := episodeModeResultWithProviders(config, probeAnime, epNo, fallbackMode, providerNames); freshErr == nil && len(fresh.Links) > 0 {
+			fallbackResult = fresh
+		} else if freshErr != nil {
+			Log(fmt.Sprintf("fallback re-resolution failed, keeping probed links: %v", freshErr))
+		}
 	}
 
 	if anime != nil {

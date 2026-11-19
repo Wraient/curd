@@ -13,6 +13,11 @@ import (
 
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+// maxBodyBytes caps every response body read. Real anipub payloads (search
+// JSON, info JSON, details JSON, megaplay pages) are tens of KB; the cap only
+// bounds tail latency/memory on pathological responses.
+const maxBodyBytes = 4 << 20
+
 var (
 	baseURL         = "https://anipub.org"
 	megaplayBaseURL = "https://megaplay.buzz"
@@ -43,7 +48,7 @@ func fetchJSON(rawURL, referer string, dest any) error {
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
 		return err
 	}
@@ -70,7 +75,7 @@ func fetchString(rawURL, referer string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
 		return "", err
 	}

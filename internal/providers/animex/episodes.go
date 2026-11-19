@@ -14,8 +14,10 @@ func episodesList(showID, mode string) ([]string, error) {
 		return nil, fmt.Errorf("empty show id")
 	}
 
-	var episodes []ppEpisode
-	if err := fetchJSON(restURL("/episodes", map[string]string{"id": showID}), referrer, &episodes); err != nil {
+	// The catalog carries both languages; sub and dub share one cached fetch
+	// and filter locally below.
+	episodes, err := cachedEpisodes(showID)
+	if err != nil {
 		return nil, err
 	}
 	wantDub := providers.NormalizeTranslationType(mode) == "dub"

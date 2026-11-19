@@ -31,6 +31,24 @@ var solveAnimepaheBrowserChallenge = solveAnimepaheBrowserChallengeWithRod
 // racing on the cookie file.
 var animepaheBypassMu sync.Mutex
 
+// maxAnimepaheBodyBytes caps every response body read. Real payloads here are
+// tens to hundreds of kilobytes (search/release JSON, player and kwik pages),
+// so this bound never truncates legitimate responses.
+const maxAnimepaheBodyBytes = 4 << 20
+
+func readAnimepaheBody(resp *http.Response) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(resp.Body, maxAnimepaheBodyBytes))
+}
+
+// kwikEvalRe, kwikM3u8Re and kwikTokenRe are the extractKwikM3u8/unpackKwik
+// patterns compiled once. They are byte-identical to the per-call patterns
+// used before; hoisting only avoids recompiling them per stream link.
+var (
+	kwikEvalRe  = regexp.MustCompile(`eval\(function\(p,a,c,k,e,d\).*?\}\('(.*?)',(\d+),(\d+),'([^']+)'\.split\('\|'\).*?\)\)`)
+	kwikM3u8Re  = regexp.MustCompile(`(https://[a-zA-Z0-9\-\.\/]+m3u8)`)
+	kwikTokenRe = regexp.MustCompile(`[a-zA-Z0-9_]+`)
+)
+
 func getCookieFilePath() string {
 	return filepath.Join(curdhost.StoragePath(), "animepahe_cookies.json")
 }
@@ -95,7 +113,7 @@ func checkCookiesValid() bool {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readAnimepaheBody(resp)
 	if err != nil {
 		return false
 	}
@@ -360,7 +378,7 @@ func (p *Provider) SearchAnime(query, mode string) ([]providers.SelectionOption,
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readAnimepaheBody(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -402,17 +420,20 @@ type animepaheEpisodesResponse struct {
 	} `json:"data"`
 }
 
-func (p *Provider) EpisodesList(showID, mode string) ([]string, error) {
-	if err := p.ensureBypass(); err != nil {
-		return nil, err
-	}
-	animeRef := ParseProviderID(showID)
-	apiID := animeRef.apiID()
-	if apiID == "" {
-		return nil, fmt.Errorf("animepahe provider id %q is invalid; please reselect this anime", showID)
-	}
+// animepaheEpisode is one release-API entry: the catalog episode number plus
+// the per-episode session needed to build the player URL.
+type animepaheEpisode struct {
+	number  int
+	session string
+}
 
-	var allEpisodes []int
+// fetchReleaseEpisodes returns every release-API entry in API response order
+// across all pages. errContext names the caller in status errors. The single
+// DDoS-Guard session refresh matches the historical episode-list fetch,
+// which is the fetch whose behavior and errors previously surfaced first on
+// every path that now shares this helper.
+func (p *Provider) fetchReleaseEpisodes(apiID, errContext string) ([]animepaheEpisode, error) {
+	var all []animepaheEpisode
 	page := 1
 	challengeRetried := false
 
@@ -428,7 +449,7 @@ func (p *Provider) EpisodesList(showID, mode string) ([]string, error) {
 			return nil, err
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := readAnimepaheBody(resp)
 		resp.Body.Close()
 		if err != nil {
 			return nil, err
@@ -445,7 +466,7 @@ func (p *Provider) EpisodesList(showID, mode string) ([]string, error) {
 			continue
 		}
 		if !curdhost.HTTPStatusOK(resp.StatusCode) {
-			return nil, curdhost.HTTPStatusError("animepahe episode list", resp.StatusCode, body)
+			return nil, curdhost.HTTPStatusError(errContext, resp.StatusCode, body)
 		}
 
 		var epsResp animepaheEpisodesResponse
@@ -455,7 +476,7 @@ func (p *Provider) EpisodesList(showID, mode string) ([]string, error) {
 		}
 
 		for _, ep := range epsResp.Data {
-			allEpisodes = append(allEpisodes, ep.Episode)
+			all = append(all, animepaheEpisode{number: ep.Episode, session: ep.Session})
 		}
 
 		if epsResp.CurrentPage >= epsResp.LastPage {
@@ -464,13 +485,40 @@ func (p *Provider) EpisodesList(showID, mode string) ([]string, error) {
 		page++
 	}
 
-	sort.Ints(allEpisodes)
-	var result []string
-	for _, ep := range allEpisodes {
+	return all, nil
+}
+
+// sortedEpisodeNumbers returns the release entries' episode numbers in the
+// same ascending string form EpisodesList has always produced.
+func sortedEpisodeNumbers(pairs []animepaheEpisode) []string {
+	numbers := make([]int, 0, len(pairs))
+	for _, ep := range pairs {
+		numbers = append(numbers, ep.number)
+	}
+	sort.Ints(numbers)
+	result := make([]string, 0, len(numbers))
+	for _, ep := range numbers {
 		result = append(result, strconv.Itoa(ep))
 	}
+	return result
+}
 
-	return result, nil
+func (p *Provider) EpisodesList(showID, mode string) ([]string, error) {
+	if err := p.ensureBypass(); err != nil {
+		return nil, err
+	}
+	animeRef := ParseProviderID(showID)
+	apiID := animeRef.apiID()
+	if apiID == "" {
+		return nil, fmt.Errorf("animepahe provider id %q is invalid; please reselect this anime", showID)
+	}
+
+	pairs, err := p.fetchReleaseEpisodes(apiID, "animepahe episode list")
+	if err != nil {
+		return nil, err
+	}
+
+	return sortedEpisodeNumbers(pairs), nil
 }
 
 func (p *Provider) GetEpisodeURL(config providers.PlaybackConfig, id string, epNo int) ([]string, error) {
@@ -487,12 +535,17 @@ func (p *Provider) GetEpisodeURLForMode(config providers.PlaybackConfig, id stri
 	}
 	apiID := animeRef.apiID()
 
-	// 1. Get episode session ID
-	// Map the 1-based Anilist episode number to Animepahe's actual episode number
-	eps, err := p.EpisodesList(id, "")
+	// 1. Get episode session ID.
+	// Map the 1-based Anilist episode number to Animepahe's actual episode
+	// number. A single release-API fetch serves both the index mapping and
+	// the session lookup; previously EpisodesList fetched every page and the
+	// scan below fetched them all again. The error context preserves the
+	// historical second-loop ("lookup") wording that surfaced here.
+	pairs, err := p.fetchReleaseEpisodes(apiID, "animepahe episode lookup")
 	if err != nil {
 		return nil, err
 	}
+	eps := sortedEpisodeNumbers(pairs)
 	if epNo < 1 || epNo > len(eps) {
 		return nil, fmt.Errorf("episode %d out of bounds (found %d episodes)", epNo, len(eps))
 	}
@@ -502,47 +555,13 @@ func (p *Provider) GetEpisodeURLForMode(config providers.PlaybackConfig, id stri
 		return nil, fmt.Errorf("invalid episode number format in provider: %v", err)
 	}
 
-	// Let's do a simple scan for the episode session:
+	// Scan for the episode session in API response order, as before.
 	var episodeSession string
-	page := 1
-	for {
-		reqUrl := fmt.Sprintf("https://animepahe.pw/api?m=release&id=%s&sort=episode_asc&page=%d", apiID, page)
-		req, err := newAnimepaheAPIRequest(reqUrl)
-		if err != nil {
-			return nil, err
-		}
-
-		resp, err := curdhost.HTTPClient().Do(req)
-		if err != nil {
-			return nil, err
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-		if !curdhost.HTTPStatusOK(resp.StatusCode) {
-			return nil, curdhost.HTTPStatusError("animepahe episode lookup", resp.StatusCode, body)
-		}
-
-		var epsResp animepaheEpisodesResponse
-		err = json.Unmarshal(body, &epsResp)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, item := range epsResp.Data {
-			if item.Episode == mappedEpNo {
-				episodeSession = item.Session
-				break
-			}
-		}
-
-		if episodeSession != "" || epsResp.CurrentPage >= epsResp.LastPage {
+	for _, item := range pairs {
+		if item.number == mappedEpNo {
+			episodeSession = item.session
 			break
 		}
-		page++
 	}
 
 	if episodeSession == "" {
@@ -563,7 +582,7 @@ func (p *Provider) GetEpisodeURLForMode(config providers.PlaybackConfig, id stri
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readAnimepaheBody(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -640,10 +659,30 @@ func (p *Provider) GetEpisodeURLForMode(config providers.PlaybackConfig, id stri
 		return nil, fmt.Errorf("no %s streams found for episode %d", requestedMode, epNo)
 	}
 
+	// Resolve each kwik embed concurrently. Results land in the input slot,
+	// so the collected links keep the same resolution-descending order as the
+	// sequential loop, and per-link failures are still skipped individually.
+	// The semaphore bounds simultaneous upstream fetches the way the
+	// sibling providers bound theirs.
+	m3u8ByIndex := make([]string, len(links))
+	var kwikWG sync.WaitGroup
+	kwikSem := make(chan struct{}, 6)
+	for i, kwikLink := range links {
+		kwikWG.Add(1)
+		go func(i int, kwikLink string) {
+			defer kwikWG.Done()
+			kwikSem <- struct{}{}
+			defer func() { <-kwikSem }()
+			if m3u8, err := p.extractKwikM3u8(kwikLink); err == nil && m3u8 != "" {
+				m3u8ByIndex[i] = m3u8
+			}
+		}(i, kwikLink)
+	}
+	kwikWG.Wait()
+
 	var finalLinks []string
-	for _, kwikLink := range links {
-		m3u8, err := p.extractKwikM3u8(kwikLink)
-		if err == nil && m3u8 != "" {
+	for _, m3u8 := range m3u8ByIndex {
+		if m3u8 != "" {
 			finalLinks = append(finalLinks, m3u8)
 		}
 	}
@@ -667,7 +706,7 @@ func (p *Provider) extractKwikM3u8(kwikUrl string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readAnimepaheBody(resp)
 	if err != nil {
 		return "", err
 	}
@@ -676,8 +715,7 @@ func (p *Provider) extractKwikM3u8(kwikUrl string) (string, error) {
 	}
 	bodyStr := string(body)
 
-	re := regexp.MustCompile(`eval\(function\(p,a,c,k,e,d\).*?\}\('(.*?)',(\d+),(\d+),'([^']+)'\.split\('\|'\).*?\)\)`)
-	matches := re.FindAllStringSubmatch(bodyStr, -1)
+	matches := kwikEvalRe.FindAllStringSubmatch(bodyStr, -1)
 
 	for _, match := range matches {
 		pStr := match[1]
@@ -689,8 +727,7 @@ func (p *Provider) extractKwikM3u8(kwikUrl string) (string, error) {
 		unpacked := unpackKwik(pStr, a, c, k)
 
 		if strings.Contains(unpacked, "m3u8") {
-			urlRe := regexp.MustCompile(`(https://[a-zA-Z0-9\-\.\/]+m3u8)`)
-			urlMatch := urlRe.FindStringSubmatch(unpacked)
+			urlMatch := kwikM3u8Re.FindStringSubmatch(unpacked)
 			if len(urlMatch) > 1 {
 				return urlMatch[1], nil
 			}
@@ -727,8 +764,7 @@ func unpackKwik(p string, a int, c int, k []string) string {
 		d[e(i)] = val
 	}
 
-	re := regexp.MustCompile(`[a-zA-Z0-9_]+`)
-	unpacked := re.ReplaceAllStringFunc(p, func(match string) string {
+	unpacked := kwikTokenRe.ReplaceAllStringFunc(p, func(match string) string {
 		if val, ok := d[match]; ok && val != "" {
 			return val
 		}

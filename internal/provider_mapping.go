@@ -719,7 +719,7 @@ func handleMappingRecoveryAction(config *CurdConfig, state *providerMappingSearc
 	case "episode":
 		if episode > 0 && anime != nil {
 			anime.Ep.Number = episode
-			anime.Ep.NextEpisode = NextEpisode{}
+			publishPrefetchedNextEpisode(anime, NextEpisode{})
 		}
 		return ProviderMappingOK, true, nil
 	case "back":
@@ -872,7 +872,7 @@ func RemapAnimeProviderOnEpisodeFailure(config *CurdConfig, anime *Anime, anilis
 	savedProviderName := anime.ProviderName
 	anime.ProviderId = ""
 	anime.ProviderName = ""
-	anime.Ep.NextEpisode = NextEpisode{}
+	publishPrefetchedNextEpisode(anime, NextEpisode{})
 
 	outcome, err := resolveAnimeProviderMapping(config, anime, query, anilistEntry, true)
 	if err != nil {
@@ -1056,7 +1056,7 @@ func resolveEpisodeLinksWithRecovery(config *CurdConfig, anime *Anime, anilistEn
 				continue
 			}
 			anime.Ep.Number = episodeNumber
-			anime.Ep.NextEpisode = NextEpisode{}
+			publishPrefetchedNextEpisode(anime, NextEpisode{})
 			// Re-run full preferred-first resolve for the new episode.
 			continue
 		default:

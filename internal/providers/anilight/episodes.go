@@ -21,10 +21,19 @@ func episodeCountForMode(showID, mode string) (int, error) {
 	if showID == "" {
 		return 0, fmt.Errorf("empty show id")
 	}
+	// Search results already carry both counts, so a lookup right after a
+	// search (the normal host flow) skips the detail round trip entirely.
+	if sub, dub, ok := episodeCountsFromCache(showID); ok {
+		if providers.NormalizeTranslationType(mode) == "dub" {
+			return dub, nil
+		}
+		return sub, nil
+	}
 	var detail detailResponse
 	if err := fetchJSON(fmt.Sprintf("%s/api/anime/%s", baseURL, url.PathEscape(showID)), referrer, &detail); err != nil {
 		return 0, err
 	}
+	storeEpisodeCounts(showID, detail.SubEpisodes, detail.DubEpisodes)
 	if wantDub := providers.NormalizeTranslationType(mode) == "dub"; wantDub {
 		return detail.DubEpisodes, nil
 	}

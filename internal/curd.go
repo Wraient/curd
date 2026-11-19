@@ -1319,15 +1319,7 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 		exitWithRestore(1)
 	}
 
-	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
-		anime.Ep.Links = anime.Ep.NextEpisode.Links
-		anime.Ep.StreamReferrer = ""
-		anime.Ep.SubtitleURL = ""
-		if anime.Ep.NextEpisode.ProviderName != "" {
-			anime.ProviderName = anime.Ep.NextEpisode.ProviderName
-			anime.ProviderId = anime.Ep.NextEpisode.ProviderId
-		}
-	} else {
+	if !consumePrefetchedNextEpisode(anime, false) {
 		// Preferred-first resolve; diagnosed recovery only after that fails.
 		episodeResult, ok := resolveEpisodeLinksWithRecovery(userCurdConfig, anime, nil)
 		if !ok {
@@ -1346,39 +1338,53 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 	}
 	Log(fmt.Sprintf("Episode links validation passed. Found %d links", len(anime.Ep.Links)))
 
+	// Snapshot everything the background prefetch and the code below need
+	// BEFORE spawning it: the worker publishes via publishPrefetchedNextEpisode
+	// keyed off locals, and nothing below may read *anime afterwards while
+	// that write is in flight.
+	prefetchTotal := anime.TotalEpisodes
+	prefetchFiller := anime.FillerEpisodes
+	prefetchCurrentEp := anime.Ep.Number
+	prefetchProviderID := anime.ProviderId
+	prefetchProviderName := anime.ProviderName
+	prefetchSkipFiller := userCurdConfig.SkipFiller
+	coverImage := anime.CoverImage
+	anilistID := anime.AnilistId
+	title := fmt.Sprintf("%s - Episode %d", GetAnimeName(*anime), anime.Ep.Number)
+
 	// Modify the goroutine in main.go where next episode links are fetched
 	// Get next episode link in parallel
 	go func() {
-		nextEpNum := anime.Ep.Number + 1
-		if nextEpNum <= anime.TotalEpisodes {
+		nextEpNum := prefetchCurrentEp + 1
+		if nextEpNum <= prefetchTotal {
 			// Get next canon episode number if filler skip is enabled
-			if userCurdConfig.SkipFiller && IsEpisodeFiller(anime.FillerEpisodes, anime.Ep.Number) {
-				nextEpNum = GetNextCanonEpisode(anime.FillerEpisodes, nextEpNum)
+			if prefetchSkipFiller && IsEpisodeFiller(prefetchFiller, prefetchCurrentEp) {
+				nextEpNum = GetNextCanonEpisode(prefetchFiller, nextEpNum)
 			}
-			nextEpisode := *anime
-			nextEpisode.ProviderId = anime.ProviderId
-			nextEpisode.ProviderName = anime.ProviderName
+			var nextEpisode Anime
+			nextEpisode.ProviderId = prefetchProviderID
+			nextEpisode.ProviderName = prefetchProviderName
 			if providerNoPrefetch(CurrentAnimeProviderName(&nextEpisode)) {
-				anime.Ep.NextEpisode = NextEpisode{}
+				publishPrefetchedNextEpisode(anime, NextEpisode{})
 				return
 			}
 			nextResult, err := ResolveEpisodeURL(*userCurdConfig, &nextEpisode, nextEpNum)
 			if err != nil {
 				Log(fmt.Sprintf("Error getting next episode link for ep %d: %v", nextEpNum, err))
 			} else if providerNoPrefetch(nextResult.ProviderName) {
-				anime.Ep.NextEpisode = NextEpisode{}
+				publishPrefetchedNextEpisode(anime, NextEpisode{})
 				return
 			} else {
-				anime.Ep.NextEpisode = NextEpisode{
+				publishPrefetchedNextEpisode(anime, NextEpisode{
 					Number:       nextEpNum,
 					Links:        nextResult.Links,
 					ProviderName: nextResult.ProviderName,
 					ProviderId:   nextResult.ProviderID,
 					Mode:         nextResult.Mode,
-				}
+				})
 			}
 		} else {
-			Log(fmt.Sprintf("Next episode %d exceeds total episodes %d, skipping prefetch", nextEpNum, anime.TotalEpisodes))
+			Log(fmt.Sprintf("Next episode %d exceeds total episodes %d, skipping prefetch", nextEpNum, prefetchTotal))
 		}
 	}()
 
@@ -1388,16 +1394,16 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 	if err := os.MkdirAll(filepath.Dir(idFilePath), 0755); err != nil {
 		Log(fmt.Sprintf("Failed to create directory for curd_id: %v", err))
 	} else {
-		if err := os.WriteFile(idFilePath, []byte(fmt.Sprintf("%d", anime.AnilistId)), 0644); err != nil {
+		if err := os.WriteFile(idFilePath, []byte(fmt.Sprintf("%d", anilistID)), 0644); err != nil {
 			Log(fmt.Sprintf("Failed to write AnilistId to file: %v", err))
 		}
 	}
 
 	// Display starting message with cover image and episode info
-	if anime.CoverImage != "" && userCurdConfig.ImagePreview && userCurdConfig.RofiSelection {
+	if coverImage != "" && userCurdConfig.ImagePreview && userCurdConfig.RofiSelection {
 		// Get the cached image path
 		cacheDir := os.ExpandEnv("${HOME}/.cache/curd/images")
-		filename := fmt.Sprintf("%x.jpg", md5.Sum([]byte(anime.CoverImage)))
+		filename := fmt.Sprintf("%x.jpg", md5.Sum([]byte(coverImage)))
 		cachePath := filepath.Join(cacheDir, filename)
 
 		// Display the image if it exists in cache
@@ -1405,19 +1411,17 @@ func StartCurd(userCurdConfig *CurdConfig, anime *Anime) string {
 		if err == nil {
 			// File exists
 			Log(fmt.Sprintf("Image found at %s", cachePath))
-			CurdOut(fmt.Sprintf("-i %s \"%s - Episode %d\"", cachePath, GetAnimeName(*anime), anime.Ep.Number))
+			CurdOut(fmt.Sprintf("-i %s \"%s\"", cachePath, title))
 		} else {
 			// File does not exist
 			Log(fmt.Sprintf("Image does not exist at %s", cachePath))
-			CurdOut(fmt.Sprintf("%s - Episode %d",
-				GetAnimeName(*anime),
-				anime.Ep.Number))
+			CurdOut(title)
 
 		}
 	} else {
-		CurdOut(fmt.Sprintf("%s - Episode %d", GetAnimeName(*anime), anime.Ep.Number))
+		CurdOut(title)
 	}
-	title := fmt.Sprintf("%s - Episode %d", GetAnimeName(*anime), anime.Ep.Number)
+
 	return StartVideoWithProviderFallback(userCurdConfig, anime, title)
 }
 
@@ -1739,14 +1743,7 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 	}
 
 	// Use prefetched links if available for the next episode
-	if (anime.Ep.NextEpisode.Number == anime.Ep.Number) && (len(anime.Ep.NextEpisode.Links) > 0) {
-		anime.Ep.Links = anime.Ep.NextEpisode.Links
-		anime.Ep.StreamReferrer = ""
-		anime.Ep.SubtitleURL = ""
-		if anime.Ep.NextEpisode.ProviderName != "" {
-			anime.ProviderName = anime.Ep.NextEpisode.ProviderName
-			anime.ProviderId = anime.Ep.NextEpisode.ProviderId
-		}
+	if consumePrefetchedNextEpisode(anime, false) {
 		Log(fmt.Sprintf("Using prefetched links for episode %d", anime.Ep.Number))
 	} else {
 		// Clear links to force fetching new ones
@@ -2021,7 +2018,7 @@ func ChangeProvider(userCurdConfig *CurdConfig) {
 	// Update the config
 	providerValue := canonicalProviderConfigValue(selected.Key)
 	userCurdConfig.Provider = providerValue
-	CurrentProvider = nil // reset the provider instance
+	resetCurrentProvider()
 
 	// Save to config file
 	configPath := GlobalConfigPath

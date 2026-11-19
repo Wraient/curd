@@ -2,12 +2,20 @@ package internal
 
 import (
 	"net/http"
+	"sync"
 
 	_ "github.com/wraient/curd/internal/loadproviders"
 
 	"github.com/wraient/curd/internal/curdhost"
 	"github.com/wraient/curd/internal/providers"
 )
+
+// promptMu serializes interactive prompts issued from provider code so
+// concurrent resolutions (stacked fallback races) never drive the TUI
+// selector at the same time. Concurrent prompts are possible when several
+// providers reach an undecided choice simultaneously; the mutex forces them
+// to ask one at a time (a remembered choice answers the rest silently).
+var promptMu sync.Mutex
 
 func init() {
 	curdhost.HTTPClient = func() *http.Client { return sharedHTTPClient }
@@ -21,6 +29,10 @@ func init() {
 				Label: option.Label,
 			})
 		}
+		// Held across the prompt so concurrent resolutions serialize here;
+		// released by defer so a panicking selector cannot poison the mutex.
+		promptMu.Lock()
+		defer promptMu.Unlock()
 		selected, err := promptSelect(mapped)
 		if err != nil {
 			return curdhost.PromptOption{}, err

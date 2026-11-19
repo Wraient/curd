@@ -12,8 +12,8 @@ func TestProviderDisabledByDefaultSet(t *testing.T) {
 	if ProviderEnabled("anineko") != false {
 		t.Fatal("expected anineko to be disabled by default")
 	}
-	if ProviderEnabled("senshi") != true {
-		t.Fatal("expected senshi to stay enabled")
+	if ProviderEnabled("senshi") != false {
+		t.Fatal("expected senshi to be disabled by default while its upstream is down")
 	}
 	if ProviderEnabled("anipub") != true {
 		t.Fatal("expected anipub to stay enabled")
@@ -30,6 +30,9 @@ func TestProviderDisabledByDefaultSet(t *testing.T) {
 	if reason := ProviderDisabledReason("anineko"); reason == "" {
 		t.Fatal("expected anineko disable reason")
 	}
+	if reason := ProviderDisabledReason("senshi"); reason == "" {
+		t.Fatal("expected senshi disable reason")
+	}
 }
 
 func TestConfiguredProviderNamesFiltersDisabledProviders(t *testing.T) {
@@ -38,11 +41,11 @@ func TestConfiguredProviderNamesFiltersDisabledProviders(t *testing.T) {
 		cfg  *CurdConfig
 		want []string
 	}{
-		{name: "empty", cfg: &CurdConfig{}, want: []string{"anipm", "anikoto", "anilight", "animex", "aniwaves", "anipub", "senshi"}},
+		{name: "empty", cfg: &CurdConfig{}, want: []string{"anipm", "anikoto", "anilight", "animex", "aniwaves", "anipub"}},
 		{name: "json list", cfg: &CurdConfig{Provider: `["allanime","animepahe"]`}, want: []string{"anipm"}},
 		{name: "animepahe only", cfg: &CurdConfig{Provider: `["animepahe"]`}, want: []string{"anipm"}},
 		{name: "allanime only", cfg: &CurdConfig{Provider: `["allanime"]`}, want: []string{"anipm"}},
-		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"anipm", "anikoto", "anilight", "animex", "aniwaves", "anipub", "senshi"}},
+		{name: "legacy alias", cfg: &CurdConfig{Provider: "stacked"}, want: []string{"anipm", "anikoto", "anilight", "animex", "aniwaves", "anipub"}},
 	}
 
 	for _, tc := range cases {

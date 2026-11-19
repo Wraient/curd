@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/wraient/curd/internal/providers"
 )
@@ -33,16 +34,42 @@ func getEpisodeStreamsForMode(malIDStr string, config providers.PlaybackConfig, 
 		audioRendition = "1_en"
 	}
 
-	links := make([]string, 0)
-	hints := make(map[string]providers.StreamPlaybackHint)
-	seen := make(map[string]struct{})
-	var lastErr error
+	// The vidcloud source lookups below are independent of each other (one
+	// GET per matching embed, no cross-embed state), so they run
+	// concurrently and are reassembled in embed order below. This turns
+	// per-episode source latency from a sum of RTTs into a single max RTT
+	// with byte-identical results.
+	matched := make([]embedItem, 0, len(embeds))
 	for _, embed := range embeds {
 		if !senshiEmbedMatchesMode(embed.Status, mode) || embed.RemoteSourceID == nil || *embed.RemoteSourceID <= 0 {
 			continue
 		}
+		matched = append(matched, embed)
+	}
 
-		entries, err := fetchVidcloudEntries(*embed.RemoteSourceID)
+	type embedSources struct {
+		entries []vidcloudEntry
+		err     error
+	}
+	results := make([]embedSources, len(matched))
+	var wg sync.WaitGroup
+	for i := range matched {
+		sourceID := *matched[i].RemoteSourceID
+		wg.Add(1)
+		go func(index, id int) {
+			defer wg.Done()
+			entries, err := fetchVidcloudEntries(id)
+			results[index] = embedSources{entries: entries, err: err}
+		}(i, sourceID)
+	}
+	wg.Wait()
+
+	links := make([]string, 0)
+	hints := make(map[string]providers.StreamPlaybackHint)
+	seen := make(map[string]struct{})
+	var lastErr error
+	for i := range matched {
+		entries, err := results[i].entries, results[i].err
 		if err != nil {
 			lastErr = err
 			continue

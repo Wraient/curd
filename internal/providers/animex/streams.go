@@ -34,8 +34,10 @@ func getEpisodeStreamsForMode(showID string, config providers.PlaybackConfig, ep
 		}
 	}
 
-	var servers ppServers
-	if err := fetchJSON(restURL("/servers", map[string]string{"id": showID, "epNum": fmt.Sprintf("%d", epNo)}), referrer, &servers); err != nil {
+	// The response carries both languages; sub and dub share one cached fetch
+	// and select locally below.
+	servers, err := cachedServers(showID, epNo)
+	if err != nil {
 		return nil, nil, err
 	}
 	available := servers.SubProviders

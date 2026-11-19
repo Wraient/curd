@@ -13,6 +13,11 @@ import (
 
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+// maxSenshiJSONBody caps JSON endpoint reads (filter/episodes/embeds/
+// sources all return small payloads); anything larger is rejected instead
+// of buffered.
+const maxSenshiJSONBody = 4 << 20
+
 var baseURL = "https://senshi.to"
 
 func newRequest(method, rawURL string) (*http.Request, error) {
@@ -59,9 +64,14 @@ func fetchJSON(method, rawURL string, payload any, dest any) error {
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	// Bound the read: these endpoints return small JSON payloads, so a
+	// huge or slow-drip body is never valid data, only wasted wait.
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxSenshiJSONBody+1))
 	if err != nil {
 		return err
+	}
+	if len(raw) > maxSenshiJSONBody {
+		return fmt.Errorf("senshi response too large")
 	}
 	if !curdhost.HTTPStatusOK(resp.StatusCode) {
 		return curdhost.HTTPStatusError("senshi request", resp.StatusCode, raw)

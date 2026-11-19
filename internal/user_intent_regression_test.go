@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakePlaybackProvider struct {
@@ -245,6 +246,9 @@ func TestGetEpisodeURLForPlaybackRequiresExplicitFallbackApproval(t *testing.T) 
 		return SelectionOption{Key: "play"}, nil
 	})
 
+	previousMaxAge := fallbackRefetchMaxAge
+	fallbackRefetchMaxAge = 0
+	t.Cleanup(func() { fallbackRefetchMaxAge = previousMaxAge })
 	links, mode, err := GetEpisodeURLForPlayback(CurdConfig{SubOrDub: "sub"}, "anime-id", 1)
 	if err != nil {
 		t.Fatalf("expected accepted fallback to succeed: %v", err)
@@ -273,6 +277,9 @@ func TestGetEpisodeURLForPlaybackRefreshesLinksOnAccept(t *testing.T) {
 		return SelectionOption{Key: "play"}, nil
 	})
 
+	previousMaxAge := fallbackRefetchMaxAge
+	fallbackRefetchMaxAge = 0
+	t.Cleanup(func() { fallbackRefetchMaxAge = previousMaxAge })
 	links, mode, err := GetEpisodeURLForPlayback(CurdConfig{SubOrDub: "sub"}, "anime-id", 1)
 	if err != nil {
 		t.Fatalf("expected accepted fallback to succeed: %v", err)
@@ -283,6 +290,35 @@ func TestGetEpisodeURLForPlaybackRefreshesLinksOnAccept(t *testing.T) {
 	}
 	if mode != "dub" || len(links) != 1 || links[0] != "dub-url-3" {
 		t.Fatalf("expected freshly resolved links, got mode=%q links=%v", mode, links)
+	}
+}
+
+func TestGetEpisodeURLForPlaybackSkipsRefreshWhenFresh(t *testing.T) {
+	provider := &fakePlaybackProvider{
+		linkRotator: func(call int, mode string) ([]string, error) {
+			if mode == "sub" {
+				return nil, errors.New("no sub streams")
+			}
+			return []string{fmt.Sprintf("dub-url-%d", call)}, nil
+		},
+	}
+	withProvider(t, provider)
+	withPromptSelect(t, func(options []SelectionOption) (SelectionOption, error) {
+		return SelectionOption{Key: "play"}, nil
+	})
+
+	previousMaxAge := fallbackRefetchMaxAge
+	fallbackRefetchMaxAge = time.Hour
+	t.Cleanup(func() { fallbackRefetchMaxAge = previousMaxAge })
+	links, mode, err := GetEpisodeURLForPlayback(CurdConfig{SubOrDub: "sub"}, "anime-id", 1)
+	if err != nil {
+		t.Fatalf("expected accepted fallback to succeed: %v", err)
+	}
+	if got := strings.Join(provider.modes, ","); got != "sub,dub" {
+		t.Fatalf("expected probe only, no re-resolution, got %s", got)
+	}
+	if mode != "dub" || len(links) != 1 || links[0] != "dub-url-2" {
+		t.Fatalf("expected probed links, got mode=%q links=%v", mode, links)
 	}
 }
 

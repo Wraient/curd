@@ -25,6 +25,79 @@ var (
 	sessionMu    sync.Mutex
 )
 
+// sessionCall is one in-flight verify handshake shared by concurrent
+// waiters so a cold start costs a single handshake, not one per goroutine.
+type sessionCall struct {
+	done  chan struct{}
+	token string
+	exp   int64
+	err   error
+}
+
+var (
+	sessionInflightMu sync.Mutex
+	sessionInflight   *sessionCall
+)
+
+// episodeCounts remembers per-show sub/dub totals briefly. Search results
+// already carry both counts, so an EpisodesList right after a search (the
+// normal host flow) skips the detail round trip. Entries live 5 minutes;
+// a miss falls back to the detail endpoint exactly as before.
+type episodeCounts struct {
+	sub     int
+	dub     int
+	expires int64
+}
+
+var (
+	epCountMu sync.Mutex
+	epCounts  = map[string]episodeCounts{}
+)
+
+// episodeCountTTLMillis bounds how long search-provided episode totals are
+// reused before the detail endpoint is consulted again.
+const episodeCountTTLMillis = 5 * 60 * 1000
+
+// maxEpisodeCountEntries bounds the cache; expired entries are dropped on
+// store and the whole map is shed if it still exceeds the cap, so a long
+// session cannot accumulate one entry per show forever.
+const maxEpisodeCountEntries = 256
+
+func episodeCountsKey(showID string) string {
+	return baseURL + "\x00" + showID
+}
+
+func episodeCountsFromCache(showID string) (sub, dub int, ok bool) {
+	epCountMu.Lock()
+	defer epCountMu.Unlock()
+	cached, found := epCounts[episodeCountsKey(showID)]
+	if !found || time.Now().UnixMilli() >= cached.expires {
+		return 0, 0, false
+	}
+	return cached.sub, cached.dub, true
+}
+
+func storeEpisodeCounts(showID string, sub, dub int) {
+	// Zero counts mean the source omitted the totals, not that the show
+	// has no episodes: leave them uncached so the detail endpoint still
+	// gets consulted instead of failing the lookup for 5 minutes.
+	if sub <= 0 && dub <= 0 {
+		return
+	}
+	now := time.Now().UnixMilli()
+	epCountMu.Lock()
+	defer epCountMu.Unlock()
+	for key, entry := range epCounts {
+		if now >= entry.expires {
+			delete(epCounts, key)
+		}
+	}
+	if len(epCounts) >= maxEpisodeCountEntries {
+		epCounts = map[string]episodeCounts{}
+	}
+	epCounts[episodeCountsKey(showID)] = episodeCounts{sub: sub, dub: dub, expires: now + episodeCountTTLMillis}
+}
+
 func newRequest(rawURL, referer string) (*http.Request, error) {
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -105,6 +178,10 @@ func probeStreamHead(streamURL string) error {
 		return err
 	}
 	defer resp.Body.Close()
+	// Drain the two response bytes so the CDN connection is released back
+	// to the pool instead of being discarded: the next probe to the same
+	// CDN host then reuses it instead of paying for a fresh TLS handshake.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64))
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("stream probe returned status %d", resp.StatusCode)
 	}
@@ -135,13 +212,39 @@ func sessionTokenForSources() (string, error) {
 	if cached != "" && time.Now().UnixMilli() < expiry-300000 {
 		return cached, nil
 	}
+	// Join an in-flight handshake instead of starting a duplicate one:
+	// concurrent cold starts share one verify request. The fetch itself
+	// still runs unlocked so a slow verify never blocks cache readers.
+	sessionInflightMu.Lock()
+	if sessionInflight != nil {
+		call := sessionInflight
+		sessionInflightMu.Unlock()
+		<-call.done
+		if call.err != nil {
+			return "", call.err
+		}
+		return call.token, nil
+	}
+	call := &sessionCall{done: make(chan struct{})}
+	sessionInflight = call
+	sessionInflightMu.Unlock()
+
 	token, exp, err := fetchSessionToken()
+	if err == nil {
+		sessionMu.Lock()
+		sessionToken, sessionExp = token, exp
+		sessionMu.Unlock()
+		call.token, call.exp = token, exp
+	} else {
+		call.err = err
+	}
+	sessionInflightMu.Lock()
+	sessionInflight = nil
+	sessionInflightMu.Unlock()
+	close(call.done)
 	if err != nil {
 		return "", err
 	}
-	sessionMu.Lock()
-	sessionToken, sessionExp = token, exp
-	sessionMu.Unlock()
 	return token, nil
 }
 
@@ -187,9 +290,14 @@ func fetchSessionToken() (string, int64, error) {
 
 func resetSessionForTest() {
 	sessionMu.Lock()
-	defer sessionMu.Unlock()
 	sessionToken = ""
 	sessionExp = 0
+	sessionMu.Unlock()
+	// The episode-count cache is also a short-lived session artifact, so
+	// tests start from the same cold state production does.
+	epCountMu.Lock()
+	epCounts = map[string]episodeCounts{}
+	epCountMu.Unlock()
 }
 
 func setSessionForTest(token string, exp int64) {

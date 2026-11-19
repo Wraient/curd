@@ -6,9 +6,103 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/wraient/curd/internal/providers"
 )
+
+// episodeMetadataCache memoizes the episode list per show so the
+// EpisodesList -> GetEpisodeURL flow does not fetch the same list twice.
+// Entries live only for episodeMetadataCacheTTL; matching and episode
+// availability are always computed from the cached payload, never skipped.
+const episodeMetadataCacheTTL = 5 * time.Minute
+
+// maxEpisodeMetadataEntries bounds the cache; expired entries are dropped
+// on store and the whole map is shed if it still exceeds the cap, so a
+// long session cannot accumulate one entry per show forever.
+const maxEpisodeMetadataEntries = 256
+
+var episodeMetadataCache = struct {
+	sync.RWMutex
+	entries map[string]episodeMetadataCacheEntry
+}{entries: make(map[string]episodeMetadataCacheEntry)}
+
+type episodeMetadataCacheEntry struct {
+	expiresAt time.Time
+	episodes  []episodeMetadata
+}
+
+// animeIDAliases remembers slug -> numeric ID resolutions so bare slugs
+// skip the watch-page fetch on repeat lookups. Aliases share the episode
+// TTL: a stale alias can only resolve to an ID whose episodes were cached
+// together, and any miss falls through to a fresh resolution.
+var (
+	animeIDMu      sync.RWMutex
+	animeIDAliases = map[string]animeIDAlias{}
+)
+
+type animeIDAlias struct {
+	id        int
+	expiresAt time.Time
+}
+
+func animeIDAliasKey(slug string) string {
+	return baseURL + "\x00" + slug
+}
+
+func cachedAnimeID(slug string) (int, bool) {
+	animeIDMu.RLock()
+	alias, ok := animeIDAliases[animeIDAliasKey(slug)]
+	animeIDMu.RUnlock()
+	if !ok || time.Now().After(alias.expiresAt) {
+		return 0, false
+	}
+	return alias.id, true
+}
+
+func storeAnimeID(slug string, id int) {
+	if id <= 0 {
+		return
+	}
+	now := time.Now()
+	animeIDMu.Lock()
+	defer animeIDMu.Unlock()
+	for key, alias := range animeIDAliases {
+		if !now.Before(alias.expiresAt) {
+			delete(animeIDAliases, key)
+		}
+	}
+	animeIDAliases[animeIDAliasKey(slug)] = animeIDAlias{id: id, expiresAt: now.Add(episodeMetadataCacheTTL)}
+}
+
+func cachedEpisodeMetadata(key string) ([]episodeMetadata, bool) {
+	episodeMetadataCache.RLock()
+	entry, ok := episodeMetadataCache.entries[key]
+	episodeMetadataCache.RUnlock()
+	if !ok || time.Now().After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.episodes, true
+}
+
+func storeEpisodeMetadata(key string, episodes []episodeMetadata) {
+	now := time.Now()
+	episodeMetadataCache.Lock()
+	defer episodeMetadataCache.Unlock()
+	for k, entry := range episodeMetadataCache.entries {
+		if !now.Before(entry.expiresAt) {
+			delete(episodeMetadataCache.entries, k)
+		}
+	}
+	if len(episodeMetadataCache.entries) >= maxEpisodeMetadataEntries {
+		episodeMetadataCache.entries = make(map[string]episodeMetadataCacheEntry)
+	}
+	episodeMetadataCache.entries[key] = episodeMetadataCacheEntry{
+		expiresAt: now.Add(episodeMetadataCacheTTL),
+		episodes:  episodes,
+	}
+}
 
 func episodesList(showID, mode string) ([]string, error) {
 	_, _, err := parseShowID(showID)
@@ -49,10 +143,23 @@ func fetchEpisodeMetadata(showID string) ([]episodeMetadata, error) {
 		return nil, err
 	}
 	if animeID == 0 {
-		animeID, err = resolveAnimeID(slug)
-		if err != nil {
-			return nil, err
+		// A prior lookup may already have resolved this slug: reuse the
+		// alias instead of paying for another watch-page fetch.
+		if id, ok := cachedAnimeID(slug); ok {
+			animeID = id
+		} else {
+			animeID, err = resolveAnimeID(slug)
+			if err != nil {
+				return nil, err
+			}
+			storeAnimeID(slug, animeID)
 		}
+	}
+	// The key includes baseURL so offline fixture servers never share
+	// entries with live lookups (or with each other across tests).
+	cacheKey := baseURL + "\x00" + slug + "#" + strconv.Itoa(animeID)
+	if episodes, ok := cachedEpisodeMetadata(cacheKey); ok {
+		return episodes, nil
 	}
 	endpoint := fmt.Sprintf("%s/ajax/episode/list/%d?vrf=%s", baseURL, animeID, encryptVRF(strconv.Itoa(animeID)))
 	referer := watchURL(slug, 0)
@@ -68,6 +175,7 @@ func fetchEpisodeMetadata(showID string) ([]episodeMetadata, error) {
 	if len(episodes) == 0 {
 		return nil, fmt.Errorf("no Anikoto episodes found for %q", slug)
 	}
+	storeEpisodeMetadata(cacheKey, episodes)
 	return episodes, nil
 }
 
