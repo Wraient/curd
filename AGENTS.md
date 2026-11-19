@@ -136,7 +136,7 @@ elements default to absent, never to the previous episode's value.
 - Never panic on upstream garbage (HTML error pages, truncated JSON, empty
   bodies) — error or empty results, covered by `TestProviderContractEdgeCases`.
 
-## 6. Wiring checklist (every new provider)
+## 6. Wiring checklist (every new or updated provider)
 
 1. Blank import in [loadproviders/load.go](/home/wraient/Projects/curd/internal/loadproviders/load.go)
    (alphabetical).
@@ -155,6 +155,10 @@ elements default to absent, never to the previous episode's value.
 
 ## 7. Verification gates (all green before release)
 
+Run the full table on every provider add, update, or fix — not only on new
+providers. Probes passing is not proof: a validator that fetches the playlist
+can still hand mpv a dead URL (JoJo 2012 ep5 lesson).
+
 | Gate | Command |
 |---|---|
 | Build + vet | `go build ./...`, `go vet ./...` (zero warnings) |
@@ -163,6 +167,9 @@ elements default to absent, never to the previous episode's value.
 | Live contract | `CURD_LIVE_CONTRACT=1 go test ./internal/providers -run TestLiveProviderContract` (infra outages in tail providers are logged, not gating, but new providers must pass) |
 | Hard benchmark | `CURD_LIVE_HARD=1 go test ./internal -run TestHardAnimeBenchmark` — 27 hard titles; **0 wrong picks** required, WEAK allowed only when the correct show ranks top-3 (picker-correct) |
 | Edge suite | `CURD_LIVE_EDGE=1 ... TestLiveProviderEdgeCases`, `CURD_LIVE_MOVIES=1 ... TestLiveProviderMovies` after wiring step 5 |
+| Real mpv playback | resolve a fresh link through the provider, then play it in real mpv (`--vo=null --ao=null --frames=10` + the hint referer/subtitle) and confirm `VO:`/`AO:` come up with a clean EOF exit — for sub AND dub, on a title users actually hit. A 200 probe is not playback. |
+| Referer parity | the mpv hint `Referrer` must equal the referer the validator uses — the embed/playback origin the browser sends, never the catalog site |
+| Link freshness | no pre-prompt URL may reach mpv: probe → prompt → re-resolve on accept on every fallback path; short-TTL signed URLs ⇒ `NoPrefetch: true` |
 | Adversarial audit | delegate a review-role audit of the full diff; fix **every** finding with evidence; needs explicit `APPROVED` |
 | Release | empty commit `release: vX.Y.Z`, push, CI publishes binaries (see `git log --grep=release`); never ship with a red gate |
 
