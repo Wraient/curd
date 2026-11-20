@@ -1025,9 +1025,9 @@ func (c *MPVPlaylistController) finalizePlaylistEpisodeChange(fromEp, toEp int, 
 
 	// Episode titles / filler / recap from Jikan (non-fatal). Don't trust its duration.
 	if anime.MalId > 0 {
-		if err := GetEpisodeData(anime.MalId, toEp, anime); err != nil {
-			Log(fmt.Sprintf("MPV playlist: GetEpisodeData ep %d: %v", toEp, err))
-		}
+		// Time-boxed: this runs on the episode switch; a hanging Jikan must
+		// not delay it (the late answer still lands in the cache).
+		GetEpisodeDataWithin(anime.MalId, toEp, anime, jikanPrePlayBudget)
 		// Playback duration comes from MPV, not Jikan.
 		anime.Ep.Duration = 0
 	}
@@ -1077,13 +1077,14 @@ func (c *MPVPlaylistController) finalizePlaylistEpisodeChange(fromEp, toEp int, 
 			token = u.Token
 		}
 		if !anime.Rewatching && token != "" {
-			go func(ep int) {
-				if err := UpdateAnimeProgress(token, anime.AnilistId, ep); err != nil {
+			ep := remoteProgress
+			QueueAnimeProgressExact(token, anime.AnilistId, ep, func(err error) {
+				if err != nil {
 					Log(fmt.Sprintf("MPV playlist: UpdateAnimeProgress(%d): %v", ep, err))
 				} else {
 					CurdOut(fmt.Sprintf("Upstream progress → episode %d", ep))
 				}
-			}(remoteProgress)
+			})
 		} else if anime.Rewatching {
 			Log("MPV playlist: rewatching — skipped remote progress update")
 		}

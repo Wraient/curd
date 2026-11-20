@@ -273,6 +273,7 @@ func normalizeReferrerArgs(args []string) []string {
 }
 
 func StartVideo(link string, args []string, title string, anime *Anime) (string, error) {
+	parkIfExiting()
 	var command *exec.Cmd
 	var mpvSocketPath string
 	var err error

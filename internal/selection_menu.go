@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -537,6 +538,7 @@ func DynamicSelectPreview(options map[string]RofiSelectPreview, addnewoption boo
 }
 
 func DynamicSelectPreviewWithRefresh(options map[string]RofiSelectPreview, addnewoption bool, refreshConfig *PreviewSelectionRefreshConfig) (SelectionOption, error) {
+	parkIfExiting()
 	go preDownloadImages(options, 14)
 
 	// Removed boilerplate check
@@ -547,17 +549,26 @@ func DynamicSelectPreviewWithRefresh(options map[string]RofiSelectPreview, addne
 		var rofiInput strings.Builder
 		selectionOptions := previewOptionsToSortedSelection(currentOptions)
 
+		// Covers download in parallel under one budget: the menu used to
+		// wait for every image sequentially (15s timeout each) and silently
+		// dropped any show whose image failed. Now a slow or missing cover
+		// costs nothing — the row shows without art, never disappears.
+		coverURLs := make([]string, 0, len(selectionOptions))
 		for _, opt := range selectionOptions {
-			cachePath, err := downloadToCache(currentOptions[opt.Key].CoverImage)
-			if err != nil {
-				Log(fmt.Sprintf("Error caching image: %v", err))
-				continue
-			}
+			coverURLs = append(coverURLs, currentOptions[opt.Key].CoverImage)
+		}
+		cachedCovers := cacheImagesWithin(coverURLs, previewImageBudget)
+
+		for _, opt := range selectionOptions {
 			label := opt.Label
 			if opt.HasNewEpisodes {
 				label = fmt.Sprintf("<span foreground=\"%s\">[NEW]</span> %s ", rofiNewEpisodeColor, opt.Label)
 			}
-			rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", label, cachePath))
+			if cachePath := cachedCovers[currentOptions[opt.Key].CoverImage]; cachePath != "" {
+				rofiInput.WriteString(fmt.Sprintf("%s\x00icon\x1f%s\n", label, cachePath))
+			} else {
+				rofiInput.WriteString(label + "\n")
+			}
 		}
 
 		if addnewoption {
@@ -673,6 +684,7 @@ func downloadToCache(imageURL string) (string, error) {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create cache directory: %w", err)
 	}
+	sweepStaleImageParts(cacheDir)
 
 	// Create a hash of the URL to use as filename
 	filename := fmt.Sprintf("%x.jpg", md5.Sum([]byte(imageURL)))
@@ -696,23 +708,120 @@ func downloadToCache(imageURL string) (string, error) {
 		return "", fmt.Errorf("failed to download image: status %d", resp.StatusCode)
 	}
 
-	file, err := os.Create(cachePath)
+	// Write to a unique temp file and rename: the background pre-download
+	// and the menu can fetch the same cover concurrently, and a shared
+	// os.Create on the final path interleaved their bytes.
+	file, err := os.CreateTemp(cacheDir, filename+".*.part")
 	if err != nil {
 		return "", err
 	}
+	tmpPath := file.Name()
 
-	_, err = io.Copy(file, resp.Body)
+	_, err = io.Copy(file, io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
 		file.Close()
-		os.Remove(cachePath) // Clean up on error
+		os.Remove(tmpPath)
 		return "", err
 	}
 	if err := file.Close(); err != nil {
-		os.Remove(cachePath)
+		os.Remove(tmpPath)
+		return "", err
+	}
+	if err := os.Rename(tmpPath, cachePath); err != nil {
+		os.Remove(tmpPath)
 		return "", err
 	}
 
 	return cachePath, nil
+}
+
+var imagePartSweep sync.Once
+
+// sweepStaleImageParts removes temp downloads abandoned by a previous
+// process that exited mid-download (once per process).
+func sweepStaleImageParts(cacheDir string) {
+	imagePartSweep.Do(func() {
+		parts, _ := filepath.Glob(filepath.Join(cacheDir, "*.part"))
+		for _, p := range parts {
+			if info, err := os.Stat(p); err == nil && time.Since(info.ModTime()) > 10*time.Minute {
+				_ = os.Remove(p)
+			}
+		}
+	})
+}
+
+// previewImageBudget caps how long the picker waits for cover art before
+// opening. Cached covers are instant; uncached ones keep downloading in
+// the background and appear next time the menu opens.
+var previewImageBudget = 2500 * time.Millisecond
+
+const previewImageWorkers = 8
+
+// cacheImagesWithin downloads covers with bounded parallelism and returns
+// the url→path map of those ready within budget. Downloads still running
+// at the deadline continue in the background to warm the cache.
+func cacheImagesWithin(urls []string, budget time.Duration) map[string]string {
+	result := make(map[string]string, len(urls))
+	var mu sync.Mutex
+	unique := make([]string, 0, len(urls))
+	seen := make(map[string]bool, len(urls))
+	for _, u := range urls {
+		if strings.TrimSpace(u) == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		unique = append(unique, u)
+	}
+	if len(unique) == 0 {
+		return result
+	}
+
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+	workers := previewImageWorkers
+	if workers > len(unique) {
+		workers = len(unique)
+	}
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for u := range jobs {
+				path, err := downloadToCache(u)
+				if err != nil {
+					Log(fmt.Sprintf("Error caching image: %v", err))
+					continue
+				}
+				mu.Lock()
+				result[u] = path
+				mu.Unlock()
+			}
+		}()
+	}
+	go func() {
+		for _, u := range unique {
+			jobs <- u
+		}
+		close(jobs)
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(budget):
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	snapshot := make(map[string]string, len(result))
+	for k, v := range result {
+		snapshot[k] = v
+	}
+	return snapshot
 }
 
 func showCachedImagePreview(imageURL string) error {
@@ -816,6 +925,7 @@ func DynamicSelectFromSlice(options []SelectionOption) (SelectionOption, error) 
 
 // DynamicSelect displays a simple selection prompt without extra features
 func DynamicSelect(options []SelectionOption) (SelectionOption, error) {
+	parkIfExiting()
 	return dynamicSelectInternal(options, nil, false)
 }
 

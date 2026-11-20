@@ -286,10 +286,20 @@ func main() {
 		skipLoopClosed <- false              // Initialize to false (not closed yet)
 
 		// Get MalId and CoverImage (only if discord presence is enabled)
-		if userCurdConfig.DiscordPresence {
-			anime.MalId, anime.CoverImage, err = internal.GetAnimeIDAndImage(anime.AnilistId)
-			if err != nil {
-				internal.Log("Error getting anime ID and image: " + err.Error())
+		// Both are immutable per show and usually known from the tracker list
+		// already; only look up what's missing (cached), and never let a
+		// failed lookup clobber a known MAL ID with 0 — that silently
+		// disabled AniSkip and filler detection for the whole session.
+		if userCurdConfig.DiscordPresence && (anime.MalId == 0 || anime.CoverImage == "") {
+			malID, cover, idErr := internal.GetAnimeIDAndImage(anime.AnilistId)
+			if idErr != nil {
+				internal.Log("Error getting anime ID and image: " + idErr.Error())
+			}
+			if malID != 0 {
+				anime.MalId = malID
+			}
+			if cover != "" {
+				anime.CoverImage = cover
 			}
 			// Skip initial Discord presence - wait for MPV to provide real duration
 			// This avoids showing the default 25-minute duration before the video starts
@@ -303,11 +313,10 @@ func main() {
 
 		// Start curd (loop while episode is playing)
 		for {
-			// Check if current episode is filler/recap
-			if episodeErr := internal.GetEpisodeData(anime.MalId, anime.Ep.Number, &anime); episodeErr != nil {
-				internal.Log("Error getting episode data, assuming non-filler: " + episodeErr.Error())
-				break // Break the loop and continue with playback
-			}
+			// Check if current episode is filler/recap. Time-boxed: Jikan is
+			// optional metadata and must never hold playback hostage. A late
+			// answer is still picked up by the in-episode check below.
+			internal.GetEpisodeDataWithin(anime.MalId, anime.Ep.Number, &anime, internal.JikanPrePlayBudget())
 
 			// Check if episode is filler
 			anime.Ep.IsFiller = internal.IsEpisodeFiller(anime.FillerEpisodes, anime.Ep.Number)
@@ -315,7 +324,7 @@ func main() {
 			// If not filler/recap (or skip is disabled), break and continue with playback
 			if !((anime.Ep.IsFiller && userCurdConfig.SkipFiller) || (anime.Ep.IsRecap && userCurdConfig.SkipRecap)) {
 				if anime.Ep.LastWasSkipped {
-					go internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1)
+					internal.QueueAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1, nil)
 				}
 				break
 			}
@@ -382,7 +391,7 @@ func main() {
 				}
 				// Update progress for the just finished episode (StartNextEpisode usually does this for previous ep, but here we exit)
 				if !anime.Rewatching {
-					internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number)
+					_ = internal.UpdateAnimeProgressOrdered(user.Token, anime.AnilistId, anime.Ep.Number, 20*time.Second)
 				}
 				internal.ExitCurd(nil)
 			}
@@ -724,7 +733,7 @@ func main() {
 
 										// Update Anilist progress if not rewatching
 										if !anime.Rewatching {
-											if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number); progressErr != nil {
+											if progressErr := internal.UpdateAnimeProgressOrdered(user.Token, anime.AnilistId, anime.Ep.Number, 20*time.Second); progressErr != nil {
 												internal.Log("Error updating Anilist progress on quit: " + progressErr.Error())
 											} else {
 												internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
@@ -876,7 +885,7 @@ func main() {
 
 										// Update Anilist progress if not rewatching
 										if !anime.Rewatching {
-											if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number); progressErr != nil {
+											if progressErr := internal.UpdateAnimeProgressOrdered(user.Token, anime.AnilistId, anime.Ep.Number, 20*time.Second); progressErr != nil {
 												internal.Log("Error updating Anilist progress on quit: " + progressErr.Error())
 											} else {
 												internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
@@ -895,7 +904,7 @@ func main() {
 
 									// Update Anilist progress if not rewatching
 									if !anime.Rewatching {
-										if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number); progressErr != nil {
+										if progressErr := internal.UpdateAnimeProgressOrdered(user.Token, anime.AnilistId, anime.Ep.Number, 20*time.Second); progressErr != nil {
 											internal.Log("Error updating Anilist progress on completion: " + progressErr.Error())
 										} else {
 											internal.CurdOut(fmt.Sprintf("Episode completed! Progress updated: %d", anime.Ep.Number))
@@ -981,19 +990,14 @@ func main() {
 			// Update progress for both regular episodes and skipped fillers
 			if anime.TotalEpisodes > 0 && anime.Ep.Number-1 != anime.TotalEpisodes {
 				progressEpisode := anime.Ep.Number - 1
-				go func(episode int) {
-					// Update progress for regular episodes
-					if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, episode); progressErr != nil {
-						internal.Log("Error updating Anilist progress: " + progressErr.Error())
-					}
-				}(progressEpisode)
+				internal.QueueAnimeProgress(user.Token, anime.AnilistId, progressEpisode, nil)
 			} else {
 				// Update progress for last episode
 
 				// Exit MPV
 				internal.ExitMPV(anime.Ep.Player.SocketPath)
 
-				if progressErr := internal.UpdateAnimeProgress(user.Token, anime.AnilistId, anime.Ep.Number-1); progressErr != nil {
+				if progressErr := internal.UpdateAnimeProgressOrdered(user.Token, anime.AnilistId, anime.Ep.Number-1, 20*time.Second); progressErr != nil {
 					internal.Log("Error updating Anilist progress: " + progressErr.Error())
 				}
 			}

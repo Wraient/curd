@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -438,6 +439,12 @@ func AddAniListAnimeToWatchingList(animeID int, token string) error {
 
 // Function to get MAL ID using AniList media ID
 func GetAnimeMalID(anilistMediaID int) (int, error) {
+	if anilistMediaID <= 0 {
+		return 0, fmt.Errorf("invalid AniList media ID %d", anilistMediaID)
+	}
+	if malID, _ := memoizedAniListMedia(anilistMediaID); malID != 0 {
+		return malID, nil
+	}
 	url := "https://graphql.anilist.co"
 	query := `
 	query ($id: Int) {
@@ -467,11 +474,18 @@ func GetAnimeMalID(anilistMediaID int) (int, error) {
 	if !ok || malID == 0 {
 		return 0, fmt.Errorf("AniList media %d has no MyAnimeList ID", anilistMediaID)
 	}
+	memoAniListMedia(anilistMediaID, int(malID), "")
 	return int(malID), nil
 }
 
 // This function retrieves the MAL ID and cover image URL for an anime from AniList
 func GetAnimeIDAndImage(anilistMediaID int) (int, string, error) {
+	if anilistMediaID <= 0 {
+		return 0, "", fmt.Errorf("invalid AniList media ID %d", anilistMediaID)
+	}
+	if malID, cover := memoizedAniListMedia(anilistMediaID); malID != 0 && cover != "" {
+		return malID, cover, nil
+	}
 	url := "https://graphql.anilist.co"
 	query := `
 	query ($id: Int) {
@@ -508,6 +522,7 @@ func GetAnimeIDAndImage(anilistMediaID int) (int, string, error) {
 	if coverImage, ok := media["coverImage"].(map[string]interface{}); ok {
 		imageURL = safeAniListString(coverImage["large"])
 	}
+	memoAniListMedia(anilistMediaID, malID, imageURL)
 
 	return malID, imageURL, nil
 }
@@ -911,15 +926,87 @@ func saveAniListAnimeScore(token string, mediaID int, score float64) error {
 }
 
 func aniListRetryDelay(resp *http.Response, attempt int) time.Duration {
+	return aniListRetryDelayFor(resp, attempt, false)
+}
+
+// aniListRetryDelayFor computes one 429 back-off. Reads (search, lookups,
+// list) are interactive, so the wait is capped: AniList sends
+// Retry-After: 60 and obeying it across 4 retries stalled them ~4 minutes.
+// Mutations (progress/score writes) run off the playback path on the
+// progress queue; capping them just retries inside the same rate-limit
+// window and drops the write, so they honor Retry-After in full.
+func aniListRetryDelayFor(resp *http.Response, attempt int, mutation bool) time.Duration {
+	limit := capAniListRetry
+	if mutation {
+		limit = func(d time.Duration) time.Duration {
+			if d > aniListMaxMutationRetryDelay {
+				return aniListMaxMutationRetryDelay
+			}
+			return d
+		}
+	}
 	if resp != nil {
 		if retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After")); retryAfter != "" {
 			if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds > 0 {
-				return time.Duration(seconds) * time.Second
+				return limit(time.Duration(seconds) * time.Second)
 			}
 		}
 	}
 
-	return time.Duration(attempt+1) * 2 * time.Second
+	return limit(time.Duration(attempt+1) * 2 * time.Second)
+}
+
+// aniListMaxMutationRetryDelay only guards against absurd Retry-After
+// values; AniList's real window is 60s.
+var aniListMaxMutationRetryDelay = 90 * time.Second
+
+func isGraphQLMutation(query string) bool {
+	return strings.HasPrefix(strings.TrimSpace(query), "mutation")
+}
+
+// aniListMaxRetryDelay caps one 429 back-off so a rate-limited AniList
+// costs seconds, not minutes, on interactive paths.
+var aniListMaxRetryDelay = 5 * time.Second
+
+func capAniListRetry(d time.Duration) time.Duration {
+	if d > aniListMaxRetryDelay {
+		return aniListMaxRetryDelay
+	}
+	return d
+}
+
+// aniListRefreshWait bounds how long show selection waits for the
+// background tracker-list refresh before using the cached list. Healthy
+// trackers refresh in about a second; a stalled one must not block playback.
+var aniListRefreshWait = 4 * time.Second
+
+// aniListMediaIDs memoizes immutable per-show lookups (MAL ID, cover) for
+// the process lifetime: they were re-fetched before every episode.
+var aniListMediaIDs struct {
+	sync.Mutex
+	mal   map[int]int
+	cover map[int]string
+}
+
+func memoAniListMedia(anilistID, malID int, cover string) {
+	aniListMediaIDs.Lock()
+	defer aniListMediaIDs.Unlock()
+	if aniListMediaIDs.mal == nil {
+		aniListMediaIDs.mal = map[int]int{}
+		aniListMediaIDs.cover = map[int]string{}
+	}
+	if malID != 0 {
+		aniListMediaIDs.mal[anilistID] = malID
+	}
+	if cover != "" {
+		aniListMediaIDs.cover[anilistID] = cover
+	}
+}
+
+func memoizedAniListMedia(anilistID int) (int, string) {
+	aniListMediaIDs.Lock()
+	defer aniListMediaIDs.Unlock()
+	return aniListMediaIDs.mal[anilistID], aniListMediaIDs.cover[anilistID]
 }
 
 // Helper function to make POST requests
@@ -946,7 +1033,7 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 	}
 
 	for authAttempt := 0; authAttempt < 2; authAttempt++ {
-		response, err := makePostRequestAttempt(url, requestBody, headers)
+		response, err := makePostRequestAttempt(url, requestBody, headers, isGraphQLMutation(query))
 		if err == nil {
 			return response, nil
 		}
@@ -970,7 +1057,7 @@ func makePostRequest(url, query string, variables map[string]interface{}, header
 	return nil, fmt.Errorf("AniList request failed after token renewal")
 }
 
-func makePostRequestAttempt(url string, requestBody []byte, headers map[string]string) (map[string]interface{}, error) {
+func makePostRequestAttempt(url string, requestBody []byte, headers map[string]string, mutation bool) (map[string]interface{}, error) {
 	client := sharedHTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
@@ -1001,7 +1088,7 @@ func makePostRequestAttempt(url string, requestBody []byte, headers map[string]s
 			if attempt == 4 {
 				return nil, fmt.Errorf("failed with status %d: %s", resp.StatusCode, body)
 			}
-			time.Sleep(aniListRetryDelay(resp, attempt))
+			time.Sleep(aniListRetryDelayFor(resp, attempt, mutation))
 			continue
 		}
 		if resp.StatusCode != http.StatusOK {

@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gen2brain/beeep"
@@ -20,6 +21,10 @@ import (
 )
 
 var alternateScreenActive bool
+
+// screenMu guards alternateScreenActive: Ctrl+C restores the screen from
+// the signal goroutine while the main goroutine may be doing the same.
+var screenMu sync.Mutex
 
 func EditConfig(configFilePath string) {
 	// Get the user's preferred editor from the EDITOR environment variable
@@ -123,11 +128,15 @@ func ClearScreen() {
 	fmt.Print("\033[?1049h") // Switch to alternate screen buffer
 	fmt.Print("\033[2J")     // Clear the entire screen
 	fmt.Print("\033[H")      // Move cursor to the top left
+	screenMu.Lock()
 	alternateScreenActive = true
+	screenMu.Unlock()
 }
 
 // RestoreScreen restores the original terminal state
 func RestoreScreen() {
+	screenMu.Lock()
+	defer screenMu.Unlock()
 	if !alternateScreenActive {
 		return
 	}
@@ -844,7 +853,7 @@ func SetupCurd(userCurdConfig *CurdConfig, anime *Anime, user *User, databaseAni
 			select {
 			case <-user.ListSync.RefreshDone():
 				Log("Background refresh done, using latest anime list for playback")
-			case <-time.After(10 * time.Second):
+			case <-time.After(aniListRefreshWait):
 				Log("Timed out waiting for background anime list refresh; using cached list")
 			}
 			user.AnimeList = user.ListSync.Current()
@@ -1656,11 +1665,7 @@ func NextEpisodePromptContinuous(userCurdConfig *CurdConfig, databaseFile string
 
 				if !(anime.TotalEpisodes > 0 && anime.Ep.Number == anime.TotalEpisodes && anime.Rewatching) {
 					completedEpisode := anime.Ep.Number
-					go func(progressEpisode int) {
-						if progressErr := UpdateAnimeProgress(userToken, anime.AnilistId, progressEpisode); progressErr != nil {
-							Log("Error updating Anilist progress on quit: " + progressErr.Error())
-						}
-					}(completedEpisode)
+					QueueAnimeProgress(userToken, anime.AnilistId, completedEpisode, nil)
 				}
 
 				CurdOut(fmt.Sprintf("Episode completed (%.1f%% watched). Exiting.", percentageWatched))
@@ -1728,7 +1733,7 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 		HandleLastEpisodeCompletion(userCurdConfig, anime, userToken)
 
 		if !anime.Rewatching {
-			err := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode)
+			err := UpdateAnimeProgressOrdered(userToken, anime.AnilistId, prevEpisode, 20*time.Second)
 			if err != nil {
 				Log("Error updating Anilist progress: " + err.Error())
 			}
@@ -1772,11 +1777,7 @@ func StartNextEpisode(anime *Anime, userCurdConfig *CurdConfig, databaseFile str
 		Log("Error updating local database: " + err.Error())
 	}
 
-	go func() {
-		if progressErr := UpdateAnimeProgress(userToken, anime.AnilistId, prevEpisode); progressErr != nil {
-			Log("Error updating Anilist progress: " + progressErr.Error())
-		}
-	}()
+	QueueAnimeProgress(userToken, anime.AnilistId, prevEpisode, nil)
 
 	// Output message to user
 	CurdOut(fmt.Sprint("Starting next episode: ", anime.Ep.Number))

@@ -574,7 +574,7 @@ func myAnimeListRequest(config *CurdConfig, method, requestURL string, form url.
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("MyAnimeList API %s %s failed: %s", method, requestURL, strings.TrimSpace(string(body)))
+			return fmt.Errorf("MyAnimeList API %s %s failed with status %d: %s", method, requestURL, resp.StatusCode, strings.TrimSpace(string(body)))
 		}
 
 		if out != nil {

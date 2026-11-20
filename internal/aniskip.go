@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"time"
 )
 
 // skipTimesResponse struct to hold the response from the AniSkip API
@@ -25,12 +26,21 @@ type skipInterval struct {
 	EndTime   float64 `json:"end_time"`
 }
 
+// aniSkipTimeout bounds one AniSkip request (healthy: under a second).
+var aniSkipTimeout = 6 * time.Second
+
 // GetAniSkipData fetches skip times data for a given anime ID and episode
 func GetAniSkipData(animeMalId int, episode int) (string, error) {
 	baseURL := "https://api.aniskip.com/v1/skip-times"
 	url := fmt.Sprintf("%s/%d/%d?types=op&types=ed", baseURL, animeMalId, episode)
 
-	resp, err := sharedHTTPClient.Get(url)
+	// Short bound: skip times that arrive after the opening already played
+	// are worthless, and a hung request only pins a goroutine per episode.
+	client := &http.Client{Timeout: aniSkipTimeout}
+	if sharedHTTPClient != nil {
+		client.Transport = sharedHTTPClient.Transport
+	}
+	resp, err := client.Get(url)
 	if err != nil {
 		Log(fmt.Errorf("error fetching data from AniSkip API: %w", err))
 		return "", fmt.Errorf("error fetching data from AniSkip API: %w", err)
@@ -42,7 +52,7 @@ func GetAniSkipData(animeMalId int, episode int) (string, error) {
 		return "", fmt.Errorf("failed with status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		Log(fmt.Errorf("failed to read response body %w", err))
 		return "", fmt.Errorf("failed to read response body %w", err)
