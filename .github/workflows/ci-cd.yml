@@ -193,7 +193,7 @@ jobs:
           }
 
           $currentTag = "v$env:CURD_VERSION"
-          $tags = @(git tag --sort=-version:refname "v*")
+          $tags = @(git tag --list "v*" --sort=-version:refname)
           $previousTag = $null
           foreach ($tag in $tags) {
             if ($tag -ne $currentTag) {
